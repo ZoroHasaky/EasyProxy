@@ -11,33 +11,17 @@
 - **安全**：首启生成随机密码打印到 docker logs，首次登录强制改密；全 API session 鉴权
 - **版本与自更新**：VERSION 文件为唯一真源，push 后 GitHub Actions 仅在 VERSION 变化时发版（双架构二进制 + ghcr 镜像）；面板内检测更新 → 下载 → 自动重启切换
 
-## 快速开始
-
-### 使用发布镜像（无需克隆仓库）
+## 部署
 
 从 [Releases](https://github.com/ZoroHasaky/EasyProxy/releases) 下载 `docker-compose.yml`，放入任意空目录执行：
 
 ```bash
 docker compose up -d
 # 面板: http://<host>:8080   初始密码: docker logs easyproxy
-```
-
-### 普通代理模式（设备手动设置代理）
-
-```bash
-git clone https://github.com/ZoroHasaky/EasyProxy.git && cd EasyProxy
-docker compose -f deploy/docker-compose.yml up -d --build
-# 面板: http://<host>:8080   初始密码: docker logs easyproxy
 # 代理: http/socks5 <host>:7890
 ```
 
-### 软路由透明代理模式（TUN）
-
-```bash
-docker compose -f deploy/docker-compose.router.yml up -d --build
-# 启动后在 面板 → 部署 → 透明代理(TUN) 打开开关并「应用配置」
-# LAN 设备把网关/DNS 指向本机即可免配置走代理
-```
+数据持久化在 compose 同目录的 `./data` 下；升级时下载新版 `docker-compose.yml`（镜像 tag 已随版本更新）后再次执行 `docker compose up -d` 即可。
 
 ## 首次使用流程
 
@@ -46,17 +30,6 @@ docker compose -f deploy/docker-compose.router.yml up -d --build
 3. **规则** 页导入规则模板（如 [ACL4SSR 模板](https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online.ini) 对应的 YAML 模板），在「分组映射」确认映射
 4. **策略组** 页点击「生成地区分组」（各地区自动生成 url-test 速度优先分组）
 5. **部署** 页点击「应用配置」，代理生效；软路由场景开启 TUN
-
-## 构建
-
-```bash
-# 前端（产物输出到 backend/internal/web/dist）
-cd frontend && npm ci && npm run build
-# 后端（单二进制，内嵌前端）
-cd backend && go build -ldflags "-X main.version=$(cat ../VERSION)" -o easyproxy ./cmd/server
-# Docker
-docker build -f deploy/Dockerfile -t easyproxy .
-```
 
 ## 项目结构
 
