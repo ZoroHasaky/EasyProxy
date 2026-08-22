@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"easyproxy/internal/core"
@@ -306,8 +307,13 @@ func (s *Server) applyConfig() (string, error) {
 		}
 		return "restarted", nil
 	}
-	if err := s.client.ReloadConfig("config.yaml"); err != nil {
-		return "", err
+	// 新版 mihomo 要求 PUT /configs 的 path 为绝对路径
+	if err := s.client.ReloadConfig(filepath.Join(s.dataDir, "config.yaml")); err != nil {
+		// 热重载失败时退回重启内核，保证配置仍能生效
+		if rerr := s.mgr.Restart(); rerr != nil {
+			return "", fmt.Errorf("热重载失败: %v；重启内核也失败: %v", err, rerr)
+		}
+		return "restarted", nil
 	}
 	return "reloaded", nil
 }
