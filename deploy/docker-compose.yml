@@ -5,7 +5,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    # image: ghcr.io/<owner>/easyproxy:latest
+    # image: ghcr.io/zorohasaky/easyproxy:latest
     container_name: easyproxy
     ports:
       - "8080:8080" # 面板

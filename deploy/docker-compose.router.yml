@@ -9,7 +9,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    # image: ghcr.io/<owner>/easyproxy:latest
+    # image: ghcr.io/zorohasaky/easyproxy:latest
     container_name: easyproxy
     network_mode: host
     cap_add:

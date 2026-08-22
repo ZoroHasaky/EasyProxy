@@ -13,10 +13,19 @@
 
 ## 快速开始
 
+### 使用发布镜像（无需克隆仓库）
+
+从 [Releases](https://github.com/ZoroHasaky/EasyProxy/releases) 下载 `docker-compose.yml`，放入任意空目录执行：
+
+```bash
+docker compose up -d
+# 面板: http://<host>:8080   初始密码: docker logs easyproxy
+```
+
 ### 普通代理模式（设备手动设置代理）
 
 ```bash
-git clone https://github.com/yourname/EasyProxy.git && cd EasyProxy
+git clone https://github.com/ZoroHasaky/EasyProxy.git && cd EasyProxy
 docker compose -f deploy/docker-compose.yml up -d --build
 # 面板: http://<host>:8080   初始密码: docker logs easyproxy
 # 代理: http/socks5 <host>:7890

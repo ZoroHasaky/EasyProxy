@@ -1,0 +1,16 @@
+# EasyProxy 发布版 compose：随 GitHub Release 分发，镜像来自 ghcr，无需克隆仓库
+# 使用：下载本文件（Release 中的 docker-compose.yml）放入任意目录，执行
+#   docker compose up -d
+#   面板: http://<host>:8080    初始密码: docker logs easyproxy
+#   代理: http/socks5 <host>:7890
+# 软路由透明代理（TUN）模式请改用仓库中的 deploy/docker-compose.router.yml
+services:
+  easyproxy:
+    image: __IMAGE__:__VERSION__
+    container_name: easyproxy
+    ports:
+      - "8080:8080" # 面板
+      - "7890:7890" # 混合代理端口 (HTTP/SOCKS5)
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
