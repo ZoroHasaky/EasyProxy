@@ -3,7 +3,6 @@
 data
 frontend/node_modules
 frontend/dist
-deploy
 *.md
 .dockerignore
 .gitignore

@@ -12,7 +12,8 @@ WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
-COPY --from=web /web/dist/ ./internal/web/dist/
+# vite outDir 为 ../backend/internal/web/dist，在容器内相对 /web 解析到 /backend/ 下
+COPY --from=web /backend/internal/web/dist/ ./internal/web/dist/
 COPY VERSION /src/VERSION
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.version=$(cat VERSION)" \
