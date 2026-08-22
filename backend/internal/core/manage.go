@@ -102,7 +102,8 @@ func DownloadCore(dataDir, version, mirror string) error {
 	url := fmt.Sprintf("%s/%s/releases/download/%s/mihomo-linux-%s-%s.gz",
 		base, CoreRepo, version, arch, version)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	// 慢镜像（如 ghproxy 类前缀）下载可能远超 5 分钟，放宽到 15 分钟
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	resp, err := http.DefaultClient.Do(req)

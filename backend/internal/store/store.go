@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -25,8 +26,10 @@ func Open(dir string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	// modernc/sqlite 并发写会冲突，串行化最稳
-	db.SetMaxOpenConns(1)
+	// WAL 支持多读单写：多连接避免个别连接异常不归还时拖死整个面板（写冲突由 busy_timeout 串行化）
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(8)
+	db.SetConnMaxIdleTime(5 * time.Minute)
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		db.Close()
@@ -36,6 +39,9 @@ func Open(dir string) (*Store, error) {
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// Stats 暴露连接池状态，供饱和告警使用
+func (s *Store) Stats() sql.DBStats { return s.db.Stats() }
 
 func (s *Store) migrate() error {
 	stmts := []string{

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -105,12 +106,15 @@ func (s *Server) handleCoreDownload(w http.ResponseWriter, r *http.Request) {
 		}()
 		mirror := s.st.GetSetting("core_mirror", "")
 		ver := req.Version
+		log.Printf("[core] 开始下载内核 ver=%s mirror=%s", ver, mirror)
 		if err := core.DownloadCore(s.dataDir, ver, mirror); err != nil {
 			s.dlMu.Lock()
 			s.dlErr = err.Error()
 			s.dlMu.Unlock()
+			log.Printf("[core] 内核下载失败: %v", err)
 			return
 		}
+		log.Printf("[core] 内核下载完成，重启内核")
 		s.writeGeneratedConfig()
 		_ = s.mgr.Restart()
 	}()
@@ -328,6 +332,7 @@ func (s *Server) handleBackupRestore(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "恢复失败: "+err.Error())
 		return
 	}
+	s.mustChangePw.Store(s.st.GetSettingBool("must_change_password", false))
 	s.dirty.Store(true)
 	_ = s.writeGeneratedConfig()
 	_ = s.mgr.Restart()

@@ -82,6 +82,7 @@ func (s *Server) InitPassword() {
 	}
 	_ = s.st.SetSetting("password_hash", string(hash))
 	_ = s.st.SetSetting("must_change_password", "1")
+	s.mustChangePw.Store(true)
 	fmt.Println()
 	fmt.Println("==========================================================")
 	fmt.Println("  首次启动：已生成初始管理员密码")
@@ -163,5 +164,6 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.st.SetSetting("password_hash", string(newHash))
 	_ = s.st.SetSetting("must_change_password", "0")
+	s.mustChangePw.Store(false)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

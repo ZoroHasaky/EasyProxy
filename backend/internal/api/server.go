@@ -40,6 +40,9 @@ type Server struct {
 
 	dirty atomic.Bool
 
+	// must_changePw 内存缓存：鉴权是所有请求的热路径，不依赖数据库连接
+	mustChangePw atomic.Bool
+
 	dlMu          sync.Mutex
 	dlRunning     bool
 	dlErr         string
@@ -64,6 +67,7 @@ func New(st *store.Store, dataDir, version string) *Server {
 		client:   core.NewClient(port, secret),
 		sessions: NewSessionManager(),
 	}
+	s.mustChangePw.Store(st.GetSettingBool("must_change_password", false))
 	u, _ := url.Parse(s.client.BaseURL())
 	s.mihomoRP = httputil.NewSingleHostReverseProxy(u)
 	orig := s.mihomoRP.Director
@@ -152,6 +156,11 @@ func (s *Server) Run(addr string) error {
 func (s *Server) subscriptionLoop() {
 	for {
 		time.Sleep(time.Minute)
+		// 连接池饱和告警：帮助发现连接异常不归还类问题
+		if st := s.st.Stats(); st.MaxOpenConnections > 0 && st.InUse >= st.MaxOpenConnections && st.WaitCount > 0 {
+			log.Printf("[db] 连接池饱和: in_use=%d max=%d waits=%d wait_ms=%d",
+				st.InUse, st.MaxOpenConnections, st.WaitCount, st.WaitDuration.Milliseconds())
+		}
 		subs, err := s.st.ListSubscriptions()
 		if err != nil {
 			continue
@@ -257,7 +266,7 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "未登录"})
 			return
 		}
-		if s.st.GetSettingBool("must_change_password", false) {
+		if s.mustChangePw.Load() {
 			p := r.URL.Path
 			if p != "/api/password" && p != "/api/me" && p != "/api/logout" && p != "/api/meta" {
 				writeJSON(w, http.StatusForbidden, map[string]any{"error": "首次登录请先修改密码"})
