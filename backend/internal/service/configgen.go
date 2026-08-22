@@ -27,6 +27,11 @@ type GenResult struct {
 }
 
 func defaultGeoxURLs() map[string]string {
+	return DefaultGeoxURLs()
+}
+
+// DefaultGeoxURLs 导出默认 GeoIP/GeoSite 数据源，供设置接口展示与恢复默认
+func DefaultGeoxURLs() map[string]string {
 	return map[string]string{
 		"geoip":         "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat",
 		"geoip.metadb":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb",
@@ -37,10 +42,20 @@ func defaultGeoxURLs() map[string]string {
 }
 
 func defaultNameservers() []string {
+	return DefaultNameservers()
+}
+
+// DefaultNameservers 导出默认主 nameserver 列表
+func DefaultNameservers() []string {
 	return []string{"https://223.5.5.5/dns-query", "https://doh.pub/dns-query"}
 }
 
 func defaultFallbackDNS() []string {
+	return DefaultFallbackDNS()
+}
+
+// DefaultFallbackDNS 导出默认 fallback DNS 列表
+func DefaultFallbackDNS() []string {
 	return []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"}
 }
 

@@ -151,7 +151,7 @@ export default function RulesPage() {
         providers: payload.data?.providers ?? [],
       }),
     onSuccess: () => {
-      toast.success("规则已保存（记得在部署页应用配置）");
+      toast.success("规则已保存（记得在内核页应用配置）");
       qc.invalidateQueries({ queryKey: ["rules"] });
       qc.invalidateQueries({ queryKey: ["preview"] });
       setRules(null);

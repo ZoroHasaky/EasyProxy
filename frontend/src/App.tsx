@@ -11,7 +11,9 @@ import NodesPage from "@/pages/Nodes";
 import RulesPage from "@/pages/Rules";
 import GroupsPage from "@/pages/Groups";
 import ConnectionsPage from "@/pages/Connections";
-import DeployPage from "@/pages/Deploy";
+import KernelPage from "@/pages/Kernel";
+import TransparentProxyPage from "@/pages/TransparentProxy";
+import GeoDataPage from "@/pages/GeoData";
 import LogsPage from "@/pages/Logs";
 import SettingsPage from "@/pages/Settings";
 import AboutPage from "@/pages/About";
@@ -46,7 +48,9 @@ function Me() {
         <Route path="/rules" element={<RulesPage />} />
         <Route path="/groups" element={<GroupsPage />} />
         <Route path="/connections" element={<ConnectionsPage />} />
-        <Route path="/deploy" element={<DeployPage />} />
+        <Route path="/kernel" element={<KernelPage />} />
+        <Route path="/tun" element={<TransparentProxyPage />} />
+        <Route path="/geo" element={<GeoDataPage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/about" element={<AboutPage />} />

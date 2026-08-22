@@ -29,7 +29,7 @@ docker compose up -d
 2. **订阅** 页添加订阅 URL（或在 **节点池** 粘贴分享链接导入）
 3. **规则** 页导入规则模板（如 [ACL4SSR 模板](https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online.ini) 对应的 YAML 模板），在「分组映射」确认映射
 4. **策略组** 页点击「生成地区分组」（各地区自动生成 url-test 速度优先分组）
-5. **部署** 页点击「应用配置」，代理生效；软路由场景开启 TUN
+5. **内核** 页点击「应用配置」，代理生效；软路由场景在 **透明代理** 页开启 TUN
 
 ## 项目结构
 
@@ -56,8 +56,8 @@ docker compose up -d
 
 ## 说明
 
-- 内核不在镜像内：首次启动自动从 GitHub 下载（部署设置可配镜像前缀加速），失败可在 部署 → 内核 页面上传
-- 自更新需要设置页配置更新源仓库（owner/repo）且 Release 中包含对应架构的 `easyproxy-linux-<arch>.tar.gz`
+- 内核不在镜像内：首次启动自动从 GitHub 下载（内核页可配镜像前缀加速），失败可在 内核 页手动上传
+- 自更新默认检测官方仓库 Release，也可在「关于」页改为自己的 fork（需包含对应架构的 `easyproxy-linux-<arch>.tar.gz`）
 - TUN 模式必须使用 `docker-compose.router.yml`（host 网络 + NET_ADMIN + /dev/net/tun）
 
 ## License

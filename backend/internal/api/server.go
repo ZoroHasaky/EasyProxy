@@ -166,7 +166,7 @@ func (s *Server) subscriptionLoop() {
 				continue
 			}
 			proxy := ""
-			if sub.ViaProxy && s.mgr.Status().State == core.StateRunning {
+			if s.mgr.Status().State == core.StateRunning {
 				proxy = fmt.Sprintf("127.0.0.1:%d", s.st.GetSettingInt("mixed_port", 7890))
 			}
 			if _, _, err := service.SyncSubscription(s.st, &sub, proxy); err != nil {

@@ -33,9 +33,9 @@ func (s *Server) handleCreateSub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sub.Enabled = true
-	// 先抓取验证再落库
+	// 先抓取验证再落库；内核运行中提供代理地址，抓取失败自动换路径重试
 	proxy := ""
-	if sub.ViaProxy && s.mgr.Status().State == core.StateRunning {
+	if s.mgr.Status().State == core.StateRunning {
 		proxy = fmt.Sprintf("127.0.0.1:%d", s.st.GetSettingInt("mixed_port", 7890))
 	}
 	added, removed, err := func() (int, int, error) {
@@ -100,7 +100,7 @@ func (s *Server) handleUpdateSubNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	proxy := ""
-	if sub.ViaProxy && s.mgr.Status().State == core.StateRunning {
+	if s.mgr.Status().State == core.StateRunning {
 		proxy = fmt.Sprintf("127.0.0.1:%d", s.st.GetSettingInt("mixed_port", 7890))
 	}
 	added, removed, err := service.SyncSubscription(s.st, sub, proxy)

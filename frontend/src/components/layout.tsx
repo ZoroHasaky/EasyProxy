@@ -1,8 +1,8 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  LayoutDashboard, Rss, Server, ScrollText, Layers, Cable, Rocket,
-  Terminal, Settings, Info, LogOut, RefreshCw,
+  LayoutDashboard, Rss, Server, ScrollText, Layers, Cable, Cpu, Network,
+  Earth, Terminal, Settings, Info, LogOut, RefreshCw,
 } from "lucide-react";
 import { api, MetaInfo } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,9 @@ const nav = [
   { to: "/rules", label: "规则", icon: ScrollText },
   { to: "/groups", label: "策略组", icon: Layers },
   { to: "/connections", label: "连接", icon: Cable },
-  { to: "/deploy", label: "部署", icon: Rocket },
+  { to: "/kernel", label: "内核", icon: Cpu },
+  { to: "/tun", label: "透明代理", icon: Network },
+  { to: "/geo", label: "Geo 数据", icon: Earth },
   { to: "/logs", label: "日志", icon: Terminal },
   { to: "/settings", label: "设置", icon: Settings },
   { to: "/about", label: "关于", icon: Info },

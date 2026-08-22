@@ -23,7 +23,12 @@ func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) fetchTemplateContent(urlStr, ua string) (string, error) {
-	content, _, err := service.FetchSubscription(urlStr, ua, "")
+	// 内核运行中提供代理地址：直连失败自动经代理重试（模板多在 GitHub，国内常需代理）
+	proxy := ""
+	if s.mgr.Status().State == core.StateRunning {
+		proxy = fmt.Sprintf("127.0.0.1:%d", s.st.GetSettingInt("mixed_port", 7890))
+	}
+	content, _, err := service.FetchSubscriptionAuto(urlStr, ua, false, proxy)
 	return content, err
 }
 

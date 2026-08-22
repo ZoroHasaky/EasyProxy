@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { RefreshCw, Rocket, Github } from "lucide-react";
+import { RefreshCw, Rocket, Undo2 } from "lucide-react";
 import { api, MetaInfo, UpdateCheck, Settings } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+
+// 与后端 DefaultUpdateRepo 保持一致：未配置时后端自动使用该官方源
+const OfficialRepo = "ZoroHasaky/EasyProxy";
 
 export default function AboutPage() {
   const qc = useQueryClient();
@@ -18,7 +21,7 @@ export default function AboutPage() {
   const [checkResult, setCheckResult] = useState<UpdateCheck | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const repoValue = repo || settings.data?.update_repo || "";
+  const repoValue = repo || settings.data?.update_repo || OfficialRepo;
 
   const saveRepo = useMutation({
     mutationFn: () => api.put("/api/settings", { update_repo: repoValue }),
@@ -75,15 +78,20 @@ export default function AboutPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">更新源</CardTitle>
-          <CardDescription>GitHub 仓库（owner/repo），Release 由此仓库检测</CardDescription>
+          <CardDescription>
+            GitHub 仓库（owner/repo），Release 由此仓库检测。默认内置官方仓库 {OfficialRepo}，可改为自己的 fork。
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex items-end gap-3">
           <div className="flex-1 space-y-1.5">
             <Label>仓库</Label>
-            <Input value={repoValue} onChange={(e) => setRepo(e.target.value)} placeholder="yourname/easyproxy" />
+            <Input value={repoValue} onChange={(e) => setRepo(e.target.value)} placeholder={OfficialRepo} />
           </div>
+          <Button variant="outline" title={`恢复官方源 ${OfficialRepo}`} onClick={() => setRepo(OfficialRepo)}>
+            <Undo2 className="h-4 w-4" /> 官方源
+          </Button>
           <Button variant="outline" onClick={() => saveRepo.mutate()}>保存</Button>
-          <Button onClick={() => check.mutate()} disabled={check.isPending || !repoValue}>
+          <Button onClick={() => check.mutate()} disabled={check.isPending}>
             <RefreshCw className={check.isPending ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
             检查更新
           </Button>

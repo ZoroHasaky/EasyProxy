@@ -74,7 +74,7 @@ function SubDialog({
           </div>
           <div className="flex items-center gap-2">
             <Switch checked={viaProxy} onCheckedChange={setViaProxy} id="via-proxy" />
-            <Label htmlFor="via-proxy">经 mihomo 代理抓取（订阅服务器在墙外时开启）</Label>
+            <Label htmlFor="via-proxy">优先经 mihomo 代理抓取（任一路径失败自动换路重试）</Label>
           </div>
         </div>
         <DialogFooter>
@@ -148,7 +148,7 @@ export default function SubscriptionsPage() {
               <TableCell className="text-xs">{timeAgo(sub.last_update)}</TableCell>
               <TableCell className="text-xs">
                 {sub.update_interval > 0 ? `每 ${sub.update_interval} 分钟` : "手动"}
-                {sub.via_proxy && <span className="ml-1 text-emerald-500">(经代理)</span>}
+                {sub.via_proxy && <span className="ml-1 text-emerald-500">(优先经代理)</span>}
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end gap-1">

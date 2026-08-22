@@ -40,7 +40,7 @@ export default function GroupsPage() {
   const save = useMutation({
     mutationFn: () => api.put("/api/groups", items ?? []),
     onSuccess: () => {
-      toast.success("策略组已保存（在部署页或规则页应用配置后生效）");
+      toast.success("策略组已保存（在内核页应用配置后生效）");
       qc.invalidateQueries({ queryKey: ["groups"] });
       setItems(null);
     },

@@ -91,7 +91,7 @@ func toIntAny(v any) int {
 	return 0
 }
 
-// FetchSubscription 抓取订阅内容；viaProxy 时经 mihomo 混合端口请求
+// FetchSubscription 抓取订阅内容；proxyAddr 非空时经 mihomo 混合端口请求
 func FetchSubscription(rawURL, ua, proxyAddr string) (content, userInfo string, err error) {
 	transport := http.DefaultTransport
 	if proxyAddr != "" {
@@ -124,9 +124,36 @@ func FetchSubscription(rawURL, ua, proxyAddr string) (content, userInfo string, 
 	return string(body), resp.Header.Get("subscription-userinfo"), nil
 }
 
-// SyncSubscription 抓取并同步单个订阅的节点
+// FetchSubscriptionAuto 自动回退抓取：先按首选路径请求，失败且另一路径可用时换路径重试；
+// 两条路径都失败时返回合并错误，便于定位网络问题
+func FetchSubscriptionAuto(rawURL, ua string, preferProxy bool, proxyAddr string) (content, userInfo string, err error) {
+	if proxyAddr == "" { // 内核未运行，无备用路径，只能直连
+		content, userInfo, err = FetchSubscription(rawURL, ua, "")
+		if err != nil {
+			return "", "", fmt.Errorf("直连失败: %w", err)
+		}
+		return content, userInfo, nil
+	}
+	firstProxy, secondProxy := proxyAddr, ""
+	firstLabel, secondLabel := "经代理", "直连"
+	if !preferProxy {
+		firstProxy, secondProxy = "", proxyAddr
+		firstLabel, secondLabel = "直连", "经代理"
+	}
+	content, userInfo, err = FetchSubscription(rawURL, ua, firstProxy)
+	if err == nil {
+		return content, userInfo, nil
+	}
+	c2, u2, err2 := FetchSubscription(rawURL, ua, secondProxy)
+	if err2 == nil {
+		return c2, u2, nil
+	}
+	return "", "", fmt.Errorf("%s失败: %v；%s失败: %v", firstLabel, err, secondLabel, err2)
+}
+
+// SyncSubscription 抓取并同步单个订阅的节点；proxyAddr 非空（内核运行中）时支持直连/代理自动回退
 func SyncSubscription(st *store.Store, sub *model.Subscription, proxyAddr string) (added, removed int, err error) {
-	content, userInfo, err := FetchSubscription(sub.URL, sub.UserAgent, proxyAddr)
+	content, userInfo, err := FetchSubscriptionAuto(sub.URL, sub.UserAgent, sub.ViaProxy, proxyAddr)
 	if err != nil {
 		return 0, 0, err
 	}

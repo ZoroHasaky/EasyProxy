@@ -11,6 +11,7 @@ import (
 
 	"easyproxy/internal/core"
 	"easyproxy/internal/parser"
+	"easyproxy/internal/service"
 	"easyproxy/internal/update"
 )
 
@@ -151,21 +152,23 @@ func (s *Server) handleCoreRestart(w http.ResponseWriter, r *http.Request) {
 
 // ---------- 面板自更新 ----------
 
-func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
-	repo := s.st.GetSetting("update_repo", "")
-	if repo == "" {
-		writeErr(w, http.StatusBadRequest, "未配置更新源仓库（设置页）")
-		return
+// DefaultUpdateRepo 内置更新源：本项目官方仓库
+const DefaultUpdateRepo = "ZoroHasaky/EasyProxy"
+
+// updateRepo 返回生效的更新源仓库；用户配置为空时回退官方源
+func (s *Server) updateRepo() string {
+	if repo := strings.TrimSpace(s.st.GetSetting("update_repo", "")); repo != "" {
+		return repo
 	}
-	writeJSON(w, http.StatusOK, update.Check(repo, s.version))
+	return DefaultUpdateRepo
+}
+
+func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, update.Check(s.updateRepo(), s.version))
 }
 
 func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
-	repo := s.st.GetSetting("update_repo", "")
-	if repo == "" {
-		writeErr(w, http.StatusBadRequest, "未配置更新源仓库（设置页）")
-		return
-	}
+	repo := s.updateRepo()
 	rel, err := update.Apply(repo, s.version, s.dataDir)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -203,11 +206,17 @@ type settingsPayload struct {
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	ns := []string{}
-	s.st.GetSettingJSON("dns_nameserver", &ns)
+	if !s.st.GetSettingJSON("dns_nameserver", &ns) || len(ns) == 0 {
+		ns = service.DefaultNameservers()
+	}
 	fb := []string{}
-	s.st.GetSettingJSON("dns_fallback", &fb)
+	if !s.st.GetSettingJSON("dns_fallback", &fb) || len(fb) == 0 {
+		fb = service.DefaultFallbackDNS()
+	}
 	geox := map[string]string{}
-	s.st.GetSettingJSON("geox_urls", &geox)
+	if !s.st.GetSettingJSON("geox_urls", &geox) || len(geox) == 0 {
+		geox = service.DefaultGeoxURLs()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"mixed_port":     s.st.GetSettingInt("mixed_port", 7890),
 		"allow_lan":      s.st.GetSettingBool("allow_lan", true),
@@ -219,7 +228,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"dns_nameserver": ns,
 		"dns_fallback":   fb,
 		"geox_urls":      geox,
-		"update_repo":    s.st.GetSetting("update_repo", ""),
+		"update_repo":    s.updateRepo(),
 		"core_mirror":    s.st.GetSetting("core_mirror", ""),
 	})
 }
