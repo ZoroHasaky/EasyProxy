@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strconv"
 
-	"ezproxy/internal/core"
-	"ezproxy/internal/model"
-	"ezproxy/internal/parser"
-	"ezproxy/internal/service"
+	"easyproxy/internal/core"
+	"easyproxy/internal/model"
+	"easyproxy/internal/parser"
+	"easyproxy/internal/service"
 )
 
 // ---------- 订阅 ----------

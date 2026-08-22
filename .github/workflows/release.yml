@@ -59,17 +59,17 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           VERSION=$(cat ../VERSION | tr -d ' \n')
-          go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o /tmp/ezproxy ./cmd/server
+          go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o /tmp/easyproxy ./cmd/server
           cd /tmp
-          tar -czf "ezproxy-linux-${{ matrix.goarch }}.tar.gz" ezproxy
-          sha256sum "ezproxy-linux-${{ matrix.goarch }}.tar.gz" > "ezproxy-linux-${{ matrix.goarch }}.tar.gz.sha256"
+          tar -czf "easyproxy-linux-${{ matrix.goarch }}.tar.gz" easyproxy
+          sha256sum "easyproxy-linux-${{ matrix.goarch }}.tar.gz" > "easyproxy-linux-${{ matrix.goarch }}.tar.gz.sha256"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ezproxy-linux-${{ matrix.goarch }}
+          name: easyproxy-linux-${{ matrix.goarch }}
           path: |
-            /tmp/ezproxy-linux-${{ matrix.goarch }}.tar.gz
-            /tmp/ezproxy-linux-${{ matrix.goarch }}.tar.gz.sha256
+            /tmp/easyproxy-linux-${{ matrix.goarch }}.tar.gz
+            /tmp/easyproxy-linux-${{ matrix.goarch }}.tar.gz.sha256
 
   docker:
     needs: gate
@@ -87,6 +87,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image name (ghcr requires lowercase)
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -94,8 +97,8 @@ jobs:
           file: deploy/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:v${{ needs.gate.outputs.version }}
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:v${{ needs.gate.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

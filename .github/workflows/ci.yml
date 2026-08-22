@@ -36,4 +36,4 @@ jobs:
           go test ./...
 
       - name: Build docker image (verify only)
-        run: docker build -f deploy/Dockerfile -t ezproxy-ci .
+        run: docker build -f deploy/Dockerfile -t easyproxy-ci .

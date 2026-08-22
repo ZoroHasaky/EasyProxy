@@ -6,7 +6,7 @@ import { Toaster } from "sonner";
 import App from "./App";
 import "./index.css";
 
-if (localStorage.getItem("ezproxy-theme") === "light") {
+if (localStorage.getItem("easyproxy-theme") === "light") {
   document.documentElement.classList.remove("dark");
 }
 

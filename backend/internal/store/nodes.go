@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"ezproxy/internal/model"
+	"easyproxy/internal/model"
 )
 
 const nodeCols = `id,name,type,server,port,region,source_type,source_id,raw_config,dedup_hash,

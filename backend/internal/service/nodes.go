@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"ezproxy/internal/core"
-	"ezproxy/internal/model"
-	"ezproxy/internal/parser"
-	"ezproxy/internal/store"
+	"easyproxy/internal/core"
+	"easyproxy/internal/model"
+	"easyproxy/internal/parser"
+	"easyproxy/internal/store"
 )
 
 // NormalizeProxy 将 clash proxy 映射规范化为节点模型
@@ -106,7 +106,7 @@ func FetchSubscription(rawURL, ua, proxyAddr string) (content, userInfo string, 
 		return "", "", err
 	}
 	if ua == "" {
-		ua = "clash.meta/1.19.0 ezproxy"
+		ua = "clash.meta/1.19.0 EasyProxy"
 	}
 	req.Header.Set("User-Agent", ua)
 	resp, err := hc.Do(req)

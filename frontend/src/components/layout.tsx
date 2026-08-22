@@ -48,7 +48,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             ez
           </div>
           <div>
-            <div className="text-sm font-semibold leading-tight">ezproxy</div>
+            <div className="text-sm font-semibold leading-tight">EasyProxy</div>
             <div className="text-[11px] text-muted-foreground">v{meta.data?.version ?? "…"}</div>
           </div>
         </div>

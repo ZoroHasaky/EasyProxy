@@ -5,12 +5,12 @@
 #   - LAN 设备将网关/DNS 指向本机即可免配置走代理（或在面板开启 TUN 后按需设置）
 #   - 需要在面板「部署设置」中开启 TUN 开关后重启内核生效
 services:
-  ezproxy:
+  easyproxy:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    # image: ghcr.io/<owner>/ezproxy:latest
-    container_name: ezproxy
+    # image: ghcr.io/<owner>/easyproxy:latest
+    container_name: easyproxy
     network_mode: host
     cap_add:
       - NET_ADMIN

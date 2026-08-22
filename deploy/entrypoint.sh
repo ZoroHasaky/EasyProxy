@@ -1,5 +1,5 @@
 #!/bin/sh
 set -e
-DATA="${EZPROXY_DATA:-/data}"
+DATA="${EASYPROXY_DATA:-/data}"
 mkdir -p "$DATA"
-exec /app/ezproxy "$@"
+exec /app/easyproxy "$@"

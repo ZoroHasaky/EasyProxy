@@ -11,7 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const sessionCookie = "ezproxy_session"
+const sessionCookie = "easyproxy_session"
 
 type SessionManager struct {
 	mu       sync.Mutex

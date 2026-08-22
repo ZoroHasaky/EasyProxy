@@ -3,7 +3,7 @@ package store
 import (
 	"time"
 
-	"ezproxy/internal/model"
+	"easyproxy/internal/model"
 )
 
 func (s *Store) ListSubscriptions() ([]model.Subscription, error) {

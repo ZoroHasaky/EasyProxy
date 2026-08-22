@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"ezproxy/internal/core"
+	"easyproxy/internal/core"
 )
 
 // ExecNewest 若 /data/bin 中存在比当前版本新的面板二进制则 exec 切换（进程不退出，PID 不变）

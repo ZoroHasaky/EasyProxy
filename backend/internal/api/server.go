@@ -22,10 +22,10 @@ import (
 	"syscall"
 	"time"
 
-	"ezproxy/internal/core"
-	"ezproxy/internal/service"
-	"ezproxy/internal/store"
-	"ezproxy/internal/web"
+	"easyproxy/internal/core"
+	"easyproxy/internal/service"
+	"easyproxy/internal/store"
+	"easyproxy/internal/web"
 )
 
 type Server struct {

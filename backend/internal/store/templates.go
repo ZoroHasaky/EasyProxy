@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"ezproxy/internal/model"
+	"easyproxy/internal/model"
 )
 
 func (s *Store) activeTemplateID() int64 {

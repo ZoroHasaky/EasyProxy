@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"ezproxy/internal/core"
-	"ezproxy/internal/parser"
-	"ezproxy/internal/update"
+	"easyproxy/internal/core"
+	"easyproxy/internal/parser"
+	"easyproxy/internal/update"
 )
 
 // ---------- meta / regions ----------
@@ -294,7 +294,7 @@ func (s *Server) handleBackupExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=ezproxy-backup.json")
+	w.Header().Set("Content-Disposition", "attachment; filename=easyproxy-backup.json")
 	_ = json.NewEncoder(w).Encode(data)
 }
 

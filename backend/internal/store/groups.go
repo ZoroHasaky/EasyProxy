@@ -1,7 +1,7 @@
 package store
 
 import (
-	"ezproxy/internal/model"
+	"easyproxy/internal/model"
 )
 
 func (s *Store) ListGroups() ([]model.Group, error) {

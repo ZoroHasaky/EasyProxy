@@ -1,4 +1,4 @@
-module ezproxy
+module easyproxy
 
 go 1.23
 

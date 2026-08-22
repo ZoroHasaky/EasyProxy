@@ -6,9 +6,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"ezproxy/internal/model"
-	"ezproxy/internal/parser"
-	"ezproxy/internal/store"
+	"easyproxy/internal/model"
+	"easyproxy/internal/parser"
+	"easyproxy/internal/store"
 )
 
 // ParsedTemplate 模板解析结果

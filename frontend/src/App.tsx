@@ -27,7 +27,7 @@ function Me() {
   if (me.isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background text-muted-foreground">
-        ezproxy 加载中…
+        EasyProxy 加载中…
       </div>
     );
   }

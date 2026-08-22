@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"ezproxy/internal/core"
+	"easyproxy/internal/core"
 )
 
 const githubAPI = "https://api.github.com"
@@ -111,7 +111,7 @@ func download(ctx context.Context, url string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(resp.Body, 500<<20))
 }
 
-// Apply 下载最新版并安装到 dataDir/bin/ezproxy-{version}；成功后由调用方 exec 切换
+// Apply 下载最新版并安装到 dataDir/bin/easyproxy-{version}；成功后由调用方 exec 切换
 func Apply(repo, current, dataDir string) (*Release, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -124,7 +124,7 @@ func Apply(repo, current, dataDir string) (*Release, error) {
 		return nil, fmt.Errorf("当前已是最新版本 %s", current)
 	}
 	arch := runtime.GOARCH
-	tarName := fmt.Sprintf("ezproxy-linux-%s.tar.gz", arch)
+	tarName := fmt.Sprintf("easyproxy-linux-%s.tar.gz", arch)
 	tarURL := assetURL(rel, tarName)
 	if tarURL == "" {
 		return nil, fmt.Errorf("Release 中缺少资源 %s", tarName)
@@ -173,7 +173,7 @@ func Apply(repo, current, dataDir string) (*Release, error) {
 	if err := os.MkdirAll(filepath.Join(dataDir, "bin"), 0o755); err != nil {
 		return nil, err
 	}
-	target := filepath.Join(dataDir, "bin", "ezproxy-"+latest)
+	target := filepath.Join(dataDir, "bin", "easyproxy-"+latest)
 	if err := os.WriteFile(target, bin, 0o755); err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func Apply(repo, current, dataDir string) (*Release, error) {
 	return rel, nil
 }
 
-var binVerRe = regexp.MustCompile(`ezproxy-v?(\d+\.\d+\.\d+)$`)
+var binVerRe = regexp.MustCompile(`easyproxy-v?(\d+\.\d+\.\d+)$`)
 
 // Cleanup 只保留当前版本与最新一个已下载版本，其余删除
 func Cleanup(dataDir, current string) {

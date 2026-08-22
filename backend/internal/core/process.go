@@ -169,11 +169,11 @@ func (m *Manager) autoRestart() {
 		if delay > 30*time.Second {
 			delay = 30 * time.Second
 		}
-		m.writeLog(fmt.Sprintf("[ezproxy] 内核异常退出，%.0f 秒后第 %d 次重启", wait.Seconds(), n))
+		m.writeLog(fmt.Sprintf("[easyproxy] 内核异常退出，%.0f 秒后第 %d 次重启", wait.Seconds(), n))
 		time.Sleep(wait)
 
 		if err := m.Start(); err != nil {
-			m.writeLog("[ezproxy] 内核重启失败: " + err.Error())
+			m.writeLog("[easyproxy] 内核重启失败: " + err.Error())
 			continue
 		}
 		return

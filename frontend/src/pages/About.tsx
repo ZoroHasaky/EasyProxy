@@ -61,7 +61,7 @@ export default function AboutPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            ezproxy
+            easyproxy
             <Badge variant="secondary">v{meta.data?.version ?? "…"}</Badge>
           </CardTitle>
           <CardDescription>节点聚合 · 可视化规则 · mihomo 代理面板</CardDescription>
@@ -80,7 +80,7 @@ export default function AboutPage() {
         <CardContent className="flex items-end gap-3">
           <div className="flex-1 space-y-1.5">
             <Label>仓库</Label>
-            <Input value={repoValue} onChange={(e) => setRepo(e.target.value)} placeholder="yourname/ezproxy" />
+            <Input value={repoValue} onChange={(e) => setRepo(e.target.value)} placeholder="yourname/easyproxy" />
           </div>
           <Button variant="outline" onClick={() => saveRepo.mutate()}>保存</Button>
           <Button onClick={() => check.mutate()} disabled={check.isPending || !repoValue}>

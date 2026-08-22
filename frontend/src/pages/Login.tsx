@@ -34,11 +34,11 @@ export default function LoginPage({ onDone }: { onDone: () => void }) {
           <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-white">
             <Lock className="h-5 w-5" />
           </div>
-          <CardTitle className="text-xl">ezproxy 登录</CardTitle>
+          <CardTitle className="text-xl">EasyProxy 登录</CardTitle>
           <CardDescription>
             首次启动的初始密码请查看 Docker 日志
             <br />
-            <code className="text-xs">docker logs ezproxy</code>
+            <code className="text-xs">docker logs easyproxy</code>
           </CardDescription>
         </CardHeader>
         <CardContent>

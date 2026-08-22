@@ -16,14 +16,14 @@ COPY --from=web /web/dist/ ./internal/web/dist/
 COPY VERSION /src/VERSION
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.version=$(cat VERSION)" \
-    -o /out/ezproxy ./cmd/server
+    -o /out/easyproxy ./cmd/server
 
 # ---- runtime ----
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
-COPY --from=build /out/ezproxy /app/ezproxy
+COPY --from=build /out/easyproxy /app/easyproxy
 COPY deploy/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh /app/ezproxy
-ENV EZPROXY_DATA=/data
+RUN chmod +x /app/entrypoint.sh /app/easyproxy
+ENV EASYPROXY_DATA=/data
 EXPOSE 8080 7890
 ENTRYPOINT ["/app/entrypoint.sh"]

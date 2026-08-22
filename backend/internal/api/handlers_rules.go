@@ -6,9 +6,9 @@ import (
 	"os"
 	"strconv"
 
-	"ezproxy/internal/core"
-	"ezproxy/internal/model"
-	"ezproxy/internal/service"
+	"easyproxy/internal/core"
+	"easyproxy/internal/model"
+	"easyproxy/internal/service"
 )
 
 // ---------- 模板 ----------

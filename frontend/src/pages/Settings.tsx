@@ -42,7 +42,7 @@ export default function SettingsPage() {
     const next = !dark;
     setDark(next);
     document.documentElement.classList.toggle("dark", next);
-    localStorage.setItem("ezproxy-theme", next ? "dark" : "light");
+    localStorage.setItem("easyproxy-theme", next ? "dark" : "light");
   };
 
   return (

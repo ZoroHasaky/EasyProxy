@@ -9,8 +9,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"ezproxy/internal/model"
-	"ezproxy/internal/store"
+	"easyproxy/internal/model"
+	"easyproxy/internal/store"
 )
 
 const (
@@ -67,7 +67,7 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("# 由 ezproxy 自动生成，手动修改会被覆盖\n\n")
+	sb.WriteString("# 由 EasyProxy 自动生成，手动修改会被覆盖\n\n")
 
 	mixedPort := st.GetSettingInt("mixed_port", 7890)
 	allowLan := st.GetSettingBool("allow_lan", true)

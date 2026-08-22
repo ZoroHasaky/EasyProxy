@@ -8,9 +8,9 @@ import (
 	"os"
 	"runtime"
 
-	"ezproxy/internal/api"
-	"ezproxy/internal/store"
-	"ezproxy/internal/update"
+	"easyproxy/internal/api"
+	"easyproxy/internal/store"
+	"easyproxy/internal/update"
 )
 
 var version = "dev"
@@ -27,8 +27,8 @@ func main() {
 	if runtime.GOOS == "windows" {
 		defData = "./data"
 	}
-	dataDir := flag.String("data", envOr("EZPROXY_DATA", defData), "数据目录")
-	addr := flag.String("addr", envOr("EZPROXY_ADDR", ":8080"), "监听地址")
+	dataDir := flag.String("data", envOr("EASYPROXY_DATA", defData), "数据目录")
+	addr := flag.String("addr", envOr("EASYPROXY_ADDR", ":8080"), "监听地址")
 	showVersion := flag.Bool("version", false, "显示版本号")
 	flag.Parse()
 
@@ -38,7 +38,7 @@ func main() {
 	}
 
 	log.SetFlags(log.LstdFlags)
-	log.Printf("ezproxy %s 启动中 (data=%s, addr=%s, %s/%s)",
+	log.Printf("EasyProxy %s 启动中 (data=%s, addr=%s, %s/%s)",
 		version, *dataDir, *addr, runtime.GOOS, runtime.GOARCH)
 
 	// 若 /data/bin 中存在更新版本的面板二进制则切换（Linux）
