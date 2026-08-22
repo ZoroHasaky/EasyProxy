@@ -1,0 +1,23 @@
+# 软路由透明代理模式：mihomo TUN (auto-route + auto-redirect)
+# 使用：docker compose -f deploy/docker-compose.router.yml up -d
+# 说明：
+#   - host 网络使 TUN 接管本机及转发流量
+#   - LAN 设备将网关/DNS 指向本机即可免配置走代理（或在面板开启 TUN 后按需设置）
+#   - 需要在面板「部署设置」中开启 TUN 开关后重启内核生效
+services:
+  ezproxy:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    # image: ghcr.io/<owner>/ezproxy:latest
+    container_name: ezproxy
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      - net.ipv4.ip_forward=1
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

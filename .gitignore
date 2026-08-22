@@ -1,0 +1,23 @@
+# frontend
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# backend embed: 只保留占位文件
+backend/internal/web/dist/*
+!backend/internal/web/dist/placeholder.html
+
+# local runtime data
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# build artifacts
+*.exe
+*.tar.gz
+*.gz
+
+# misc
+.env
+.DS_Store

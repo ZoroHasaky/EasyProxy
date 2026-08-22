@@ -1,0 +1,15 @@
+# 普通代理模式：设备手动设置 HTTP/SOCKS 代理指向宿主机 7890 端口
+# 使用：docker compose -f deploy/docker-compose.yml up -d
+services:
+  ezproxy:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    # image: ghcr.io/<owner>/ezproxy:latest
+    container_name: ezproxy
+    ports:
+      - "8080:8080" # 面板
+      - "7890:7890" # 混合代理端口 (HTTP/SOCKS5)
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

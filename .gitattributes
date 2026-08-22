@@ -1,0 +1,15 @@
+# 统一换行符：shell 脚本/Dockerfile 必须保持 LF，否则容器内执行失败
+* text=auto
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.go text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+VERSION text eol=lf

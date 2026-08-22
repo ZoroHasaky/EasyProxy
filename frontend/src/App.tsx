@@ -1,0 +1,70 @@
+import { useEffect, useState } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { api, ApiError } from "@/lib/api";
+import { Layout } from "@/components/layout";
+import LoginPage from "@/pages/Login";
+import ChangePasswordPage from "@/pages/ChangePassword";
+import DashboardPage from "@/pages/Dashboard";
+import SubscriptionsPage from "@/pages/Subscriptions";
+import NodesPage from "@/pages/Nodes";
+import RulesPage from "@/pages/Rules";
+import GroupsPage from "@/pages/Groups";
+import ConnectionsPage from "@/pages/Connections";
+import DeployPage from "@/pages/Deploy";
+import LogsPage from "@/pages/Logs";
+import SettingsPage from "@/pages/Settings";
+import AboutPage from "@/pages/About";
+
+function Me() {
+  const me = useQuery({
+    queryKey: ["me"],
+    queryFn: () => api.get<{ authenticated: boolean; must_change_password: boolean }>("/api/me"),
+    retry: false,
+    refetchInterval: 30_000,
+  });
+
+  if (me.isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background text-muted-foreground">
+        ezproxy 加载中…
+      </div>
+    );
+  }
+  if (me.isError || !me.data?.authenticated) {
+    return <LoginPage onDone={() => me.refetch()} />;
+  }
+  if (me.data.must_change_password) {
+    return <ChangePasswordPage onDone={() => me.refetch()} />;
+  }
+  return (
+    <Layout>
+      <Routes>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/subscriptions" element={<SubscriptionsPage />} />
+        <Route path="/nodes" element={<NodesPage />} />
+        <Route path="/rules" element={<RulesPage />} />
+        <Route path="/groups" element={<GroupsPage />} />
+        <Route path="/connections" element={<ConnectionsPage />} />
+        <Route path="/deploy" element={<DeployPage />} />
+        <Route path="/logs" element={<LogsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Layout>
+  );
+}
+
+export default function App() {
+  const [fatal, setFatal] = useState<string>("");
+  useEffect(() => {
+    api.get("/api/meta").catch((e) => {
+      if (e instanceof ApiError && e.status === 0) setFatal("无法连接后端服务");
+    });
+  }, []);
+  if (fatal) {
+    return <div className="flex h-screen items-center justify-center text-destructive">{fatal}</div>;
+  }
+  return <Me />;
+}
