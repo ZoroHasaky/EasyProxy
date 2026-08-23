@@ -110,6 +110,15 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 	fmt.Fprintf(&sb, "  enable: %t\n  stack: %s\n  auto-route: true\n  auto-redirect: true\n", tunEnable, tunStack)
 	sb.WriteString("  auto-detect-interface: true\n  strict-route: true\n  dns-hijack:\n    - any:53\n    - tcp://any:53\n\n")
 
+	// 嗅探流量还原域名：透明代理下客户端 DNS 常绕过劫持拿到真实 IP，
+	// 连接进 TUN 时只有裸 IP，经 CDN/ingress 类节点转发会被重置；开启 sniffer 后按 SNI/Host 还原域名
+	sb.WriteString("sniffer:\n")
+	sb.WriteString("  enable: true\n  override-destination: true\n  sniff:\n")
+	sb.WriteString("    TLS:\n      ports: [443, 8443]\n")
+	sb.WriteString("    QUIC:\n      ports: [443, 8443]\n")
+	sb.WriteString("    HTTP:\n      ports: [80, 8080-8880]\n      override-destination: true\n")
+	sb.WriteString("\n")
+
 	dnsEnable := st.GetSettingBool("dns_enable", true)
 	dnsMode := st.GetSetting("dns_mode", "fake-ip")
 	ns := []string{}
