@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"net"
 	"regexp"
 	"sort"
 	"strconv"
@@ -57,6 +58,16 @@ func defaultFallbackDNS() []string {
 // DefaultFallbackDNS 导出默认 fallback DNS 列表
 func DefaultFallbackDNS() []string {
 	return []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"}
+}
+
+// detectLANIP 返回默认出站接口的本机 IP（UDP 拨号选路，不实际发包）
+func detectLANIP() string {
+	conn, err := net.Dial("udp", "223.5.5.5:53")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	return conn.LocalAddr().(*net.UDPAddr).IP.String()
 }
 
 // GenerateConfig 依据节点池/策略组/规则模板/设置生成最终 mihomo 配置
@@ -129,8 +140,16 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 	if !st.GetSettingJSON("dns_fallback", &fallback) {
 		fallback = defaultFallbackDNS()
 	}
+	// 透明代理模式下 DNS 直接监听局域网 IP 的 53 端口：局域网设备把 DNS 指向本机即可用；
+	// 绑定具体 IP 而非 0.0.0.0，避免与 systemd-resolved 的 127.0.0.53:53 冲突
+	dnsListen := "0.0.0.0:1053"
+	if dnsEnable && tunEnable {
+		if ip := detectLANIP(); ip != "" {
+			dnsListen = ip + ":53"
+		}
+	}
 	sb.WriteString("dns:\n")
-	fmt.Fprintf(&sb, "  enable: %t\n  listen: 0.0.0.0:1053\n  enhanced-mode: %s\n", dnsEnable, dnsMode)
+	fmt.Fprintf(&sb, "  enable: %t\n  listen: %s\n  enhanced-mode: %s\n", dnsEnable, dnsListen, dnsMode)
 	if dnsMode == "fake-ip" {
 		sb.WriteString("  fake-ip-range: 198.18.0.1/16\n  fake-ip-filter:\n    - '*.lan'\n    - '+.local'\n")
 	}
