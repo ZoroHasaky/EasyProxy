@@ -15,8 +15,8 @@ services:
     #   - NET_ADMIN               # 必需：创建 TUN 网卡的能力
     # devices:
     #   - /dev/net/tun:/dev/net/tun  # 必需：TUN 设备
-    # sysctls:
-    #   - net.ipv4.ip_forward=1   # 软路由转发需要
+    # 注：host 网络模式不允许 compose 设置 sysctl；如需转发请确认宿主机已开启
+    # net.ipv4.ip_forward=1（多数发行版/PVE 默认已开启）
     ports:
       - "8080:8080" # 面板
       - "7890:7890" # 混合代理端口 (HTTP/SOCKS5)

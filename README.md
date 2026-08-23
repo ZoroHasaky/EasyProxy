@@ -27,8 +27,8 @@ docker compose up -d
 
 `docker-compose.yml` 内已内置 TUN 所需配置（注释状态）。启用步骤：
 
-1. 编辑 compose 文件，取消 `network_mode: host`、`cap_add: NET_ADMIN`、`devices: /dev/net/tun` 各行的注释（软路由场景同时取消 `sysctls: net.ipv4.ip_forward=1`）
-2. 注释掉 `ports:` 段（host 网络与端口映射互斥，端口直接监听在宿主机上）
+1. 编辑 compose 文件，取消 `network_mode: host`、`cap_add: NET_ADMIN`、`devices: /dev/net/tun` 各行的注释
+2. 注释掉 `ports:` 段（host 网络与端口映射互斥，端口直接监听在宿主机上；host 模式下 compose 不能设置 sysctl，如需转发请确认宿主机 `net.ipv4.ip_forward=1` 已开启，多数发行版/PVE 默认开启）
 3. `docker compose up -d` 重建容器，到面板 **透明代理** 页打开 TUN 开关（会自动预检 /dev/net/tun 与 NET_ADMIN 权限），再到 **内核** 页应用配置
 4. LAN 设备把网关/DNS 指向本机即可免配置走代理
 

@@ -18,8 +18,8 @@ services:
     #   - NET_ADMIN
     # devices:                    # 透明代理：取消注释
     #   - /dev/net/tun:/dev/net/tun
-    # sysctls:                    # 透明代理：取消注释（软路由转发需要）
-    #   - net.ipv4.ip_forward=1
+    # 注：host 网络模式不允许 compose 设置 sysctl；如需转发请确认宿主机已开启
+    # net.ipv4.ip_forward=1（多数发行版/PVE 默认已开启）
     volumes:
       - ./data:/data
     restart: unless-stopped
