@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/websocket"
 )
@@ -41,7 +42,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+s.st.GetSetting("controller_secret", ""))
-	remote, _, err := websocket.DefaultDialer.Dial(s.client.BaseURL()+target, header)
+	// gorilla Dial 只接受 ws:// 或 wss://，客户端基址是 http:// 需转换
+	wsURL := strings.Replace(s.client.BaseURL()+target, "https://", "wss://", 1)
+	wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
+	remote, _, err := websocket.DefaultDialer.Dial(wsURL, header)
 	if err != nil {
 		_ = clientConn.WriteJSON(map[string]any{"type": "error", "payload": "内核不可达: " + err.Error()})
 		return
