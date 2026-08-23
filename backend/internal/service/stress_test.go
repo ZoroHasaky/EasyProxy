@@ -43,14 +43,16 @@ func TestConcurrentStoreOps(t *testing.T) {
 					return
 				default:
 				}
-				done := make(chan struct{})
-				go func() { fn(); close(done) }()
-				select {
-				case <-done:
-				case <-time.After(3 * time.Second):
-					t.Errorf("操作 %s 阻塞超过 3 秒（连接池被占死）", name)
-					return
-				}
+                done := make(chan struct{})
+                go func() { fn(); close(done) }()
+                select {
+                case <-done:
+                case <-time.After(10 * time.Second):
+                    // 阈值需大于 busy_timeout(5s)：并发写串行等待是正常的，
+                    // 这里只捕获连接泄漏导致的永久阻塞
+                    t.Errorf("操作 %s 阻塞超过 10 秒（连接池被占死）", name)
+                    return
+                }
 			}
 		}()
 	}

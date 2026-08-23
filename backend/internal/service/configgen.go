@@ -215,6 +215,23 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 	}
 	ruleCount := 0
 	hasMatch := false
+	// TUN 模式下必须保证局域网/本机回环直连，否则 MATCH 兜底会把 SSH/面板等
+	// 内网流量也丢给代理，导致宿主机失联；即使模板为空也要先注入这些安全规则
+	if tunEnable {
+		for _, r := range []string{
+			"IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
+			"IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
+			"IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
+			"IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
+			"IP-CIDR,169.254.0.0/16,DIRECT,no-resolve",
+			"IP-CIDR,224.0.0.0/4,DIRECT,no-resolve",
+			"IP-CIDR,::1/128,DIRECT,no-resolve",
+			"IP-CIDR,fe80::/10,DIRECT,no-resolve",
+		} {
+			sb.WriteString("  - " + quote(r) + "\n")
+			ruleCount++
+		}
+	}
 	for _, r := range rules {
 		if !r.Enabled || r.Kind == "" {
 			continue
