@@ -84,7 +84,9 @@ type RuleProvider struct {
 	URL        string `json:"url"`
 	Behavior   string `json:"behavior"`
 	Format     string `json:"format"`
-	Interval   int    `json:"interval"` // 秒
+	Interval   int    `json:"interval"`         // 秒
+	Status     string `json:"status,omitempty"` // downloaded | not_downloaded | not_loaded | core_stopped | unknown
+	RuleCount  int    `json:"rule_count,omitempty"`
 }
 
 type Group struct {

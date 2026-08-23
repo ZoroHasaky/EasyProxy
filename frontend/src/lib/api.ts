@@ -12,7 +12,8 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
     method,
     credentials: "same-origin",
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    headers:
+      body !== undefined ? { "Content-Type": "application/json" } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (res.status === 204) return undefined as T;
@@ -32,9 +33,14 @@ export const api = {
   upload: async <T>(url: string, file: File, field = "file"): Promise<T> => {
     const fd = new FormData();
     fd.append(field, file);
-    const res = await fetch(url, { method: "POST", body: fd, credentials: "same-origin" });
+    const res = await fetch(url, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+    });
     const data = await res.json().catch(() => undefined);
-    if (!res.ok) throw new ApiError(data?.error ?? `HTTP ${res.status}`, res.status);
+    if (!res.ok)
+      throw new ApiError(data?.error ?? `HTTP ${res.status}`, res.status);
     return data as T;
   },
 };
@@ -127,6 +133,29 @@ export interface RuleProvider {
   behavior: string;
   format: string;
   interval: number;
+  status?:
+    | "downloaded"
+    | "not_downloaded"
+    | "not_loaded"
+    | "core_stopped"
+    | "unknown";
+  rule_count?: number;
+}
+
+export interface RuleTemplatePreview {
+  rules: Rule[];
+  providers: RuleProvider[];
+  targets: string[];
+  mapping: Record<string, string>;
+}
+
+export interface RuleProviderContent {
+  provider: RuleProvider;
+  expandable: boolean;
+  items: string[];
+  total: number;
+  page: number;
+  size: number;
 }
 
 export interface ProxyGroup {
@@ -146,7 +175,6 @@ export interface ProxyGroup {
 export interface RulesPayload {
   rules: Rule[];
   providers: RuleProvider[];
-  active_template: { id: number; name: string; mapping: Record<string, string> } | null;
 }
 
 export interface GenResult {
@@ -209,7 +237,15 @@ export interface UpdateCheck {
 }
 
 export interface UpdateStatus {
-  state: "idle" | "checking" | "downloading" | "verifying" | "installing" | "restarting" | "ready" | "error";
+  state:
+    | "idle"
+    | "checking"
+    | "downloading"
+    | "verifying"
+    | "installing"
+    | "restarting"
+    | "ready"
+    | "error";
   running: boolean;
   completed: number;
   total: number;
@@ -266,7 +302,8 @@ export const mihomo = {
   proxies: () => api.get<MihomoProxiesResp>("/api/mihomo/proxies"),
   select: (group: string, name: string) =>
     api.put(`/api/mihomo/proxies/${encodeURIComponent(group)}`, { name }),
-  closeConn: (id: string) => api.del(`/api/mihomo/connections/${encodeURIComponent(id)}`),
+  closeConn: (id: string) =>
+    api.del(`/api/mihomo/connections/${encodeURIComponent(id)}`),
   closeAllConns: () => api.del("/api/mihomo/connections"),
   patchMode: (mode: string) => api.patch("/api/mihomo/configs", { mode }),
 };

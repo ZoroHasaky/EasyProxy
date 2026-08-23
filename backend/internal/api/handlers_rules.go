@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"easyproxy/internal/core"
 	"easyproxy/internal/model"
@@ -150,37 +151,29 @@ func (s *Server) handleDeleteTemplate(w http.ResponseWriter, r *http.Request) {
 // ---------- 规则 ----------
 
 func (s *Server) handleGetRules(w http.ResponseWriter, r *http.Request) {
-	tpl, err := s.st.GetActiveTemplate()
+	rules, err := s.st.ListCurrentRules()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if tpl == nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"rules": []any{}, "providers": []any{}, "active_template": nil,
-		})
+	providers, err := s.st.ListCurrentRuleProviders()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	rules, _ := s.st.ListRules(tpl.ID)
-	providers, _ := s.st.ListRuleProviders(tpl.ID)
 	if rules == nil {
 		rules = []model.Rule{}
 	}
 	if providers == nil {
 		providers = []model.RuleProvider{}
 	}
+	s.enrichRuleProviderStatus(providers)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"rules": rules, "providers": providers,
-		"active_template": map[string]any{"id": tpl.ID, "name": tpl.Name, "mapping": tpl.Mapping},
 	})
 }
 
 func (s *Server) handlePutRules(w http.ResponseWriter, r *http.Request) {
-	tpl, err := s.st.GetActiveTemplate()
-	if err != nil || tpl == nil {
-		writeErr(w, http.StatusBadRequest, "没有激活的模板")
-		return
-	}
 	var req struct {
 		Rules     []model.Rule         `json:"rules"`
 		Providers []model.RuleProvider `json:"providers"`
@@ -189,27 +182,142 @@ func (s *Server) handlePutRules(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
-	for i := range req.Rules {
-		rule := &req.Rules[i]
-		if rule.Kind == "" {
-			writeErr(w, http.StatusBadRequest, "存在缺少类型的规则")
-			return
-		}
-		if rule.Target == "" {
-			writeErr(w, http.StatusBadRequest, "存在缺少目标的规则")
-			return
-		}
-		if rule.BaseTarget == "" {
-			rule.BaseTarget = rule.Target
-		}
-		rule.TargetOverride = rule.Target != rule.BaseTarget
-	}
-	if err := s.st.ReplaceRules(tpl.ID, req.Rules, req.Providers); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+	if err := s.st.ReplaceCurrentRules(req.Rules, req.Providers); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	s.dirty.Store(true)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(req.Rules)})
+}
+
+func (s *Server) handlePreviewRuleTemplate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL     string `json:"url"`
+		Content string `json:"content"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+	content := strings.TrimSpace(req.Content)
+	if strings.TrimSpace(req.URL) != "" {
+		var err error
+		content, err = s.fetchTemplateContent(strings.TrimSpace(req.URL), "")
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "模板下载失败: "+err.Error())
+			return
+		}
+	}
+	if content == "" {
+		writeErr(w, http.StatusBadRequest, "请提供模板 URL 或内容")
+		return
+	}
+	parsed, err := service.ParseTemplateContent(content)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	groups, err := s.st.ListGroups()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	mapping := map[string]string{}
+	for _, target := range parsed.Targets {
+		mapping[target] = service.SuggestMapping(target, groups)
+	}
+	for i := range parsed.Rules {
+		parsed.Rules[i].ID = int64(i + 1)
+		parsed.Rules[i].TemplateID = 0
+		parsed.Rules[i].BaseTarget = parsed.Rules[i].Target
+	}
+	for i := range parsed.Providers {
+		parsed.Providers[i].ID = 0
+		parsed.Providers[i].TemplateID = 0
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"rules": parsed.Rules, "providers": parsed.Providers,
+		"targets": parsed.Targets, "mapping": mapping,
+	})
+}
+
+func (s *Server) enrichRuleProviderStatus(providers []model.RuleProvider) {
+	state := s.mgr.Status().State
+	if state != core.StateRunning {
+		for i := range providers {
+			providers[i].Status = "core_stopped"
+		}
+		return
+	}
+	runtimeProviders, err := s.client.GetRuleProviders()
+	if err != nil {
+		for i := range providers {
+			providers[i].Status = "unknown"
+		}
+		return
+	}
+	applyRuleProviderRuntimeStatus(providers, runtimeProviders)
+}
+
+func applyRuleProviderRuntimeStatus(providers []model.RuleProvider, runtimeProviders map[string]core.RuleProviderRuntime) {
+	for i := range providers {
+		state, ok := runtimeProviders[providers[i].Name]
+		if !ok {
+			providers[i].Status = "not_loaded"
+			continue
+		}
+		providers[i].RuleCount = state.RuleCount
+		if state.UpdatedAt != "" || state.RuleCount > 0 {
+			providers[i].Status = "downloaded"
+		} else {
+			providers[i].Status = "not_downloaded"
+		}
+	}
+}
+
+func (s *Server) handleRuleProviderStatuses(w http.ResponseWriter, r *http.Request) {
+	providers, err := s.st.ListCurrentRuleProviders()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.enrichRuleProviderStatus(providers)
+	writeJSON(w, http.StatusOK, providers)
+}
+
+func (s *Server) handleRuleProviderContent(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	provider, err := s.st.GetCurrentRuleProvider(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "规则集来源不存在")
+		return
+	}
+	providers := []model.RuleProvider{*provider}
+	s.enrichRuleProviderStatus(providers)
+	provider = &providers[0]
+	if strings.EqualFold(provider.Format, "mrs") {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"provider": provider, "expandable": false,
+			"items": []string{}, "total": 0, "page": 1, "size": 0,
+		})
+		return
+	}
+	content, err := s.fetchTemplateContent(provider.URL, "")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "规则集下载失败: "+err.Error())
+		return
+	}
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
+	result, err := service.ParseRuleProviderContent(content, provider.Format, r.URL.Query().Get("q"), page, size)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"provider": provider, "expandable": true,
+		"items": result.Items, "total": result.Total, "page": result.Page, "size": result.Size,
+	})
 }
 
 func (s *Server) handleGetRuleTargets(w http.ResponseWriter, r *http.Request) {

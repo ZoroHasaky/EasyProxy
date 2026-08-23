@@ -17,6 +17,15 @@ type Client struct {
 	hc     *http.Client
 }
 
+type RuleProviderRuntime struct {
+	Name        string `json:"name"`
+	Behavior    string `json:"behavior"`
+	Format      string `json:"format"`
+	RuleCount   int    `json:"ruleCount"`
+	UpdatedAt   string `json:"updatedAt"`
+	VehicleType string `json:"vehicleType"`
+}
+
 func NewClient(port int, secret string) *Client {
 	return &Client{
 		base:   fmt.Sprintf("http://127.0.0.1:%d", port),
@@ -78,6 +87,19 @@ func (c *Client) Version() (string, error) {
 
 func (c *Client) GetConfigs(out *map[string]any) error {
 	return c.do(http.MethodGet, "/configs", nil, out)
+}
+
+func (c *Client) GetRuleProviders() (map[string]RuleProviderRuntime, error) {
+	var out struct {
+		Providers map[string]RuleProviderRuntime `json:"providers"`
+	}
+	if err := c.do(http.MethodGet, "/providers/rules", nil, &out); err != nil {
+		return nil, err
+	}
+	if out.Providers == nil {
+		out.Providers = map[string]RuleProviderRuntime{}
+	}
+	return out.Providers, nil
 }
 
 // ReloadConfig 热重载指定路径的配置

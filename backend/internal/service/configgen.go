@@ -280,29 +280,32 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 		sb.WriteString("\n")
 	}
 
-	tpl, err := st.GetActiveTemplate()
+	rules, err := st.ListCurrentRules()
 	if err != nil {
 		return nil, err
 	}
-	var rules []model.Rule
-	var providers []model.RuleProvider
-	if tpl != nil {
-		if rules, err = st.ListRules(tpl.ID); err != nil {
-			return nil, err
-		}
-		if providers, err = st.ListRuleProviders(tpl.ID); err != nil {
-			return nil, err
+	providers, err := st.ListCurrentRuleProviders()
+	if err != nil {
+		return nil, err
+	}
+	providerNames := map[string]bool{}
+	for _, p := range providers {
+		providerNames[p.Name] = true
+	}
+	for _, r := range rules {
+		if r.Enabled && strings.EqualFold(r.Kind, "RULE-SET") && !providerNames[r.Value] {
+			return nil, fmt.Errorf("规则集规则引用了不存在的来源：%s", r.Value)
 		}
 	}
 
-	if len(providers) > 0 && len(deduped) > 0 {
+	if len(providers) > 0 {
 		sb.WriteString("rule-providers:\n")
 		for _, p := range providers {
 			if p.URL == "" {
 				continue
 			}
 			fmt.Fprintf(&sb, "  %s:\n    type: http\n    behavior: %s\n    format: %s\n    url: %s\n    interval: %d\n    path: %s\n",
-				p.Name, p.Behavior, p.Format, quote(p.URL), p.Interval, quote("./ruleset/"+sanitizeFilename(p.Name)+".yaml"))
+				quote(p.Name), p.Behavior, p.Format, quote(p.URL), p.Interval, quote(ruleProviderPath(p)))
 		}
 		sb.WriteString("\n")
 	}
@@ -520,4 +523,15 @@ func sanitizeFilename(s string) string {
 		s = "ruleset"
 	}
 	return s
+}
+
+func ruleProviderPath(provider model.RuleProvider) string {
+	ext := ".yaml"
+	switch strings.ToLower(provider.Format) {
+	case "mrs":
+		ext = ".mrs"
+	case "text":
+		ext = ".txt"
+	}
+	return "./ruleset/" + sanitizeFilename(provider.Name) + ext
 }

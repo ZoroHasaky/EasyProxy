@@ -243,7 +243,10 @@ func (s *Server) Handler() http.Handler {
 
 	route("GET /api/rules", s.handleGetRules)
 	route("PUT /api/rules", s.handlePutRules)
+	route("POST /api/rules/template-preview", s.handlePreviewRuleTemplate)
 	route("GET /api/rule-targets", s.handleGetRuleTargets)
+	route("GET /api/rule-providers/status", s.handleRuleProviderStatuses)
+	route("GET /api/rule-providers/{id}/content", s.handleRuleProviderContent)
 	route("GET /api/groups", s.handleGetGroups)
 	route("PUT /api/groups", s.handlePutGroups)
 	route("POST /api/groups/generate-regions", s.handleGenerateRegionGroups)

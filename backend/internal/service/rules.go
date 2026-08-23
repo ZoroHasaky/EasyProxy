@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -16,6 +17,13 @@ type ParsedTemplate struct {
 	Rules     []model.Rule
 	Providers []model.RuleProvider
 	Targets   []string // 模板中引用的非内置目标名（去重有序）
+}
+
+type RuleProviderContent struct {
+	Items []string `json:"items"`
+	Total int      `json:"total"`
+	Page  int      `json:"page"`
+	Size  int      `json:"size"`
 }
 
 // ParseTemplateContent 解析模板 YAML 中的 rules 与 rule-providers
@@ -91,7 +99,65 @@ func ParseTemplateContent(content string) (*ParsedTemplate, error) {
 			Name: name, URL: p.URL, Behavior: behavior, Format: format, Interval: interval,
 		})
 	}
+	sort.Slice(out.Providers, func(i, j int) bool { return out.Providers[i].Name < out.Providers[j].Name })
 	return out, nil
+}
+
+// ParseRuleProviderContent 将 YAML/Text 规则集转换为可分页展示的文本条目。
+func ParseRuleProviderContent(content, format, query string, page, size int) (*RuleProviderContent, error) {
+	var items []string
+	switch strings.ToLower(format) {
+	case "yaml", "yml":
+		var doc struct {
+			Payload []any `yaml:"payload"`
+		}
+		if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+			return nil, fmt.Errorf("规则集不是有效的 YAML: %w", err)
+		}
+		for _, item := range doc.Payload {
+			value := strings.TrimSpace(fmt.Sprint(item))
+			if value != "" {
+				items = append(items, value)
+			}
+		}
+	case "text":
+		for _, line := range strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				items = append(items, line)
+			}
+		}
+	default:
+		return nil, fmt.Errorf("%s 格式不支持展开", format)
+	}
+	if q := strings.ToLower(strings.TrimSpace(query)); q != "" {
+		filtered := make([]string, 0, len(items))
+		for _, item := range items {
+			if strings.Contains(strings.ToLower(item), q) {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 100
+	}
+	if size > 500 {
+		size = 500
+	}
+	total := len(items)
+	start := (page - 1) * size
+	if start > total {
+		start = total
+	}
+	end := start + size
+	if end > total {
+		end = total
+	}
+	return &RuleProviderContent{Items: items[start:end], Total: total, Page: page, Size: size}, nil
 }
 
 func RegionGroupName(code string) string {

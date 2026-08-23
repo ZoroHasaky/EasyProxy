@@ -96,12 +96,8 @@ func TestGenerateConfigResolvesNodeTarget(t *testing.T) {
 	if err := st.CreateNode(&node); err != nil {
 		t.Fatal(err)
 	}
-	tpl := &model.Template{Name: "test", Source: "paste", Content: "rules:\n  - MATCH,PROXY\n", Mapping: map[string]string{}}
-	if err := st.CreateTemplate(tpl); err != nil {
-		t.Fatal(err)
-	}
 	rules := []model.Rule{{Kind: "DOMAIN-SUFFIX", Value: "example.com", Target: model.NodeTargetRef(node.ID), BaseTarget: "PROXY", TargetOverride: true, Enabled: true}, {Kind: "MATCH", Target: "PROXY", BaseTarget: "PROXY", Enabled: true}}
-	if err := st.ReplaceRules(tpl.ID, rules, nil); err != nil {
+	if err := st.ReplaceCurrentRules(rules, nil); err != nil {
 		t.Fatal(err)
 	}
 	gen, err := GenerateConfig(st)

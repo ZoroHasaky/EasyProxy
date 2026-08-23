@@ -138,7 +138,50 @@ func (s *Store) migrate() error {
 	if err := s.migrateRuleTargetRefs(); err != nil {
 		return fmt.Errorf("migrate target refs: %w", err)
 	}
+	if err := s.migrateCurrentRuleSet(); err != nil {
+		return fmt.Errorf("migrate current rules: %w", err)
+	}
 	return nil
+}
+
+// migrateCurrentRuleSet 将旧版激活模板的规则复制为唯一的当前规则集。
+// 旧模板及其原始规则保持不动，便于旧备份恢复和数据回溯。
+func (s *Store) migrateCurrentRuleSet() error {
+	if s.GetSettingBool("current_rules_migrated", false) {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var currentCount int
+	if err := tx.QueryRow(`SELECT (SELECT COUNT(*) FROM rules WHERE template_id=0) +
+		(SELECT COUNT(*) FROM rule_providers WHERE template_id=0)`).Scan(&currentCount); err != nil {
+		return err
+	}
+	if currentCount == 0 {
+		activeID := int64(s.GetSettingInt("active_template_id", 0))
+		if activeID == 0 {
+			_ = tx.QueryRow(`SELECT id FROM templates ORDER BY id LIMIT 1`).Scan(&activeID)
+		}
+		if activeID > 0 {
+			if _, err := tx.Exec(`INSERT INTO rules(template_id,kind,value,target,base_target,target_override,no_resolve,position,enabled)
+				SELECT 0,kind,value,target,base_target,target_override,no_resolve,position,enabled
+				FROM rules WHERE template_id=? ORDER BY position,id`, activeID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`INSERT INTO rule_providers(template_id,name,url,behavior,format,interval)
+				SELECT 0,name,url,behavior,format,interval FROM rule_providers WHERE template_id=? ORDER BY id`, activeID); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO settings(key,value) VALUES('current_rules_migrated','1')
+		ON CONFLICT(key) DO UPDATE SET value='1'`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) ensureColumn(table, column, definition string) error {
@@ -342,7 +385,10 @@ func (s *Store) ImportAll(data map[string]any, keepAuth bool) error {
 			}
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return s.migrateCurrentRuleSet()
 }
 
 func joinComma(ss []string) string {
