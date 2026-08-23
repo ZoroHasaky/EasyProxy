@@ -189,11 +189,20 @@ func (s *Server) handlePutRules(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
-	for _, rule := range req.Rules {
+	for i := range req.Rules {
+		rule := &req.Rules[i]
 		if rule.Kind == "" {
 			writeErr(w, http.StatusBadRequest, "存在缺少类型的规则")
 			return
 		}
+		if rule.Target == "" {
+			writeErr(w, http.StatusBadRequest, "存在缺少目标的规则")
+			return
+		}
+		if rule.BaseTarget == "" {
+			rule.BaseTarget = rule.Target
+		}
+		rule.TargetOverride = rule.Target != rule.BaseTarget
 	}
 	if err := s.st.ReplaceRules(tpl.ID, req.Rules, req.Providers); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -201,6 +210,15 @@ func (s *Server) handlePutRules(w http.ResponseWriter, r *http.Request) {
 	}
 	s.dirty.Store(true)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(req.Rules)})
+}
+
+func (s *Server) handleGetRuleTargets(w http.ResponseWriter, r *http.Request) {
+	targets, err := service.ListRuleTargetOptions(s.st)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, targets)
 }
 
 // ---------- 策略组 ----------

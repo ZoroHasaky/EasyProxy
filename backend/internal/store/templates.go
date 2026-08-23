@@ -125,7 +125,7 @@ func (s *Store) ActivateTemplate(id int64) error {
 // ---------- rules & providers ----------
 
 func (s *Store) ListRules(templateID int64) ([]model.Rule, error) {
-	rows, err := s.db.Query(`SELECT id,template_id,kind,value,target,no_resolve,position,enabled
+	rows, err := s.db.Query(`SELECT id,template_id,kind,value,target,base_target,target_override,no_resolve,position,enabled
 		FROM rules WHERE template_id=? ORDER BY position,id`, templateID)
 	if err != nil {
 		return nil, err
@@ -134,7 +134,8 @@ func (s *Store) ListRules(templateID int64) ([]model.Rule, error) {
 	out := []model.Rule{}
 	for rows.Next() {
 		var r model.Rule
-		if err := rows.Scan(&r.ID, &r.TemplateID, &r.Kind, &r.Value, &r.Target, &r.NoResolve, &r.Position, &r.Enabled); err != nil {
+		if err := rows.Scan(&r.ID, &r.TemplateID, &r.Kind, &r.Value, &r.Target, &r.BaseTarget,
+			&r.TargetOverride, &r.NoResolve, &r.Position, &r.Enabled); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -175,8 +176,13 @@ func (s *Store) ReplaceRules(templateID int64, rules []model.Rule, providers []m
 	}
 	for i := range rules {
 		r := rules[i]
-		if _, err := tx.Exec(`INSERT INTO rules(template_id,kind,value,target,no_resolve,position,enabled)
-			VALUES(?,?,?,?,?,?,?)`, templateID, r.Kind, r.Value, r.Target, r.NoResolve, i, r.Enabled); err != nil {
+		if r.BaseTarget == "" {
+			r.BaseTarget = r.Target
+		}
+		r.TargetOverride = r.Target != r.BaseTarget
+		if _, err := tx.Exec(`INSERT INTO rules(template_id,kind,value,target,base_target,target_override,no_resolve,position,enabled)
+			VALUES(?,?,?,?,?,?,?,?,?)`, templateID, r.Kind, r.Value, r.Target, r.BaseTarget,
+			r.TargetOverride, r.NoResolve, i, r.Enabled); err != nil {
 			return err
 		}
 	}

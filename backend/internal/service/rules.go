@@ -21,7 +21,7 @@ type ParsedTemplate struct {
 // ParseTemplateContent 解析模板 YAML 中的 rules 与 rule-providers
 func ParseTemplateContent(content string) (*ParsedTemplate, error) {
 	var doc struct {
-		Rules []string `yaml:"rules"`
+		Rules         []string `yaml:"rules"`
 		RuleProviders map[string]struct {
 			Behavior string `yaml:"behavior"`
 			Format   string `yaml:"format"`
@@ -122,10 +122,10 @@ func SuggestMapping(target string, groups []model.Group) string {
 	if region := parser.ParseRegion(target); region != parser.RegionOther {
 		for _, g := range groups {
 			if g.Region == region {
-				return g.Name
+				return model.GroupTargetRef(g.ID)
 			}
 		}
-		return RegionGroupName(region)
+		return GroupPROXY
 	}
 	return GroupPROXY
 }
@@ -133,6 +133,10 @@ func SuggestMapping(target string, groups []model.Group) string {
 // ApplyTemplateRules 按映射将模板规则落入 rules 表；映射缺失项自动补建议值
 func ApplyTemplateRules(st *store.Store, tpl *model.Template) error {
 	parsed, err := ParseTemplateContent(tpl.Content)
+	if err != nil {
+		return err
+	}
+	existing, err := st.ListRules(tpl.ID)
 	if err != nil {
 		return err
 	}
@@ -148,6 +152,13 @@ func ApplyTemplateRules(st *store.Store, tpl *model.Template) error {
 			tpl.Mapping[t] = SuggestMapping(t, groups)
 		}
 	}
+	overrides := map[string][]model.Rule{}
+	for _, r := range existing {
+		if r.TargetOverride {
+			key := ruleIdentity(r)
+			overrides[key] = append(overrides[key], r)
+		}
+	}
 	rules := make([]model.Rule, 0, len(parsed.Rules))
 	for _, r := range parsed.Rules {
 		if !model.IsBuiltinTarget(r.Target) {
@@ -157,6 +168,12 @@ func ApplyTemplateRules(st *store.Store, tpl *model.Template) error {
 				r.Target = GroupPROXY
 			}
 		}
+		r.BaseTarget = r.Target
+		if queue := overrides[ruleIdentity(r)]; len(queue) > 0 {
+			r.Target = queue[0].Target
+			r.TargetOverride = r.Target != r.BaseTarget
+			overrides[ruleIdentity(r)] = queue[1:]
+		}
 		r.TemplateID = tpl.ID
 		rules = append(rules, r)
 	}
@@ -164,6 +181,10 @@ func ApplyTemplateRules(st *store.Store, tpl *model.Template) error {
 		return err
 	}
 	return st.UpdateTemplate(tpl)
+}
+
+func ruleIdentity(r model.Rule) string {
+	return fmt.Sprintf("%s\x00%s\x00%t", strings.ToUpper(r.Kind), r.Value, r.NoResolve)
 }
 
 // GenerateRegionGroups 为节点池中出现的地区补齐地区分组（url-test 速度优先）

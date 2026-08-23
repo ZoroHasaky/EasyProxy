@@ -98,9 +98,25 @@ export interface Rule {
   kind: string;
   value: string;
   target: string;
+  base_target: string;
+  target_override: boolean;
   no_resolve: boolean;
   position: number;
   enabled: boolean;
+}
+
+export interface RuleTargetOption {
+  value: string;
+  kind: "region_group" | "group" | "node";
+  name: string;
+  region: string;
+  region_name: string;
+  icon: string;
+  source_name?: string;
+  member_count?: number;
+  available: boolean;
+  alive?: boolean;
+  latency?: number;
 }
 
 export interface RuleProvider {

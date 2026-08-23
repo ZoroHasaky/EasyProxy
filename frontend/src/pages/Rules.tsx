@@ -11,8 +11,8 @@ import {
   SortableContext, useSortable, verticalListSortingStrategy, arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Plus, RefreshCw, Save, Trash2, Eye, Upload, ArrowUpDown, FileInput } from "lucide-react";
-import { api, Rule, RuleProvider, RulesPayload, RuleTemplate, ProxyGroup, GenResult } from "@/lib/api";
+import { GripVertical, Plus, RefreshCw, Save, Trash2, Eye, Upload, ArrowUpDown, FileInput, AlertTriangle, RotateCcw } from "lucide-react";
+import { api, Rule, RuleProvider, RulesPayload, RuleTemplate, RuleTargetOption, GenResult } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -28,12 +28,74 @@ const KINDS = [
   "PROCESS-PATH", "IN-TYPE", "RULE-SET", "MATCH",
 ];
 const BUILTIN_TARGETS = ["PROXY", "AUTO", "DIRECT", "REJECT", "REJECT-DROP", "PASS"];
+const BUILTIN_TARGET_LABELS: Record<string, string> = {
+  PROXY: "代理",
+  AUTO: "自动选择",
+  DIRECT: "直连",
+  REJECT: "拒绝",
+  "REJECT-DROP": "拒绝并丢弃",
+  PASS: "继续匹配",
+};
+
+function targetLabel(target: string) {
+  return BUILTIN_TARGET_LABELS[target] ?? target;
+}
+
+function optionLabel(option: RuleTargetOption) {
+  const icon = option.icon ? `${option.icon} ` : "";
+  if (option.kind === "node") {
+    const source = option.source_name ? ` · ${option.source_name}` : "";
+    return `${icon}${option.name}${source}`;
+  }
+  const unavailable = option.available ? "" : "，不可用";
+  return `${icon}${option.name}（${option.member_count ?? 0} 节点${unavailable}）`;
+}
+
+function findTargetOption(target: string, options: RuleTargetOption[]) {
+  return options.find((option) => option.value === target) ?? options.find((option) => option.name === target);
+}
+
+function normalizedTarget(target: string, options: RuleTargetOption[]) {
+  return findTargetOption(target, options)?.value ?? target;
+}
+
+function TargetOptions({ options }: { options: RuleTargetOption[] }) {
+  const regionGroups = options.filter((option) => option.kind === "region_group");
+  const groups = options.filter((option) => option.kind === "group");
+  const nodes = options.filter((option) => option.kind === "node");
+  return (
+    <>
+      <optgroup label="内置动作">
+        {BUILTIN_TARGETS.map((target) => <option key={target} value={target}>{targetLabel(target)}</option>)}
+      </optgroup>
+      {regionGroups.length > 0 && (
+        <optgroup label="地区策略组">
+          {regionGroups.map((option) => (
+            <option key={option.value} value={option.value} disabled={!option.available}>{optionLabel(option)}</option>
+          ))}
+        </optgroup>
+      )}
+      {groups.length > 0 && (
+        <optgroup label="其他策略组">
+          {groups.map((option) => (
+            <option key={option.value} value={option.value} disabled={!option.available}>{optionLabel(option)}</option>
+          ))}
+        </optgroup>
+      )}
+      {nodes.length > 0 && (
+        <optgroup label="指定节点">
+          {nodes.map((option) => <option key={option.value} value={option.value}>{optionLabel(option)}</option>)}
+        </optgroup>
+      )}
+    </>
+  );
+}
 
 function RuleRow({
-  rule, targets, onChange, onDelete, dragged,
+  rule, targetOptions, onChange, onDelete, dragged,
 }: {
   rule: Rule;
-  targets: string[];
+  targetOptions: RuleTargetOption[];
   onChange: (r: Rule) => void;
   onDelete: () => void;
   dragged: boolean;
@@ -45,6 +107,10 @@ function RuleRow({
     opacity: isDragging ? 0.5 : 1,
   };
   const disabled = rule.kind === "MATCH";
+  const selectedTarget = normalizedTarget(rule.target, targetOptions);
+  const baseTarget = normalizedTarget(rule.base_target || rule.target, targetOptions);
+  const matchedTarget = findTargetOption(rule.target, targetOptions);
+  const targetAvailable = BUILTIN_TARGETS.includes(rule.target) || matchedTarget?.available === true;
   return (
     <div
       ref={setNodeRef}
@@ -77,17 +143,38 @@ function RuleRow({
         onChange={(e) => onChange({ ...rule, value: e.target.value })}
       />
       <Select
-        className="w-44 shrink-0"
-        value={rule.target}
-        onChange={(e) => onChange({ ...rule, target: e.target.value })}
+        className="w-64 shrink-0"
+        value={selectedTarget}
+        onChange={(e) => onChange({
+          ...rule,
+          target: e.target.value,
+          base_target: baseTarget,
+          target_override: e.target.value !== baseTarget,
+        })}
       >
-        {[...BUILTIN_TARGETS, ...targets]
-          .filter((v, i, a) => a.indexOf(v) === i)
-          .map((t) => <option key={t} value={t}>{t}</option>)}
-        {!BUILTIN_TARGETS.includes(rule.target) && !targets.includes(rule.target) && (
-          <option value={rule.target}>{rule.target}（组已删除）</option>
+        <TargetOptions options={targetOptions} />
+        {!matchedTarget && !BUILTIN_TARGETS.includes(rule.target) && (
+          <option value={rule.target}>{rule.target}（目标已失效）</option>
         )}
       </Select>
+      {rule.target_override && (
+        <div className="flex shrink-0 items-center gap-1">
+          <Badge variant="outline" className="border-amber-300 text-amber-700">已覆盖</Badge>
+          <Button
+            size="icon"
+            variant="ghost"
+            title="恢复模板目标"
+            onClick={() => onChange({ ...rule, target: baseTarget, base_target: baseTarget, target_override: false })}
+          >
+            <RotateCcw className="h-4 w-4 text-amber-600" />
+          </Button>
+        </div>
+      )}
+      {!targetAvailable && (
+        <span className="flex shrink-0 items-center gap-1 text-xs text-destructive" title="目标已失效，应用配置时将回退主代理">
+          <AlertTriangle className="h-4 w-4" /> 目标失效
+        </span>
+      )}
       <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title="跳过 DNS 解析">
         <input
           type="checkbox"
@@ -125,9 +212,9 @@ export default function RulesPage() {
     queryKey: ["templates"],
     queryFn: () => api.get<RuleTemplate[]>("/api/templates"),
   });
-  const groups = useQuery({
-    queryKey: ["groups"],
-    queryFn: () => api.get<ProxyGroup[]>("/api/groups"),
+  const ruleTargets = useQuery({
+    queryKey: ["ruleTargets"],
+    queryFn: () => api.get<RuleTargetOption[]>("/api/rule-targets"),
   });
   const preview = useQuery({
     queryKey: ["preview"],
@@ -142,7 +229,7 @@ export default function RulesPage() {
     setMapping({ ...payload.data.active_template.mapping });
   }
 
-  const groupNames = (groups.data ?? []).map((g) => g.name);
+  const targetOptions = ruleTargets.data ?? [];
 
   const saveRules = useMutation({
     mutationFn: () =>
@@ -244,7 +331,7 @@ export default function RulesPage() {
     const maxId = Math.max(0, ...(rules ?? []).map((r) => r.id)) + 1000;
     setRules((rs) => [
       ...(rs ?? []),
-      { id: maxId, template_id: 0, kind: "DOMAIN-SUFFIX", value: "", target: "PROXY", no_resolve: false, position: 0, enabled: true },
+      { id: maxId, template_id: 0, kind: "DOMAIN-SUFFIX", value: "", target: "PROXY", base_target: "PROXY", target_override: false, no_resolve: false, position: 0, enabled: true },
     ]);
   };
 
@@ -321,7 +408,7 @@ export default function RulesPage() {
               <RuleRow
                 key={r.id}
                 rule={r}
-                targets={groupNames}
+                targetOptions={targetOptions}
                 onChange={updateRule}
                 onDelete={() => deleteRule(r.id)}
                 dragged={dragId === r.id}
@@ -389,12 +476,13 @@ export default function RulesPage() {
                 <span className="text-muted-foreground">→</span>
                 <Select
                   className="flex-1"
-                  value={mapping[target]}
+                  value={normalizedTarget(mapping[target], targetOptions)}
                   onChange={(e) => setMapping((m) => ({ ...m, [target]: e.target.value }))}
                 >
-                  {[...BUILTIN_TARGETS, ...groupNames].map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
+                  <TargetOptions options={targetOptions} />
+                  {!BUILTIN_TARGETS.includes(mapping[target]) && !findTargetOption(mapping[target], targetOptions) && (
+                    <option value={mapping[target]}>{mapping[target]}（目标已失效）</option>
+                  )}
                 </Select>
               </div>
             ))}

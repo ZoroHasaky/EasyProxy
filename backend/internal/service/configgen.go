@@ -27,6 +27,24 @@ type GenResult struct {
 	RuleCount  int    `json:"rule_count"`
 }
 
+// EffectiveNodes 返回最终会写入 mihomo 配置的启用节点，并按协议参数全局去重。
+func EffectiveNodes(st *store.Store) ([]model.Node, error) {
+	nodes, err := st.ListEnabledNodes()
+	if err != nil {
+		return nil, err
+	}
+	seenHash := map[string]bool{}
+	deduped := make([]model.Node, 0, len(nodes))
+	for _, n := range nodes {
+		if n.DedupHash == "" || seenHash[n.DedupHash] {
+			continue
+		}
+		seenHash[n.DedupHash] = true
+		deduped = append(deduped, n)
+	}
+	return deduped, nil
+}
+
 // DefaultGeoxSources 导出按优先级排列的推荐 Geo 数据源。
 // mihomo 每个分类只接受一个 URL，生成配置时使用每类首个非空地址。
 func DefaultGeoxSources() map[string][]string {
@@ -126,19 +144,9 @@ func detectLANIP() string {
 
 // GenerateConfig 依据节点池/策略组/规则模板/设置生成最终 mihomo 配置
 func GenerateConfig(st *store.Store) (*GenResult, error) {
-	nodes, err := st.ListEnabledNodes()
+	deduped, err := EffectiveNodes(st)
 	if err != nil {
 		return nil, err
-	}
-	// 全局去重（跨订阅）
-	seenHash := map[string]bool{}
-	deduped := make([]model.Node, 0, len(nodes))
-	for _, n := range nodes {
-		if n.DedupHash == "" || seenHash[n.DedupHash] {
-			continue
-		}
-		seenHash[n.DedupHash] = true
-		deduped = append(deduped, n)
 	}
 
 	groups, err := st.ListGroups()
@@ -300,10 +308,7 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 	}
 
 	sb.WriteString("rules:\n")
-	validGroups := map[string]bool{GroupPROXY: true, GroupAUTO: true}
-	for _, g := range groups {
-		validGroups[g.Name] = true
-	}
+	targetResolver := newRuleTargetResolver(deduped, groups)
 	ruleCount := 0
 	hasMatch := false
 	// TUN 模式下必须保证局域网/本机回环直连，否则 MATCH 兜底会把 SSH/面板等
@@ -331,8 +336,8 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 		target := r.Target
 		if len(deduped) == 0 {
 			target = model.BuiltinDirect
-		} else if !model.IsBuiltinTarget(target) && !validGroups[target] {
-			target = GroupPROXY
+		} else {
+			target = targetResolver.resolve(target)
 		}
 		parts := []string{kind}
 		if kind != "MATCH" && r.Value != "" {
@@ -439,6 +444,61 @@ func groupMembers(g model.Group, nodes []model.Node) []string {
 		}
 	}
 	return out
+}
+
+type ruleTargetResolver struct {
+	nodesByID     map[int64]string
+	nodeNames     map[string]bool
+	groupsByID    map[int64]model.Group
+	availableByID map[int64]bool
+	groupsByName  map[string]model.Group
+}
+
+func newRuleTargetResolver(nodes []model.Node, groups []model.Group) *ruleTargetResolver {
+	r := &ruleTargetResolver{
+		nodesByID:     map[int64]string{},
+		nodeNames:     map[string]bool{},
+		groupsByID:    map[int64]model.Group{},
+		availableByID: map[int64]bool{},
+		groupsByName:  map[string]model.Group{},
+	}
+	for _, n := range nodes {
+		r.nodesByID[n.ID] = n.Name
+		r.nodeNames[n.Name] = true
+	}
+	for _, g := range groups {
+		r.groupsByID[g.ID] = g
+		r.groupsByName[g.Name] = g
+		r.availableByID[g.ID] = g.Enabled && len(groupMembers(g, nodes)) > 0
+	}
+	return r
+}
+
+func (r *ruleTargetResolver) resolve(target string) string {
+	if model.IsBuiltinTarget(target) {
+		return target
+	}
+	if kind, id, ok := model.ParseTargetRef(target); ok {
+		switch kind {
+		case "node":
+			if name := r.nodesByID[id]; name != "" {
+				return name
+			}
+		case "group":
+			if g, exists := r.groupsByID[id]; exists && r.availableByID[id] {
+				return g.Name
+			}
+		}
+		return GroupPROXY
+	}
+	// 兼容旧数据库、旧备份和外部模板中的节点名或策略组名。
+	if r.nodeNames[target] {
+		return target
+	}
+	if g, ok := r.groupsByName[target]; ok && r.availableByID[g.ID] {
+		return g.Name
+	}
+	return GroupPROXY
 }
 
 func quote(s string) string { return strconv.Quote(s) }

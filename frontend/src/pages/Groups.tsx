@@ -18,7 +18,7 @@ const GROUP_TYPES = [
   { value: "load-balance", label: "负载均衡 (load-balance)" },
 ];
 
-let tmpId = 100000;
+let tmpId = 0;
 
 export default function GroupsPage() {
   const qc = useQueryClient();
@@ -72,7 +72,7 @@ export default function GroupsPage() {
     setItems((rs) => [
       ...(rs ?? []),
       {
-        id: ++tmpId, name: "", type: "select", region: "", include_regex: "", test_url: "",
+        id: --tmpId, name: "", type: "select", region: "", include_regex: "", test_url: "",
         interval: 300, tolerance: 50, icon: "", position: 0, enabled: true,
       },
     ]);

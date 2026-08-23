@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"strconv"
+	"strings"
+	"time"
+)
 
 type Subscription struct {
 	ID             int64     `json:"id"`
@@ -47,14 +51,30 @@ type Template struct {
 }
 
 type Rule struct {
-	ID         int64  `json:"id"`
-	TemplateID int64  `json:"template_id"`
-	Kind       string `json:"kind"`
-	Value      string `json:"value"`
-	Target     string `json:"target"`
-	NoResolve  bool   `json:"no_resolve"`
-	Position   int    `json:"position"`
-	Enabled    bool   `json:"enabled"`
+	ID             int64  `json:"id"`
+	TemplateID     int64  `json:"template_id"`
+	Kind           string `json:"kind"`
+	Value          string `json:"value"`
+	Target         string `json:"target"`
+	BaseTarget     string `json:"base_target"`
+	TargetOverride bool   `json:"target_override"`
+	NoResolve      bool   `json:"no_resolve"`
+	Position       int    `json:"position"`
+	Enabled        bool   `json:"enabled"`
+}
+
+type RuleTargetOption struct {
+	Value       string `json:"value"`
+	Kind        string `json:"kind"` // region_group | group | node
+	Name        string `json:"name"`
+	Region      string `json:"region"`
+	RegionName  string `json:"region_name"`
+	Icon        string `json:"icon"`
+	SourceName  string `json:"source_name,omitempty"`
+	MemberCount int    `json:"member_count,omitempty"`
+	Available   bool   `json:"available"`
+	Alive       bool   `json:"alive,omitempty"`
+	Latency     int    `json:"latency,omitempty"`
 }
 
 type RuleProvider struct {
@@ -96,8 +116,30 @@ const (
 
 func IsBuiltinTarget(t string) bool {
 	switch t {
-	case "DIRECT", "REJECT", "REJECT-DROP", "PASS":
+	case "PROXY", "AUTO", "DIRECT", "REJECT", "REJECT-DROP", "PASS":
 		return true
 	}
 	return false
+}
+
+const (
+	targetNodePrefix  = "@easyproxy/node/"
+	targetGroupPrefix = "@easyproxy/group/"
+)
+
+func NodeTargetRef(id int64) string  { return targetNodePrefix + strconv.FormatInt(id, 10) }
+func GroupTargetRef(id int64) string { return targetGroupPrefix + strconv.FormatInt(id, 10) }
+
+func ParseTargetRef(target string) (kind string, id int64, ok bool) {
+	prefix := ""
+	switch {
+	case strings.HasPrefix(target, targetNodePrefix):
+		kind, prefix = "node", targetNodePrefix
+	case strings.HasPrefix(target, targetGroupPrefix):
+		kind, prefix = "group", targetGroupPrefix
+	default:
+		return "", 0, false
+	}
+	id, err := strconv.ParseInt(strings.TrimPrefix(target, prefix), 10, 64)
+	return kind, id, err == nil && id > 0
 }
