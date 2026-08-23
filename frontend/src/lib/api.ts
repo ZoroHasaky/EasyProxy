@@ -179,6 +179,7 @@ export interface Settings {
   geo_update_interval: number;
   geox_urls: Record<string, string[]>;
   update_repo: string;
+  update_via_proxy: boolean;
   core_mirror: string;
 }
 
@@ -189,6 +190,17 @@ export interface UpdateCheck {
   notes: string;
   url: string;
   error?: string;
+}
+
+export interface UpdateStatus {
+  state: "idle" | "checking" | "downloading" | "verifying" | "installing" | "restarting" | "ready" | "error";
+  running: boolean;
+  completed: number;
+  total: number;
+  percent: number;
+  version: string;
+  error?: string;
+  via_proxy: boolean;
 }
 
 // ---------- mihomo 直通 ----------

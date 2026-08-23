@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -173,28 +174,93 @@ func (s *Server) updateRepo() string {
 	return DefaultUpdateRepo
 }
 
+func (s *Server) updateProxyAddr() (string, error) {
+	if !s.st.GetSettingBool("update_via_proxy", false) {
+		return "", nil
+	}
+	if s.mgr.Status().State != core.StateRunning {
+		return "", fmt.Errorf("已启用经代理更新，但 mihomo 内核未运行")
+	}
+	return fmt.Sprintf("127.0.0.1:%d", s.st.GetSettingInt("mixed_port", 7890)), nil
+}
+
 func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, update.Check(s.updateRepo(), s.version))
+	proxy, err := s.updateProxyAddr()
+	if err != nil {
+		writeJSON(w, http.StatusOK, &update.CheckResult{Current: s.version, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, update.Check(s.updateRepo(), s.version, proxy))
+}
+
+func (s *Server) setUpdateProgress(stage string, completed, total int64) {
+	s.updateMu.Lock()
+	defer s.updateMu.Unlock()
+	s.updateTask.State = stage
+	s.updateTask.Completed = completed
+	s.updateTask.Total = total
+	s.updateTask.Percent = 0
+	if total > 0 && completed > 0 {
+		s.updateTask.Percent = int(completed * 100 / total)
+		if s.updateTask.Percent > 100 {
+			s.updateTask.Percent = 100
+		}
+	}
+}
+
+func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	s.updateMu.Lock()
+	status := s.updateTask
+	s.updateMu.Unlock()
+	if status.State == "" {
+		status.State = "idle"
+	}
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
-	repo := s.updateRepo()
-	rel, err := update.Apply(repo, s.version, s.dataDir)
+	proxy, err := s.updateProxyAddr()
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true, "version": strings.TrimPrefix(rel.TagName, "v"), "message": "新版本已就绪，即将重启切换",
-	})
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
+	s.updateMu.Lock()
+	if s.updateTask.Running {
+		s.updateMu.Unlock()
+		writeErr(w, http.StatusConflict, "更新任务正在进行中")
+		return
 	}
+	s.updateTask = updateTaskStatus{State: "checking", Running: true, ViaProxy: proxy != ""}
+	s.updateMu.Unlock()
+
+	repo := s.updateRepo()
 	go func() {
-		time.Sleep(1 * time.Second)
+		rel, err := update.Apply(repo, s.version, s.dataDir, proxy, s.setUpdateProgress)
+		if err != nil {
+			s.updateMu.Lock()
+			s.updateTask.State = "error"
+			s.updateTask.Running = false
+			s.updateTask.Error = err.Error()
+			s.updateMu.Unlock()
+			return
+		}
+		version := strings.TrimPrefix(rel.TagName, "v")
+		s.updateMu.Lock()
+		s.updateTask.State = "restarting"
+		s.updateTask.Version = version
+		s.updateTask.Percent = 100
+		s.updateMu.Unlock()
+		time.Sleep(2 * time.Second)
 		_ = s.mgr.Stop()
 		update.ExecNewest(s.dataDir, s.version)
+		// Exec 成功时不会返回；返回说明当前平台不支持或切换失败。
+		s.updateMu.Lock()
+		s.updateTask.State = "ready"
+		s.updateTask.Running = false
+		s.updateTask.Error = "新版本已安装，请手动重启面板完成切换"
+		s.updateMu.Unlock()
 	}()
+	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "message": "更新任务已在后台启动"})
 }
 
 // ---------- 设置 ----------
@@ -214,6 +280,7 @@ type settingsPayload struct {
 	GeoUpdateInterval *int                `json:"geo_update_interval"`
 	GeoxUrls          map[string][]string `json:"geox_urls"`
 	UpdateRepo        *string             `json:"update_repo"`
+	UpdateViaProxy    *bool               `json:"update_via_proxy"`
 	CoreMirror        *string             `json:"core_mirror"`
 }
 
@@ -242,6 +309,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"geo_update_interval": s.st.GetSettingInt("geo_update_interval", 24),
 		"geox_urls":           geox,
 		"update_repo":         s.updateRepo(),
+		"update_via_proxy":    s.st.GetSettingBool("update_via_proxy", false),
 		"core_mirror":         s.st.GetSetting("core_mirror", ""),
 	})
 }
@@ -312,6 +380,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.UpdateRepo != nil {
 		set("update_repo", strings.TrimSpace(*p.UpdateRepo))
+	}
+	if p.UpdateViaProxy != nil {
+		set("update_via_proxy", boolStr(*p.UpdateViaProxy))
 	}
 	if p.CoreMirror != nil {
 		set("core_mirror", strings.TrimSpace(*p.CoreMirror))

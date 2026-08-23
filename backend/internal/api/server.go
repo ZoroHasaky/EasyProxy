@@ -29,11 +29,11 @@ import (
 )
 
 type Server struct {
-	st      *store.Store
-	dataDir string
-	version string
-	mgr     *core.Manager
-	client  *core.Client
+	st       *store.Store
+	dataDir  string
+	version  string
+	mgr      *core.Manager
+	client   *core.Client
 	sessions *SessionManager
 
 	mihomoRP *httputil.ReverseProxy
@@ -48,6 +48,20 @@ type Server struct {
 	dlErr         string
 	latestCache   string
 	latestCacheAt time.Time
+
+	updateMu   sync.Mutex
+	updateTask updateTaskStatus
+}
+
+type updateTaskStatus struct {
+	State     string `json:"state"`
+	Running   bool   `json:"running"`
+	Completed int64  `json:"completed"`
+	Total     int64  `json:"total"`
+	Percent   int    `json:"percent"`
+	Version   string `json:"version"`
+	Error     string `json:"error,omitempty"`
+	ViaProxy  bool   `json:"via_proxy"`
 }
 
 func New(st *store.Store, dataDir, version string) *Server {
@@ -60,12 +74,13 @@ func New(st *store.Store, dataDir, version string) *Server {
 	}
 	port := st.GetSettingInt("controller_port", 9095)
 	s := &Server{
-		st:       st,
-		dataDir:  dataDir,
-		version:  version,
-		mgr:      core.NewManager(core.CorePath(dataDir), dataDir),
-		client:   core.NewClient(port, secret),
-		sessions: NewSessionManager(),
+		st:         st,
+		dataDir:    dataDir,
+		version:    version,
+		mgr:        core.NewManager(core.CorePath(dataDir), dataDir),
+		client:     core.NewClient(port, secret),
+		sessions:   NewSessionManager(),
+		updateTask: updateTaskStatus{State: "idle"},
 	}
 	s.mustChangePw.Store(st.GetSettingBool("must_change_password", false))
 	u, _ := url.Parse(s.client.BaseURL())
@@ -243,6 +258,7 @@ func (s *Server) Handler() http.Handler {
 	route("GET /api/tun/check", s.handleTunCheck)
 
 	route("GET /api/update/check", s.handleUpdateCheck)
+	route("GET /api/update/status", s.handleUpdateStatus)
 	route("POST /api/update/apply", s.handleUpdateApply)
 
 	route("GET /api/settings", s.handleGetSettings)

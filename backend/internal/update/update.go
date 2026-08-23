@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,25 +38,49 @@ type Release struct {
 }
 
 type CheckResult struct {
-	Current   string  `json:"current"`
-	Latest    string  `json:"latest"`
-	HasUpdate bool    `json:"has_update"`
-	Notes     string  `json:"notes"`
-	URL       string  `json:"url"`
-	Error     string  `json:"error,omitempty"`
+	Current   string `json:"current"`
+	Latest    string `json:"latest"`
+	HasUpdate bool   `json:"has_update"`
+	Notes     string `json:"notes"`
+	URL       string `json:"url"`
+	Error     string `json:"error,omitempty"`
 }
 
-func getLatest(ctx context.Context, repo string) (*Release, error) {
+type ProgressFunc func(stage string, completed, total int64)
+
+func newHTTPClient(proxyAddr string) (*http.Client, error) {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if proxyAddr != "" {
+		proxyURL, err := url.Parse("http://" + proxyAddr)
+		if err != nil {
+			return nil, fmt.Errorf("代理地址无效: %w", err)
+		}
+		transport.Proxy = http.ProxyURL(proxyURL)
+	}
+	return &http.Client{Transport: transport}, nil
+}
+
+func getLatest(ctx context.Context, repo string, hc *http.Client) (*Release, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubAPI+"/repos/"+repo+"/releases/latest", nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "EasyProxy")
+	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		var apiErr struct {
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(body, &apiErr)
+		if apiErr.Message != "" {
+			return nil, fmt.Errorf("GitHub API HTTP %d: %s", resp.StatusCode, apiErr.Message)
+		}
 		return nil, fmt.Errorf("GitHub API HTTP %d", resp.StatusCode)
 	}
 	var rel Release
@@ -66,10 +91,14 @@ func getLatest(ctx context.Context, repo string) (*Release, error) {
 }
 
 // Check 检查面板新版本
-func Check(repo, current string) *CheckResult {
+func Check(repo, current, proxyAddr string) *CheckResult {
+	hc, err := newHTTPClient(proxyAddr)
+	if err != nil {
+		return &CheckResult{Current: current, Error: err.Error()}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	rel, err := getLatest(ctx, repo)
+	rel, err := getLatest(ctx, repo, hc)
 	if err != nil {
 		return &CheckResult{Current: current, Error: err.Error()}
 	}
@@ -95,27 +124,55 @@ func assetURL(rel *Release, name string) string {
 	return ""
 }
 
-func download(ctx context.Context, url string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+type progressReader struct {
+	r         io.Reader
+	completed int64
+	total     int64
+	stage     string
+	progress  ProgressFunc
+}
+
+func (r *progressReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	r.completed += int64(n)
+	r.progress(r.stage, r.completed, r.total)
+	return n, err
+}
+
+func download(ctx context.Context, hc *http.Client, downloadURL, stage string, progress ProgressFunc) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	req.Header.Set("User-Agent", "EasyProxy")
+	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("下载 %s 失败: HTTP %d", url, resp.StatusCode)
+		return nil, fmt.Errorf("下载 %s 失败: HTTP %d", downloadURL, resp.StatusCode)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 500<<20))
+	var reader io.Reader = io.LimitReader(resp.Body, 500<<20)
+	if progress != nil {
+		progress(stage, 0, resp.ContentLength)
+		reader = &progressReader{r: reader, total: resp.ContentLength, stage: stage, progress: progress}
+	}
+	return io.ReadAll(reader)
 }
 
 // Apply 下载最新版并安装到 dataDir/bin/easyproxy-{version}；成功后由调用方 exec 切换
-func Apply(repo, current, dataDir string) (*Release, error) {
+func Apply(repo, current, dataDir, proxyAddr string, progress ProgressFunc) (*Release, error) {
+	hc, err := newHTTPClient(proxyAddr)
+	if err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	rel, err := getLatest(ctx, repo)
+	if progress != nil {
+		progress("checking", 0, 0)
+	}
+	rel, err := getLatest(ctx, repo, hc)
 	if err != nil {
 		return nil, err
 	}
@@ -129,13 +186,16 @@ func Apply(repo, current, dataDir string) (*Release, error) {
 	if tarURL == "" {
 		return nil, fmt.Errorf("Release 中缺少资源 %s", tarName)
 	}
-	body, err := download(ctx, tarURL)
+	body, err := download(ctx, hc, tarURL, "downloading", progress)
 	if err != nil {
 		return nil, err
 	}
 	// sha256 校验（资产缺失则跳过）
 	if sumURL := assetURL(rel, tarName+".sha256"); sumURL != "" {
-		if sum, err := download(ctx, sumURL); err == nil {
+		if progress != nil {
+			progress("verifying", 0, 0)
+		}
+		if sum, err := download(ctx, hc, sumURL, "verifying", nil); err == nil {
 			want := strings.Fields(string(sum))
 			if len(want) > 0 {
 				got := sha256.Sum256(body)
@@ -146,6 +206,9 @@ func Apply(repo, current, dataDir string) (*Release, error) {
 		}
 	}
 	// 解包取二进制
+	if progress != nil {
+		progress("installing", 0, 0)
+	}
 	gz, err := gzip.NewReader(bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("安装包解压失败: %w", err)
