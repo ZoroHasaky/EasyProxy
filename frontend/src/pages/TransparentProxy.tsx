@@ -22,6 +22,22 @@ export default function TransparentProxyPage() {
 
   const patch = (p: Partial<Settings>) => setForm((f) => (f ? { ...f, ...p } : f));
 
+  // 开启 TUN 前预检环境（/dev/net/tun + NET_ADMIN），不满足时提示但不禁用（可先保存待环境就绪）
+  const checkTun = async (on: boolean) => {
+    patch({ tun_enable: on });
+    if (!on) return;
+    try {
+      const res = await api.get<{ ok: boolean; detail: string }>("/api/tun/check");
+      if (!res.ok) {
+        toast.error(`TUN 环境不可用：${res.detail}`, { duration: 8000 });
+      } else {
+        toast.success("TUN 环境检测通过");
+      }
+    } catch {
+      /* 检测失败不阻塞开关 */
+    }
+  };
+
   const save = useMutation({
     mutationFn: () =>
       api.put("/api/settings", {
@@ -54,15 +70,15 @@ export default function TransparentProxyPage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-base">透明代理（TUN 模式）</CardTitle>
           <CardDescription>
-            开启后接管本机及经本机转发的流量（auto-route + auto-redirect）。Docker 部署需要
-            host 网络与 NET_ADMIN 权限，参考 docker-compose.router.yml。修改后需到
-            <Link to="/kernel" className="mx-1 underline underline-offset-2 hover:text-foreground">内核页</Link>
-            重启内核生效。
+            开启后接管本机及经本机转发的流量（auto-route + auto-redirect）。Docker 部署需先在
+            docker-compose.yml 中取消注释「透明代理（TUN）模式」配置段（host 网络 + NET_ADMIN + /dev/net/tun）。
+            修改后需到<Link to="/kernel" className="mx-1 underline underline-offset-2 hover:text-foreground">内核页</Link>
+            应用配置（TUN 变更需重启内核）。
           </CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-4">
           <div className="flex items-center gap-2">
-            <Switch id="tun" checked={form.tun_enable} onCheckedChange={(v) => patch({ tun_enable: v })} />
+            <Switch id="tun" checked={form.tun_enable} onCheckedChange={(v) => checkTun(v)} />
             <Label htmlFor="tun">启用 TUN</Label>
           </div>
           <div className="space-y-1.5">

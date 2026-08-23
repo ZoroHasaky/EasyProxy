@@ -150,7 +150,7 @@ export default function KernelPage() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">更新 / 上传</CardTitle>
-          <CardDescription>从 GitHub 下载内核（可配置下方镜像加速），下载失败时可手动上传</CardDescription>
+          <CardDescription>自动依次尝试多个下载源（内置镜像 + 直连），也可在下方指定优先镜像；下载失败时可手动上传</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
           <div className="w-44 space-y-1.5">
@@ -207,9 +207,10 @@ export default function KernelPage() {
             <Label htmlFor="allow-lan">允许局域网连接（软路由/旁路由必须开启）</Label>
           </div>
           <div className="space-y-1.5">
-            <Label>内核下载镜像</Label>
+            <Label>内核下载镜像（优先）</Label>
             <Input value={form.core_mirror ?? ""} onChange={(e) => patch({ core_mirror: e.target.value })}
-              placeholder="留空=直连 GitHub，如 https://ghproxy.net/" />
+              placeholder="留空=自动依次尝试内置镜像（直连+ghproxy 等）" />
+            <p className="text-xs text-muted-foreground">如 https://ghproxy.net/https://github.com，失败自动换下一个源</p>
           </div>
         </CardContent>
         <CardContent className="pt-0">

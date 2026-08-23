@@ -129,6 +129,17 @@ func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// 填充所属订阅名
+	subs, _ := s.st.ListSubscriptions()
+	names := make(map[int64]string, len(subs))
+	for _, sub := range subs {
+		names[sub.ID] = sub.Name
+	}
+	for i := range nodes {
+		if nodes[i].SourceType == "sub" {
+			nodes[i].SourceName = names[nodes[i].SourceID]
+		}
+	}
 	writeJSON(w, http.StatusOK, nodes)
 }
 
@@ -217,6 +228,42 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 	}
 	s.dirty.Store(true)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleNodeDelay 单节点测速：经 mihomo 对指定节点测延迟并回写
+func (s *Server) handleNodeDelay(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	node, err := s.st.GetNode(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "节点不存在")
+		return
+	}
+	if s.dirty.Load() {
+		if _, err := s.applyConfig(); err != nil {
+			writeErr(w, http.StatusBadGateway, "应用配置失败: "+err.Error())
+			return
+		}
+		s.dirty.Store(false)
+	}
+	ms, derr := s.client.Delay(node.Name, service.DefaultTestURL, 5000)
+	if derr != nil {
+		_, _ = s.st.UpdateNodeLatencies(map[string]int{node.Name: 0})
+		writeErr(w, http.StatusBadGateway, "测速失败: "+derr.Error())
+		return
+	}
+	_, _ = s.st.UpdateNodeLatencies(map[string]int{node.Name: int(ms)})
+	writeJSON(w, http.StatusOK, map[string]any{"delay": ms})
+}
+
+// handlePruneNodes 清理已测速且失活（超时）的节点
+func (s *Server) handlePruneNodes(w http.ResponseWriter, r *http.Request) {
+	n, err := s.st.PruneDeadNodes()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.dirty.Store(true)
+	writeJSON(w, http.StatusOK, map[string]any{"removed": n})
 }
 
 func (s *Server) handleCheckNodes(w http.ResponseWriter, r *http.Request) {

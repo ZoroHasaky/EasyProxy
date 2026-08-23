@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Gauge, Plus, Trash2 } from "lucide-react";
+import { Gauge, Plus, Trash2, Zap, Eraser } from "lucide-react";
 import { api, ProxyNode, RegionInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,7 @@ export default function NodesPage() {
   const [sort, setSort] = useState("id");
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
+  const [delayPending, setDelayPending] = useState<number | null>(null);
 
   const params = new URLSearchParams();
   if (region) params.set("region", region);
@@ -67,6 +68,28 @@ export default function NodesPage() {
       qc.invalidateQueries({ queryKey: ["nodes"] });
     },
   });
+  const prune = useMutation({
+    mutationFn: () => api.post<{ removed: number }>("/api/nodes/prune"),
+    onSuccess: (res) => {
+      toast.success(`已清理 ${res.removed} 个失效节点`);
+      qc.invalidateQueries({ queryKey: ["nodes"] });
+      qc.invalidateQueries({ queryKey: ["nodeRegions"] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const testOne = async (id: number) => {
+    setDelayPending(id);
+    try {
+      const res = await api.get<{ delay: number }>(`/api/nodes/${id}/delay`);
+      toast.success(`测速完成：${res.delay} ms`);
+      qc.invalidateQueries({ queryKey: ["nodes"] });
+    } catch (e: any) {
+      toast.error(e.message);
+      qc.invalidateQueries({ queryKey: ["nodes"] });
+    } finally {
+      setDelayPending(null);
+    }
+  };
   const doImport = useMutation({
     mutationFn: () => api.post<{ added: number; duplicated: number }>("/api/nodes/import", { content: importText }),
     onSuccess: (res) => {
@@ -93,7 +116,14 @@ export default function NodesPage() {
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => check.mutate()} disabled={check.isPending}>
             <Gauge className={cn("h-4 w-4", check.isPending && "animate-pulse")} />
-            {check.isPending ? "测速中…" : "测速"}
+            {check.isPending ? "测速中…" : "整组测速"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => { if (confirm("删除所有已测速且超时/失活的节点？")) prune.mutate(); }}
+            disabled={prune.isPending}
+          >
+            <Eraser className="h-4 w-4" /> 清理失效
           </Button>
           <Button onClick={() => setImportOpen(true)}>
             <Plus className="h-4 w-4" /> 导入节点
@@ -133,8 +163,7 @@ export default function NodesPage() {
             <TableHead>节点</TableHead>
             <TableHead>地区</TableHead>
             <TableHead>类型</TableHead>
-            <TableHead>服务器</TableHead>
-            <TableHead>来源</TableHead>
+            <TableHead>所属订阅</TableHead>
             <TableHead>延迟</TableHead>
             <TableHead>启用</TableHead>
             <TableHead className="text-right">操作</TableHead>
@@ -146,22 +175,30 @@ export default function NodesPage() {
               <TableCell className="max-w-64 truncate font-medium">{n.name}</TableCell>
               <TableCell>{regionFlag(n.region)} {n.region}</TableCell>
               <TableCell><Badge variant="outline">{n.type}</Badge></TableCell>
-              <TableCell className="max-w-52 truncate text-xs text-muted-foreground">{n.server}:{n.port}</TableCell>
-              <TableCell className="text-xs">{n.source_type === "sub" ? `订阅#${n.source_id}` : "手动"}</TableCell>
+              <TableCell className="max-w-40 truncate text-xs">
+                {n.source_type === "sub" ? (n.source_name || `订阅#${n.source_id}`) : "手动"}
+              </TableCell>
               <TableCell>{latencyBadge(n)}</TableCell>
               <TableCell>
                 <Switch checked={n.enabled} onCheckedChange={(v) => toggle.mutate({ id: n.id, value: v })} />
               </TableCell>
               <TableCell className="text-right">
-                <Button size="icon" variant="ghost" onClick={() => { if (confirm(`删除节点 ${n.name}？`)) remove.mutate(n.id); }}>
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
+                <div className="flex justify-end gap-1">
+                  <Button size="icon" variant="ghost" title="测速"
+                    onClick={() => testOne(n.id)} disabled={delayPending === n.id}>
+                    <Zap className={cn("h-4 w-4 text-amber-500", delayPending === n.id && "animate-pulse")} />
+                  </Button>
+                  <Button size="icon" variant="ghost" title="删除"
+                    onClick={() => { if (confirm(`删除节点 ${n.name}？`)) remove.mutate(n.id); }}>
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}
           {nodes.data?.length === 0 && (
             <TableRow>
-              <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+              <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                 节点池为空，请先添加订阅或导入节点
               </TableCell>
             </TableRow>

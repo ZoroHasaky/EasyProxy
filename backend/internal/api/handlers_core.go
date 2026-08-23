@@ -154,6 +154,12 @@ func (s *Server) handleCoreRestart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// handleTunCheck 开启 TUN 前的权限预检（/dev/net/tun + NET_ADMIN）
+func (s *Server) handleTunCheck(w http.ResponseWriter, r *http.Request) {
+	ok, detail := core.CheckTunAvailable()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": ok, "detail": detail})
+}
+
 // ---------- 面板自更新 ----------
 
 // DefaultUpdateRepo 内置更新源：本项目官方仓库

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -100,6 +101,19 @@ func (c *Client) DelayGroup(group, testURL string, timeout int) (map[string]uint
 		return nil, err
 	}
 	return out, nil
+}
+
+// Delay 单节点测速，返回延迟 ms
+func (c *Client) Delay(name, testURL string, timeout int) (uint16, error) {
+	var out map[string]uint16
+	path := fmt.Sprintf("/proxies/%s/delay?url=%s&timeout=%d", url.PathEscape(name), testURL, timeout)
+	if err := c.do(http.MethodGet, path, nil, &out); err != nil {
+		return 0, err
+	}
+	if d, ok := out["delay"]; ok {
+		return d, nil
+	}
+	return 0, fmt.Errorf("内核未返回延迟结果")
 }
 
 func (c *Client) CloseConnection(id string) error {

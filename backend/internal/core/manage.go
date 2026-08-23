@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -46,11 +47,44 @@ func InstalledCoreVersion(dataDir string) string {
 	return ver
 }
 
-// LatestCoreVersion 查询 mihomo 最新版本 tag
+// CoreDownloadMirrors 内置内核下载镜像（形如 ghproxy 的 GitHub 加速前缀，按序自动尝试；空串=直连）
+var CoreDownloadMirrors = []string{
+	"",
+	"https://ghproxy.net/https://github.com",
+	"https://gh-proxy.com/https://github.com",
+	"https://ghfast.top/https://github.com",
+}
+
+// mirrorProxyPrefix 由镜像前缀推导通用 URL 代理前缀（如 https://ghproxy.net/）
+func mirrorProxyPrefix(mirror string) string {
+	return strings.TrimSuffix(strings.TrimRight(mirror, "/"), GitHubRelease)
+}
+
+// LatestCoreVersion 查询 mihomo 最新版本 tag：直连失败时依次尝试内置镜像
 func LatestCoreVersion() (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	prefixes := []string{""}
+	for _, m := range CoreDownloadMirrors[1:] {
+		prefixes = append(prefixes, mirrorProxyPrefix(m))
+	}
+	var lastErr error
+	for _, prefix := range prefixes {
+		api := GitHubAPI
+		if prefix != "" {
+			api = prefix + "/" + GitHubAPI
+		}
+		if v, err := latestVersionFrom(api); err == nil {
+			return v, nil
+		} else {
+			lastErr = err
+		}
+	}
+	return "", lastErr
+}
+
+func latestVersionFrom(apiBase string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, GitHubAPI+"/repos/"+CoreRepo+"/releases/latest", nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, apiBase+"/repos/"+CoreRepo+"/releases/latest", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", err
@@ -82,7 +116,8 @@ func assetArch(goarch string) (string, error) {
 	return "", fmt.Errorf("不支持的架构: %s", goarch)
 }
 
-// DownloadCore 下载并安装内核。mirror 为 GitHub 下载前缀（如 https://ghproxy.net/），空则直连
+// DownloadCore 下载并安装内核。多个下载源按序自动尝试：用户镜像（若有）→ 内置镜像 → 直连；
+// mirror 为 GitHub 下载前缀（如 https://ghproxy.net/https://github.com），空则不额外优先
 func DownloadCore(dataDir, version, mirror string) error {
 	if version == "" || version == "latest" {
 		v, err := LatestCoreVersion()
@@ -95,34 +130,64 @@ func DownloadCore(dataDir, version, mirror string) error {
 	if err != nil {
 		return err
 	}
-	base := GitHubRelease
-	if mirror != "" {
-		base = strings.TrimRight(mirror, "/")
-	}
-	url := fmt.Sprintf("%s/%s/releases/download/%s/mihomo-linux-%s-%s.gz",
-		base, CoreRepo, version, arch, version)
 
-	// 慢镜像（如 ghproxy 类前缀）下载可能远超 5 分钟，放宽到 15 分钟
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	bases := []string{}
+	if m := strings.TrimSpace(mirror); m != "" {
+		bases = append(bases, strings.TrimRight(m, "/"))
+	}
+	bases = append(bases, CoreDownloadMirrors...)
+	seen := map[string]bool{}
+	urls := make([]string, 0, len(bases))
+	for _, base := range bases {
+		if base == "" {
+			base = GitHubRelease
+		} else {
+			base = strings.TrimRight(base, "/")
+		}
+		if seen[base] {
+			continue
+		}
+		seen[base] = true
+		urls = append(urls, fmt.Sprintf("%s/%s/releases/download/%s/mihomo-linux-%s-%s.gz",
+			base, CoreRepo, version, arch, version))
+	}
+
+	deadline := time.Now().Add(20 * time.Minute)
+	var lastErr error
+	for _, u := range urls {
+		if time.Now().After(deadline) {
+			break
+		}
+		log.Printf("[core] 尝试下载源: %s", u)
+		data, err := fetchCoreAsset(u)
+		if err != nil {
+			lastErr = err
+			log.Printf("[core] 该源失败: %v", err)
+			continue
+		}
+		return installCoreBytes(dataDir, data)
+	}
+	return fmt.Errorf("全部下载源失败，最后错误: %w", lastErr)
+}
+
+// fetchCoreAsset 从单个源下载内核压缩包（单源 5 分钟超时）
+func fetchCoreAsset(u string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("下载失败: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("下载失败: HTTP %d (%s)", resp.StatusCode, url)
+		return nil, fmt.Errorf("HTTP %d (%s)", resp.StatusCode, u)
 	}
 	gz, err := gzip.NewReader(io.LimitReader(resp.Body, 200<<20))
 	if err != nil {
-		return err
+		return nil, err
 	}
-	data, err := io.ReadAll(gz)
-	if err != nil {
-		return err
-	}
-	return installCoreBytes(dataDir, data)
+	return io.ReadAll(gz)
 }
 
 // InstallCoreFromUpload 用户手动上传的内核文件（裸二进制或 .gz）

@@ -64,6 +64,7 @@ export interface ProxyNode {
   region: string;
   source_type: "sub" | "manual";
   source_id: number;
+  source_name?: string;
   raw_config: Record<string, unknown>;
   dedup_hash: string;
   enabled: boolean;

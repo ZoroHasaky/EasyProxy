@@ -1,5 +1,8 @@
 # 普通代理模式：设备手动设置 HTTP/SOCKS 代理指向宿主机 7890 端口
 # 使用：docker compose -f deploy/docker-compose.yml up -d
+#
+# ── 透明代理（TUN）模式：取消 services.easyproxy 下对应行的注释，
+#    并注释掉 ports: 段（host 网络与端口映射互斥），再到面板「透明代理」页开启 TUN ──
 services:
   easyproxy:
     build:
@@ -10,6 +13,13 @@ services:
     ports:
       - "8080:8080" # 面板
       - "7890:7890" # 混合代理端口 (HTTP/SOCKS5)
+    # network_mode: host          # 透明代理：取消注释（并注释上方 ports 段）
+    # cap_add:                    # 透明代理：取消注释
+    #   - NET_ADMIN
+    # devices:                    # 透明代理：取消注释
+    #   - /dev/net/tun:/dev/net/tun
+    # sysctls:                    # 透明代理：取消注释（软路由转发需要）
+    #   - net.ipv4.ip_forward=1
     volumes:
       - ./data:/data
     restart: unless-stopped

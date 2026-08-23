@@ -25,6 +25,7 @@ type Node struct {
 	Region     string         `json:"region"`
 	SourceType string         `json:"source_type"` // sub | manual
 	SourceID   int64          `json:"source_id"`
+	SourceName string         `json:"source_name,omitempty"` // 所属订阅名（仅响应时填充，不落库）
 	RawConfig  map[string]any `json:"raw_config"`
 	DedupHash  string         `json:"dedup_hash"`
 	Enabled    bool           `json:"enabled"`

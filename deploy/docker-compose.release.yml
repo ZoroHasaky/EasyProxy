@@ -3,11 +3,20 @@
 #   docker compose up -d
 #   面板: http://<host>:8080    初始密码: docker logs easyproxy
 #   代理: http/socks5 <host>:7890
-# 软路由透明代理（TUN）模式请改用仓库中的 deploy/docker-compose.router.yml
+#
+# ── 透明代理（TUN）模式：取消下面各行的注释，并注释掉 services.easyproxy 下的 ports: 段 ──
+# 开启后 LAN 设备将网关/DNS 指向本机即可免配置走代理，再到面板「透明代理」页开启 TUN 开关
 services:
   easyproxy:
     image: __IMAGE__:__VERSION__
     container_name: easyproxy
+    # network_mode: host          # 必需：host 网络（与 ports 互斥，需一并注释）
+    # cap_add:
+    #   - NET_ADMIN               # 必需：创建 TUN 网卡的能力
+    # devices:
+    #   - /dev/net/tun:/dev/net/tun  # 必需：TUN 设备
+    # sysctls:
+    #   - net.ipv4.ip_forward=1   # 软路由转发需要
     ports:
       - "8080:8080" # 面板
       - "7890:7890" # 混合代理端口 (HTTP/SOCKS5)

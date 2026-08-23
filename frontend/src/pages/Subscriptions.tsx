@@ -14,6 +14,30 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 
+// subscription-userinfo（upload/download/total/expire，字节数/时间戳）转 GB 展示
+function formatTraffic(info?: string) {
+  if (!info) return "-";
+  const m: Record<string, number> = {};
+  info.split(";").forEach((p) => {
+    const i = p.indexOf("=");
+    if (i > 0) m[p.slice(0, i).trim()] = Number(p.slice(i + 1));
+  });
+  const gb = (b: number) => (b / 1024 ** 3).toFixed(2);
+  const used = (m.upload || 0) + (m.download || 0);
+  const parts: string[] = [];
+  if (m.total) {
+    const remain = Math.max(m.total - used, 0);
+    parts.push(`已用 ${gb(used)} / ${gb(m.total)} GB（剩 ${gb(remain)} GB）`);
+  } else if (used) {
+    parts.push(`已用 ${gb(used)} GB`);
+  }
+  if (m.expire) {
+    const d = new Date(m.expire * 1000);
+    if (!isNaN(d.getTime())) parts.push(`到期 ${d.toLocaleDateString("zh-CN")}`);
+  }
+  return parts.join(" · ") || "-";
+}
+
 function SubDialog({
   open, onClose, initial,
 }: {
@@ -142,9 +166,7 @@ export default function SubscriptionsPage() {
               <TableCell>
                 <Badge variant="secondary">{sub.node_count}</Badge>
               </TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                {sub.user_info ? sub.user_info.replace(/;?\s*(upload|download|total|expire)=/g, " $1=") : "-"}
-              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">{formatTraffic(sub.user_info)}</TableCell>
               <TableCell className="text-xs">{timeAgo(sub.last_update)}</TableCell>
               <TableCell className="text-xs">
                 {sub.update_interval > 0 ? `每 ${sub.update_interval} 分钟` : "手动"}

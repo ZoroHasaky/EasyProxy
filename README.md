@@ -23,6 +23,15 @@ docker compose up -d
 
 数据持久化在 compose 同目录的 `./data` 下；升级时下载新版 `docker-compose.yml`（镜像 tag 已随版本更新）后再次执行 `docker compose up -d` 即可。
 
+### 透明代理（TUN / 软路由）模式
+
+`docker-compose.yml` 内已内置 TUN 所需配置（注释状态）。启用步骤：
+
+1. 编辑 compose 文件，取消 `network_mode: host`、`cap_add: NET_ADMIN`、`devices: /dev/net/tun` 各行的注释（软路由场景同时取消 `sysctls: net.ipv4.ip_forward=1`）
+2. 注释掉 `ports:` 段（host 网络与端口映射互斥，端口直接监听在宿主机上）
+3. `docker compose up -d` 重建容器，到面板 **透明代理** 页打开 TUN 开关（会自动预检 /dev/net/tun 与 NET_ADMIN 权限），再到 **内核** 页应用配置
+4. LAN 设备把网关/DNS 指向本机即可免配置走代理
+
 ## 首次使用流程
 
 1. `docker logs easyproxy` 获取初始密码，登录并按提示修改
@@ -56,9 +65,9 @@ docker compose up -d
 
 ## 说明
 
-- 内核不在镜像内：首次启动自动从 GitHub 下载（内核页可配镜像前缀加速），失败可在 内核 页手动上传
+- 内核不在镜像内：首次启动自动下载（依次尝试直连 GitHub 与多个内置加速镜像，也可在内核页指定优先镜像），失败可在 内核 页手动上传
 - 自更新默认检测官方仓库 Release，也可在「关于」页改为自己的 fork（需包含对应架构的 `easyproxy-linux-<arch>.tar.gz`）
-- TUN 模式必须使用 `docker-compose.router.yml`（host 网络 + NET_ADMIN + /dev/net/tun）
+- TUN 模式在 compose 文件内取消注释即可启用（见上文「透明代理模式」），面板开启 TUN 前会自动预检环境权限
 
 ## License
 
