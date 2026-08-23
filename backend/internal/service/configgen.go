@@ -56,8 +56,10 @@ func defaultFallbackDNS() []string {
 }
 
 // DefaultFallbackDNS 导出默认 fallback DNS 列表
+// 用国内 UDP：境外 DoH（1.1.1.1/8.8.8.8）直连被墙时 fallback 永远无应答，
+// 会导致所有境外域名解析失败（fake-ip+sniffer 场景下本地境外解析本就少用）
 func DefaultFallbackDNS() []string {
-	return []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"}
+	return []string{"223.5.5.5", "119.29.29.29"}
 }
 
 // detectLANIP 返回默认出站接口的本机 IP（UDP 拨号选路，不实际发包）
@@ -154,6 +156,12 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 		sb.WriteString("  fake-ip-range: 198.18.0.1/16\n  fake-ip-filter:\n    - '*.lan'\n    - '+.local'\n")
 	}
 	sb.WriteString("  default-nameserver:\n")
+	for _, s := range []string{"223.5.5.5", "119.29.29.29"} {
+		fmt.Fprintf(&sb, "    - %s\n", quote(s))
+	}
+	// 节点服务器域名走国内 UDP 直查，绕过 fallback 门控：否则境外节点域名
+	// 解析会被失联的 fallback DoH 卡死，新节点拨号全部超时
+	sb.WriteString("  proxy-server-nameserver:\n")
 	for _, s := range []string{"223.5.5.5", "119.29.29.29"} {
 		fmt.Fprintf(&sb, "    - %s\n", quote(s))
 	}
@@ -289,6 +297,11 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 		finalTarget := GroupPROXY
 		if len(deduped) == 0 {
 			finalTarget = model.BuiltinDirect
+		}
+		// 兜底前先放行国内直连：无模板时全走代理会让国内站点（bilibili 等）异常
+		if len(deduped) > 0 {
+			sb.WriteString("  - " + quote("GEOIP,CN,DIRECT") + "\n")
+			ruleCount++
 		}
 		sb.WriteString("  - " + quote("MATCH,"+finalTarget) + "\n")
 		ruleCount++
