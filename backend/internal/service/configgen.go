@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	GroupPROXY    = "PROXY"
-	GroupAUTO     = "AUTO"
+	GroupPROXY     = "PROXY"
+	GroupAUTO      = "AUTO"
 	DefaultTestURL = "https://www.gstatic.com/generate_204"
 )
 
@@ -27,19 +27,71 @@ type GenResult struct {
 	RuleCount  int    `json:"rule_count"`
 }
 
-func defaultGeoxURLs() map[string]string {
-	return DefaultGeoxURLs()
+// DefaultGeoxSources 导出按优先级排列的推荐 Geo 数据源。
+// mihomo 每个分类只接受一个 URL，生成配置时使用每类首个非空地址。
+func DefaultGeoxSources() map[string][]string {
+	files := map[string]string{
+		"geoip":        "geoip.dat",
+		"geoip.metadb": "geoip.metadb",
+		"geosite":      "geosite.dat",
+		"mmdb":         "country.mmdb",
+		"asn":          "GeoLite2-ASN.mmdb",
+	}
+	out := make(map[string][]string, len(files))
+	for key, file := range files {
+		out[key] = []string{
+			"https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/" + file,
+			"https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/" + file,
+			"https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/release/" + file,
+		}
+	}
+	return out
 }
 
-// DefaultGeoxURLs 导出默认 GeoIP/GeoSite 数据源，供设置接口展示与恢复默认
+// DefaultGeoxURLs 保留单地址形式，供兼容调用使用。
 func DefaultGeoxURLs() map[string]string {
-	return map[string]string{
-		"geoip":         "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat",
-		"geoip.metadb":  "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb",
-		"geosite":       "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat",
-		"mmdb":          "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb",
-		"asn":           "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb",
+	return activeGeoxURLs(DefaultGeoxSources())
+}
+
+// GeoxSources 读取 Geo 数据源，并兼容旧版 map[string]string 存储格式。
+func GeoxSources(st *store.Store) map[string][]string {
+	var sources map[string][]string
+	if st.GetSettingJSON("geox_urls", &sources) && len(sources) > 0 {
+		return normalizeGeoxSources(sources)
 	}
+	var legacy map[string]string
+	if st.GetSettingJSON("geox_urls", &legacy) && len(legacy) > 0 {
+		wrapped := make(map[string][]string, len(legacy))
+		for key, value := range legacy {
+			wrapped[key] = []string{value}
+		}
+		return normalizeGeoxSources(wrapped)
+	}
+	return DefaultGeoxSources()
+}
+
+func normalizeGeoxSources(sources map[string][]string) map[string][]string {
+	out := make(map[string][]string, len(sources))
+	for key, values := range sources {
+		clean := make([]string, 0, len(values))
+		for _, value := range values {
+			if value = strings.TrimSpace(value); value != "" {
+				clean = append(clean, value)
+			}
+		}
+		out[key] = clean
+	}
+	return out
+}
+
+func activeGeoxURLs(sources map[string][]string) map[string]string {
+	out := make(map[string]string, len(sources))
+	for key, values := range normalizeGeoxSources(sources) {
+		if len(values) > 0 {
+			out[key] = values[0]
+		}
+	}
+	return out
 }
 
 func defaultNameservers() []string {
@@ -107,15 +159,18 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 	secret := st.GetSetting("controller_secret", "")
 	fmt.Fprintf(&sb, "external-controller: 127.0.0.1:%d\nsecret: %s\n\n", controllerPort, quote(secret))
 
-	geox := map[string]string{}
-	if !st.GetSettingJSON("geox_urls", &geox) || len(geox) == 0 {
-		geox = defaultGeoxURLs()
+	if st.GetSettingBool("geo_enabled", true) {
+		geox := activeGeoxURLs(GeoxSources(st))
+		if len(geox) > 0 {
+			sb.WriteString("geox-url:\n")
+			for _, k := range sortedKeys(geox) {
+				fmt.Fprintf(&sb, "  %s: %s\n", k, quote(geox[k]))
+			}
+		}
+		fmt.Fprintf(&sb, "geo-auto-update: %t\n", st.GetSettingBool("geo_auto_update", false))
+		fmt.Fprintf(&sb, "geo-update-interval: %d\n", st.GetSettingInt("geo_update_interval", 24))
+		sb.WriteString("\n")
 	}
-	sb.WriteString("geox-url:\n")
-	for _, k := range sortedKeys(geox) {
-		fmt.Fprintf(&sb, "  %s: %s\n", k, quote(geox[k]))
-	}
-	sb.WriteString("\n")
 
 	tunEnable := st.GetSettingBool("tun_enable", false)
 	tunStack := st.GetSetting("tun_stack", "mixed")

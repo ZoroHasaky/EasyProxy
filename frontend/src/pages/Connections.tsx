@@ -63,6 +63,7 @@ export default function ConnectionsPage() {
       list = list.filter(
         (r) =>
           (r.conn.metadata.host || r.conn.metadata.destinationIP).toLowerCase().includes(kw) ||
+          r.conn.metadata.sourceIP.toLowerCase().includes(kw) ||
           r.conn.chains.join("→").toLowerCase().includes(kw) ||
           r.conn.rule.toLowerCase().includes(kw),
       );
@@ -130,7 +131,7 @@ export default function ConnectionsPage() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Input className="w-64" placeholder="搜索主机 / 规则 / 代理链" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input className="w-64" placeholder="搜索来源 / 目标 / 规则 / 代理链" value={q} onChange={(e) => setQ(e.target.value)} />
         <Select className="w-40" value={sort} onChange={(e) => setSort(e.target.value as any)}>
           <option value="speed">按速度排序</option>
           <option value="total">按总流量排序</option>
@@ -148,8 +149,9 @@ export default function ConnectionsPage() {
         </Button>
       </div>
 
-      <div className="overflow-hidden rounded-lg border bg-card">
-        <div className="grid grid-cols-[minmax(160px,2fr)_130px_minmax(120px,1.4fr)_70px_90px_90px_90px_80px_36px] items-center border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
+      <div className="overflow-x-auto rounded-lg border bg-card">
+        <div className="grid min-w-[960px] grid-cols-[120px_minmax(135px,1.8fr)_105px_minmax(105px,1.2fr)_60px_72px_72px_72px_65px_32px] items-center border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
+          <span>来源主机</span>
           <span>目标主机</span>
           <span>规则</span>
           <span>代理链</span>
@@ -165,12 +167,17 @@ export default function ConnectionsPage() {
             {virtualizer.getVirtualItems().map((vRow) => {
               const r = filtered[vRow.index];
               const host = r.conn.metadata.host || r.conn.metadata.destinationIP;
+              const source = r.conn.metadata.sourceIP || "-";
               return (
                 <div
                   key={r.conn.id}
-                  className="absolute grid w-full grid-cols-[minmax(160px,2fr)_130px_minmax(120px,1.4fr)_70px_90px_90px_90px_80px_36px] items-center border-b px-3 text-xs"
+                  className="absolute grid min-w-[960px] w-full grid-cols-[120px_minmax(135px,1.8fr)_105px_minmax(105px,1.2fr)_60px_72px_72px_72px_65px_32px] items-center border-b px-3 text-xs"
                   style={{ height: vRow.size, transform: `translateY(${vRow.start}px)` }}
                 >
+                  <span className="truncate text-muted-foreground" title={source}>
+                    {source}
+                    {r.conn.metadata.sourcePort && <span>:{r.conn.metadata.sourcePort}</span>}
+                  </span>
                   <span className="truncate" title={host}>
                     {host}
                     <span className="text-muted-foreground">:{r.conn.metadata.destinationPort}</span>

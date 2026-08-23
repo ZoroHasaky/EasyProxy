@@ -17,7 +17,7 @@ const nav = [
   { to: "/connections", label: "连接", icon: Cable },
   { to: "/kernel", label: "内核", icon: Cpu },
   { to: "/tun", label: "透明代理", icon: Network },
-  { to: "/geo", label: "Geo 数据", icon: Earth },
+  { to: "/geo", label: "Geo", icon: Earth },
   { to: "/logs", label: "日志", icon: Terminal },
   { to: "/settings", label: "设置", icon: Settings },
   { to: "/about", label: "关于", icon: Info },

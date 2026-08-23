@@ -174,7 +174,10 @@ export interface Settings {
   dns_mode: string;
   dns_nameserver: string[];
   dns_fallback: string[];
-  geox_urls: Record<string, string>;
+  geo_enabled: boolean;
+  geo_auto_update: boolean;
+  geo_update_interval: number;
+  geox_urls: Record<string, string[]>;
   update_repo: string;
   core_mirror: string;
 }
@@ -207,6 +210,7 @@ export interface MihomoConnectionMeta {
   network: string;
   type: string;
   sourceIP: string;
+  sourcePort?: string;
   destinationPort: string;
   host: string;
   destinationIP: string;

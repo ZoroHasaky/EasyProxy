@@ -23,11 +23,11 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version": s.version,
 		"core": map[string]any{
-			"installed": s.coreInstalled(),
-			"version":   core.InstalledCoreVersion(s.dataDir),
-			"state":     st.State,
-			"pid":       st.PID,
-			"restarts":  st.Restarts,
+			"installed":  s.coreInstalled(),
+			"version":    core.InstalledCoreVersion(s.dataDir),
+			"state":      st.State,
+			"pid":        st.PID,
+			"restarts":   st.Restarts,
 			"last_error": st.LastError,
 		},
 	})
@@ -67,15 +67,15 @@ func (s *Server) handleCoreStatus(w http.ResponseWriter, r *http.Request) {
 	s.dlMu.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"installed":       s.coreInstalled(),
+		"installed":         s.coreInstalled(),
 		"installed_version": core.InstalledCoreVersion(s.dataDir),
-		"state":           st.State,
-		"pid":             st.PID,
-		"restarts":        st.Restarts,
-		"last_error":      st.LastError,
-		"downloading":     dlRunning,
-		"download_error":  dlErr,
-		"latest_version":  latest,
+		"state":             st.State,
+		"pid":               st.PID,
+		"restarts":          st.Restarts,
+		"last_error":        st.LastError,
+		"downloading":       dlRunning,
+		"download_error":    dlErr,
+		"latest_version":    latest,
 	})
 }
 
@@ -200,18 +200,21 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 // ---------- 设置 ----------
 
 type settingsPayload struct {
-	MixedPort     *int     `json:"mixed_port"`
-	AllowLan      *bool    `json:"allow_lan"`
-	LogLevel      *string  `json:"log_level"`
-	TunEnable     *bool    `json:"tun_enable"`
-	TunStack      *string  `json:"tun_stack"`
-	DnsEnable     *bool    `json:"dns_enable"`
-	DnsMode       *string  `json:"dns_mode"`
-	DnsNameserver []string `json:"dns_nameserver"`
-	DnsFallback   []string `json:"dns_fallback"`
-	GeoxUrls      map[string]string `json:"geox_urls"`
-	UpdateRepo    *string  `json:"update_repo"`
-	CoreMirror    *string  `json:"core_mirror"`
+	MixedPort         *int                `json:"mixed_port"`
+	AllowLan          *bool               `json:"allow_lan"`
+	LogLevel          *string             `json:"log_level"`
+	TunEnable         *bool               `json:"tun_enable"`
+	TunStack          *string             `json:"tun_stack"`
+	DnsEnable         *bool               `json:"dns_enable"`
+	DnsMode           *string             `json:"dns_mode"`
+	DnsNameserver     []string            `json:"dns_nameserver"`
+	DnsFallback       []string            `json:"dns_fallback"`
+	GeoEnabled        *bool               `json:"geo_enabled"`
+	GeoAutoUpdate     *bool               `json:"geo_auto_update"`
+	GeoUpdateInterval *int                `json:"geo_update_interval"`
+	GeoxUrls          map[string][]string `json:"geox_urls"`
+	UpdateRepo        *string             `json:"update_repo"`
+	CoreMirror        *string             `json:"core_mirror"`
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -223,23 +226,23 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	if !s.st.GetSettingJSON("dns_fallback", &fb) || len(fb) == 0 {
 		fb = service.DefaultFallbackDNS()
 	}
-	geox := map[string]string{}
-	if !s.st.GetSettingJSON("geox_urls", &geox) || len(geox) == 0 {
-		geox = service.DefaultGeoxURLs()
-	}
+	geox := service.GeoxSources(s.st)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"mixed_port":     s.st.GetSettingInt("mixed_port", 7890),
-		"allow_lan":      s.st.GetSettingBool("allow_lan", true),
-		"log_level":      s.st.GetSetting("log_level", "info"),
-		"tun_enable":     s.st.GetSettingBool("tun_enable", false),
-		"tun_stack":      s.st.GetSetting("tun_stack", "mixed"),
-		"dns_enable":     s.st.GetSettingBool("dns_enable", true),
-		"dns_mode":       s.st.GetSetting("dns_mode", "fake-ip"),
-		"dns_nameserver": ns,
-		"dns_fallback":   fb,
-		"geox_urls":      geox,
-		"update_repo":    s.updateRepo(),
-		"core_mirror":    s.st.GetSetting("core_mirror", ""),
+		"mixed_port":          s.st.GetSettingInt("mixed_port", 7890),
+		"allow_lan":           s.st.GetSettingBool("allow_lan", true),
+		"log_level":           s.st.GetSetting("log_level", "info"),
+		"tun_enable":          s.st.GetSettingBool("tun_enable", false),
+		"tun_stack":           s.st.GetSetting("tun_stack", "mixed"),
+		"dns_enable":          s.st.GetSettingBool("dns_enable", true),
+		"dns_mode":            s.st.GetSetting("dns_mode", "fake-ip"),
+		"dns_nameserver":      ns,
+		"dns_fallback":        fb,
+		"geo_enabled":         s.st.GetSettingBool("geo_enabled", true),
+		"geo_auto_update":     s.st.GetSettingBool("geo_auto_update", false),
+		"geo_update_interval": s.st.GetSettingInt("geo_update_interval", 24),
+		"geox_urls":           geox,
+		"update_repo":         s.updateRepo(),
+		"core_mirror":         s.st.GetSetting("core_mirror", ""),
 	})
 }
 
@@ -289,6 +292,19 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if p.DnsFallback != nil {
 		b, _ := json.Marshal(p.DnsFallback)
 		set("dns_fallback", string(b))
+	}
+	if p.GeoEnabled != nil {
+		set("geo_enabled", boolStr(*p.GeoEnabled))
+	}
+	if p.GeoAutoUpdate != nil {
+		set("geo_auto_update", boolStr(*p.GeoAutoUpdate))
+	}
+	if p.GeoUpdateInterval != nil {
+		if *p.GeoUpdateInterval < 1 || *p.GeoUpdateInterval > 720 {
+			writeErr(w, http.StatusBadRequest, "Geo 更新间隔需在 1 到 720 小时之间")
+			return
+		}
+		set("geo_update_interval", strconv.Itoa(*p.GeoUpdateInterval))
 	}
 	if p.GeoxUrls != nil {
 		b, _ := json.Marshal(p.GeoxUrls)

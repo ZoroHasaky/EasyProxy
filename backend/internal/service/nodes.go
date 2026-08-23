@@ -91,6 +91,24 @@ func toIntAny(v any) int {
 	return 0
 }
 
+// isSubscriptionInfoNode 识别机场订阅中伪装成代理节点的流量/到期提示。
+// 仅在订阅同步时过滤，手动导入仍保留用户明确提交的内容。
+func isSubscriptionInfoNode(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return false
+	}
+	for _, keyword := range []string{
+		"剩余流量", "流量剩余", "套餐到期", "到期时间", "过期时间", "有效期至",
+		"remaining traffic", "traffic remaining", "expire date", "expiration date",
+	} {
+		if strings.Contains(name, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
 // FetchSubscription 抓取订阅内容；proxyAddr 非空时经 mihomo 混合端口请求
 func FetchSubscription(rawURL, ua, proxyAddr string) (content, userInfo string, err error) {
 	transport := http.DefaultTransport
@@ -163,6 +181,9 @@ func SyncSubscription(st *store.Store, sub *model.Subscription, proxyAddr string
 	}
 	nodes := make([]model.Node, 0, len(proxies))
 	for _, raw := range proxies {
+		if isSubscriptionInfoNode(toStr(raw["name"])) {
+			continue
+		}
 		n, err := NormalizeProxy(raw)
 		if err != nil {
 			continue
