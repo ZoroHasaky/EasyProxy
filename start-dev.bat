@@ -9,7 +9,7 @@ echo.
 
 set "ROOT_DIR=%~dp0"
 set "BACKEND_DIR=%ROOT_DIR%backend"
-set "WEB_DIR=%ROOT_DIR%fronted"
+set "WEB_DIR=%ROOT_DIR%frontend"
 set "DATA_DIR=%ROOT_DIR%data"
 
 if not exist "%BACKEND_DIR%\NUL" (

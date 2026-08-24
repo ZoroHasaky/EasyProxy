@@ -1,9 +1,9 @@
 # ---- frontend build ----
 FROM node:20-alpine AS web
 WORKDIR /web
-COPY fronted/package.json fronted/package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
-COPY fronted/ ./
+COPY frontend/ ./
 RUN npm run build
 
 # ---- backend build ----

@@ -55,7 +55,7 @@ docker compose up -d
 │     ├─ store/             # SQLite (modernc 纯 Go)
 │     ├─ update/            # 面板自更新（GitHub Releases + exec）
 │     └─ web/               # 内嵌前端资源
-├─ fronted/                 # React + Vite + Tailwind + shadcn/ui
+├─ frontend/                # React + Vite + Tailwind + shadcn/ui
 └─ deploy/                  # Dockerfile / entrypoint / compose ×2
 ```
 
