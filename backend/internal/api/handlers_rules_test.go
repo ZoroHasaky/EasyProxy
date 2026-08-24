@@ -83,3 +83,62 @@ func TestApplyRuleProviderRuntimeStatus(t *testing.T) {
 		t.Fatalf("pending=%#v missing=%#v", providers[1], providers[2])
 	}
 }
+
+func TestTunConfigNeedsRestart(t *testing.T) {
+	tests := []struct {
+		name           string
+		running        map[string]any
+		desiredEnabled bool
+		desiredStack   string
+		want           bool
+	}{
+		{
+			name: "配置一致",
+			running: map[string]any{"tun": map[string]any{
+				"enable": true, "stack": "mixed",
+			}},
+			desiredEnabled: true,
+			desiredStack:   "mixed",
+		},
+		{
+			name: "启用状态改变",
+			running: map[string]any{"tun": map[string]any{
+				"enable": false, "stack": "mixed",
+			}},
+			desiredEnabled: true,
+			desiredStack:   "mixed",
+			want:           true,
+		},
+		{
+			name: "协议栈改变",
+			running: map[string]any{"tun": map[string]any{
+				"enable": true, "stack": "mixed",
+			}},
+			desiredEnabled: true,
+			desiredStack:   "system",
+			want:           true,
+		},
+		{
+			name: "TUN 关闭时协议栈差异无需重启",
+			running: map[string]any{"tun": map[string]any{
+				"enable": false, "stack": "mixed",
+			}},
+			desiredEnabled: false,
+			desiredStack:   "system",
+		},
+		{
+			name:           "运行配置缺少 TUN",
+			running:        map[string]any{},
+			desiredEnabled: true,
+			desiredStack:   "mixed",
+			want:           true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tunConfigNeedsRestart(tt.running, tt.desiredEnabled, tt.desiredStack); got != tt.want {
+				t.Fatalf("tunConfigNeedsRestart()=%v, want %v", got, tt.want)
+			}
+		})
+	}
+}

@@ -398,6 +398,22 @@ func (s *Server) handleConfigPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 // applyConfig 生成并写入 config.yaml，然后热重载或重启内核
+func tunConfigNeedsRestart(running map[string]any, desiredEnabled bool, desiredStack string) bool {
+	tun, ok := running["tun"].(map[string]any)
+	if !ok {
+		return true
+	}
+	enabled, ok := tun["enable"].(bool)
+	if !ok || enabled != desiredEnabled {
+		return true
+	}
+	if !desiredEnabled {
+		return false
+	}
+	stack, ok := tun["stack"].(string)
+	return !ok || stack != desiredStack
+}
+
 func (s *Server) applyConfig() (string, error) {
 	if !s.writeGeneratedConfig() {
 		return "", fmt.Errorf("配置生成失败")
@@ -415,12 +431,11 @@ func (s *Server) applyConfig() (string, error) {
 	needRestart := false
 	var running map[string]any
 	if err := s.client.GetConfigs(&running); err == nil {
-		if tun, ok := running["tun"].(map[string]any); ok {
-			enabled, _ := tun["enable"].(bool)
-			if enabled != s.st.GetSettingBool("tun_enable", false) {
-				needRestart = true
-			}
-		} else {
+		if tunConfigNeedsRestart(
+			running,
+			s.st.GetSettingBool("tun_enable", false),
+			s.st.GetSetting("tun_stack", "mixed"),
+		) {
 			needRestart = true
 		}
 		if mp, ok := running["mixed-port"].(float64); ok && int(mp) != s.st.GetSettingInt("mixed_port", 7890) {

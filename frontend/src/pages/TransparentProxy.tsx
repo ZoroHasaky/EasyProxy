@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Link } from "react-router-dom";
 import { Save } from "lucide-react";
 import { api, Settings } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -39,18 +38,32 @@ export default function TransparentProxyPage() {
   };
 
   const save = useMutation({
-    mutationFn: () =>
-      api.put("/api/settings", {
+    mutationFn: async () => {
+      await api.put("/api/settings", {
         tun_enable: form?.tun_enable,
         tun_stack: form?.tun_stack,
         dns_enable: form?.dns_enable,
         dns_mode: form?.dns_mode,
         dns_nameserver: form?.dns_nameserver,
         dns_fallback: form?.dns_fallback,
-      }),
-    onSuccess: () => {
-      toast.success("设置已保存，到内核页「应用配置」生效（TUN 变更需重启内核）");
+      });
+      try {
+        return await api.post<{ result: string }>("/api/config/apply");
+      } catch (error: any) {
+        throw new Error(`设置已保存，但自动应用失败：${error.message}`);
+      }
+    },
+    onSuccess: (res) => {
+      toast.success(
+        res.result === "reloaded" ? "设置已保存并热重载生效" :
+        res.result === "restarted" ? "设置已保存，内核已自动重启生效" :
+        res.result === "started" ? "设置已保存，内核已启动生效" : "设置已保存（内核未安装）",
+      );
       qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["core"] });
+      qc.invalidateQueries({ queryKey: ["meta"] });
+      qc.invalidateQueries({ queryKey: ["preview"] });
+      qc.invalidateQueries({ queryKey: ["proxies"] });
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -62,7 +75,7 @@ export default function TransparentProxyPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">透明代理</h1>
         <Button variant="outline" onClick={() => save.mutate()} disabled={save.isPending}>
-          <Save className="h-4 w-4" /> 保存设置
+          <Save className="h-4 w-4" /> {save.isPending ? "应用中…" : "保存并应用"}
         </Button>
       </div>
 
@@ -72,8 +85,7 @@ export default function TransparentProxyPage() {
           <CardDescription>
             开启后接管本机及经本机转发的流量（auto-route + auto-redirect）。Docker 部署需先在
             docker-compose.yml 中取消注释「透明代理（TUN）模式」配置段（host 网络 + NET_ADMIN + /dev/net/tun）。
-            修改后需到<Link to="/kernel" className="mx-1 underline underline-offset-2 hover:text-foreground">内核页</Link>
-            应用配置（TUN 变更需重启内核）。
+            保存后会自动应用配置；TUN 开关或协议栈变化时自动重启内核，其余设置优先热重载。
           </CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-4">
