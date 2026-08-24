@@ -31,7 +31,6 @@ import {
   Pencil,
   Plus,
   RotateCcw,
-  Save,
   Search,
   Trash2,
   Upload,
@@ -474,14 +473,35 @@ export default function RulesPage() {
   };
 
   const saveRules = useMutation({
-    mutationFn: () =>
-      api.put("/api/rules", { rules: localRules, providers: localProviders }),
-    onSuccess: () => {
-      toast.success("当前规则已保存（记得应用配置）");
-      void reloadFromServer();
-    },
+    mutationFn: ({
+      nextRules,
+      nextProviders,
+    }: {
+      nextRules: Rule[];
+      nextProviders: RuleProvider[];
+    }) => api.put("/api/rules", { rules: nextRules, providers: nextProviders }),
     onError: (error: any) => toast.error(error.message),
   });
+  const persistRules = async (
+    nextRules: Rule[],
+    nextProviders: RuleProvider[],
+    message: string,
+  ) => {
+    const error = validationError(nextRules, nextProviders);
+    if (error) {
+      toast.error(error);
+      return false;
+    }
+    try {
+      await saveRules.mutateAsync({ nextRules, nextProviders });
+      toast.success(`${message}（记得应用配置）`);
+      await reloadFromServer();
+      return true;
+    } catch {
+      await reloadFromServer();
+      return false;
+    }
+  };
   const parseTemplate = useMutation({
     mutationFn: () =>
       api.post<RuleTemplatePreview>("/api/rules/template-preview", {
@@ -589,7 +609,7 @@ export default function RulesPage() {
     setProviderDraftIsNew(false);
     setProviderDraft({ ...provider });
   };
-  const commitProviderDraft = () => {
+  const commitProviderDraft = async () => {
     if (!providerDraft) return;
     const next = {
       ...providerDraft,
@@ -619,25 +639,31 @@ export default function RulesPage() {
       return;
     }
     const existing = localProviders.find((provider) => provider.id === next.id);
-    if (existing && next.name !== existing.name) {
-      setRules((current) =>
-        (current ?? []).map((rule) =>
-          rule.kind === "RULE-SET" && rule.value === existing.name
-            ? { ...rule, value: next.name }
-            : rule,
-        ),
-      );
-    }
-    setProviders((items) =>
+    const nextRules =
+      existing && next.name !== existing.name
+        ? localRules.map((rule) =>
+            rule.kind === "RULE-SET" && rule.value === existing.name
+              ? { ...rule, value: next.name }
+              : rule,
+          )
+        : localRules;
+    const nextProviders =
       providerDraftIsNew
-        ? [...(items ?? []), next]
-        : (items ?? []).map((provider) =>
+        ? [...localProviders, next]
+        : localProviders.map((provider) =>
             provider.id === next.id ? next : provider,
-          ),
-    );
-    setProviderDraft(null);
+          );
+    if (
+      await persistRules(
+        nextRules,
+        nextProviders,
+        providerDraftIsNew ? "识别规则已添加" : "识别规则已修改",
+      )
+    ) {
+      setProviderDraft(null);
+    }
   };
-  const deleteProvider = (provider: RuleProvider) => {
+  const deleteProvider = async (provider: RuleProvider) => {
     const references = localRules.filter(
       (rule) => rule.kind === "RULE-SET" && rule.value === provider.name,
     ).length;
@@ -648,8 +674,10 @@ export default function RulesPage() {
       return;
     }
     if (!confirm(`确定删除识别规则“${provider.name}”？`)) return;
-    setProviders((items) =>
-      (items ?? []).filter((item) => item.id !== provider.id),
+    await persistRules(
+      localRules,
+      localProviders.filter((item) => item.id !== provider.id),
+      "识别规则已删除",
     );
   };
   const openAddRule = () => {
@@ -671,7 +699,7 @@ export default function RulesPage() {
     setRuleDraftIsNew(false);
     setRuleDraft({ ...rule });
   };
-  const commitRuleDraft = () => {
+  const commitRuleDraft = async () => {
     if (!ruleDraft) return;
     const next = {
       ...ruleDraft,
@@ -692,22 +720,40 @@ export default function RulesPage() {
       toast.error("请选择有效的识别规则");
       return;
     }
-    setRules((items) =>
+    const nextRules =
       ruleDraftIsNew
-        ? [...(items ?? []), next]
-        : (items ?? []).map((rule) => (rule.id === next.id ? next : rule)),
-    );
-    setRuleDraft(null);
+        ? [...localRules, next]
+        : localRules.map((rule) => (rule.id === next.id ? next : rule));
+    if (
+      await persistRules(
+        nextRules,
+        localProviders,
+        ruleDraftIsNew ? "代理规则已添加" : "代理规则已修改",
+      )
+    ) {
+      setRuleDraft(null);
+    }
   };
-  const onDragEnd = (event: DragEndEvent) => {
+  const deleteRule = async (rule: Rule) => {
+    if (!confirm("确定删除这条代理规则？")) return;
+    await persistRules(
+      localRules.filter((item) => item.id !== rule.id),
+      localProviders,
+      "代理规则已删除",
+    );
+  };
+  const onDragEnd = async (event: DragEndEvent) => {
     setDragId(null);
     if (!event.over || event.active.id === event.over.id) return;
     const oldIndex = localRules.findIndex(
       (rule) => rule.id === event.active.id,
     );
     const newIndex = localRules.findIndex((rule) => rule.id === event.over!.id);
-    if (oldIndex >= 0 && newIndex >= 0)
-      setRules(arrayMove(localRules, oldIndex, newIndex));
+    if (oldIndex >= 0 && newIndex >= 0) {
+      const nextRules = arrayMove(localRules, oldIndex, newIndex);
+      setRules(nextRules);
+      await persistRules(nextRules, localProviders, "代理规则顺序已保存");
+    }
   };
   const openProviderDetail = (provider: RuleProvider) => {
     const saved = payload.data?.providers.find(
@@ -781,10 +827,10 @@ export default function RulesPage() {
           <TabsTrigger value="recognition">
             识别规则（{localProviders.length}）
           </TabsTrigger>
+          <TabsTrigger value="groups">策略组</TabsTrigger>
           <TabsTrigger value="proxy">
             代理规则（{localRules.length}）
           </TabsTrigger>
-          <TabsTrigger value="groups">策略组</TabsTrigger>
         </TabsList>
 
         <TabsContent value="recognition" className="mt-4">
@@ -802,13 +848,6 @@ export default function RulesPage() {
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={openAddProvider}>
                   <Plus className="h-3.5 w-3.5" /> 添加识别规则
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => validateThen(() => saveRules.mutate())}
-                  disabled={saveRules.isPending}
-                >
-                  <Save className="h-3.5 w-3.5" /> 保存
                 </Button>
               </div>
             </div>
@@ -904,13 +943,6 @@ export default function RulesPage() {
                 >
                   <Eye className="h-3.5 w-3.5" /> 预览 YAML
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={() => validateThen(() => saveRules.mutate())}
-                  disabled={saveRules.isPending}
-                >
-                  <Save className="h-3.5 w-3.5" /> 保存
-                </Button>
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -941,12 +973,7 @@ export default function RulesPage() {
                       providers={localProviders}
                       targetOptions={targetOptions}
                       onEdit={() => openEditRule(rule)}
-                      onDelete={() =>
-                        confirm("确定删除这条代理规则？") &&
-                        setRules((items) =>
-                          (items ?? []).filter((item) => item.id !== rule.id),
-                        )
-                      }
+                      onDelete={() => void deleteRule(rule)}
                       onViewProvider={openProviderDetail}
                       dragged={dragId === rule.id}
                     />
@@ -1075,8 +1102,8 @@ export default function RulesPage() {
             <Button variant="outline" onClick={() => setProviderDraft(null)}>
               取消
             </Button>
-            <Button onClick={commitProviderDraft}>
-              {providerDraftIsNew ? "添加" : "确认修改"}
+            <Button onClick={commitProviderDraft} disabled={saveRules.isPending}>
+              {saveRules.isPending ? "保存中…" : "保存"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1226,8 +1253,8 @@ export default function RulesPage() {
             <Button variant="outline" onClick={() => setRuleDraft(null)}>
               取消
             </Button>
-            <Button onClick={commitRuleDraft}>
-              {ruleDraftIsNew ? "添加" : "确认修改"}
+            <Button onClick={commitRuleDraft} disabled={saveRules.isPending}>
+              {saveRules.isPending ? "保存中…" : "保存"}
             </Button>
           </DialogFooter>
         </DialogContent>

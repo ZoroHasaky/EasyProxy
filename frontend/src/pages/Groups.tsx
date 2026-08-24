@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Plus,
-  Save,
   Trash2,
   ArrowUp,
   ArrowDown,
@@ -66,10 +65,11 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
   }, [groups.data, items]);
 
   const save = useMutation({
-    mutationFn: () => api.put("/api/groups", items ?? []),
-    onSuccess: () => {
-      toast.success("策略组已保存（在内核页应用配置后生效）");
-      qc.invalidateQueries({ queryKey: ["groups"] });
+    mutationFn: ({ nextItems }: { nextItems: ProxyGroup[]; message: string }) =>
+      api.put("/api/groups", nextItems),
+    onSuccess: async (_data, variables) => {
+      toast.success(`${variables.message}（在内核页应用配置后生效）`);
+      await qc.invalidateQueries({ queryKey: ["groups"] });
       setItems(null);
     },
     onError: (e: any) => toast.error(e.message),
@@ -90,15 +90,14 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const move = (idx: number, dir: -1 | 1) =>
-    setItems((rs) => {
-      if (!rs) return rs;
-      const j = idx + dir;
-      if (j < 0 || j >= rs.length) return rs;
-      const copy = [...rs];
-      [copy[idx], copy[j]] = [copy[j], copy[idx]];
-      return copy;
-    });
+  const move = (idx: number, dir: -1 | 1) => {
+    if (!items) return;
+    const j = idx + dir;
+    if (j < 0 || j >= items.length) return;
+    const copy = [...items];
+    [copy[idx], copy[j]] = [copy[j], copy[idx]];
+    save.mutate({ nextItems: copy, message: "策略组顺序已保存" });
+  };
   const openAdd = () => {
     setDraftIsNew(true);
     setDraft({
@@ -139,16 +138,24 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
       toast.error(`策略组名称重复：${next.name}`);
       return;
     }
-    setItems((groups) =>
+    const nextItems =
       draftIsNew
-        ? [...(groups ?? []), next]
-        : (groups ?? []).map((group) => (group.id === next.id ? next : group)),
+        ? [...(items ?? []), next]
+        : (items ?? []).map((group) => (group.id === next.id ? next : group));
+    save.mutate(
+      {
+        nextItems,
+        message: draftIsNew ? "策略组已添加" : "策略组已修改",
+      },
+      { onSuccess: () => setDraft(null) },
     );
-    setDraft(null);
   };
   const deleteGroup = (group: ProxyGroup) => {
     if (!confirm(`确定删除策略组“${group.name}”？引用它的规则应用时将回退代理。`)) return;
-    setItems((groups) => (groups ?? []).filter((item) => item.id !== group.id));
+    save.mutate({
+      nextItems: (items ?? []).filter((item) => item.id !== group.id),
+      message: "策略组已删除",
+    });
   };
 
   const memberHint = (g: ProxyGroup): string => {
@@ -179,18 +186,12 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
           <Button
             variant="outline"
             onClick={() => genRegions.mutate()}
-            disabled={genRegions.isPending}
+            disabled={genRegions.isPending || save.isPending}
           >
             <Globe2 className="h-4 w-4" /> 生成地区分组
           </Button>
-          <Button variant="outline" onClick={openAdd}>
+          <Button variant="outline" onClick={openAdd} disabled={save.isPending}>
             <Plus className="h-4 w-4" /> 添加策略组
-          </Button>
-          <Button
-            onClick={() => save.mutate()}
-            disabled={items === null || save.isPending}
-          >
-            <Save className="h-4 w-4" /> 保存
           </Button>
         </div>
       </div>
@@ -218,6 +219,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                     variant="ghost"
                     title="上移"
                     onClick={() => move(idx, -1)}
+                    disabled={save.isPending}
                   >
                     <ArrowUp className="h-4 w-4" />
                   </Button>
@@ -226,6 +228,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                     variant="ghost"
                     title="下移"
                     onClick={() => move(idx, 1)}
+                    disabled={save.isPending}
                   >
                     <ArrowDown className="h-4 w-4" />
                   </Button>
@@ -234,6 +237,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                     variant="ghost"
                     title="修改策略组"
                     onClick={() => openEdit(g)}
+                    disabled={save.isPending}
                   >
                     <Pencil className="h-4 w-4" />
                   </Button>
@@ -242,6 +246,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                     variant="ghost"
                     title="删除策略组"
                     onClick={() => deleteGroup(g)}
+                    disabled={save.isPending}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
@@ -413,8 +418,8 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
             <Button variant="outline" onClick={() => setDraft(null)}>
               取消
             </Button>
-            <Button onClick={commitDraft}>
-              {draftIsNew ? "添加" : "确认修改"}
+            <Button onClick={commitDraft} disabled={save.isPending}>
+              {save.isPending ? "保存中…" : "保存"}
             </Button>
           </DialogFooter>
         </DialogContent>

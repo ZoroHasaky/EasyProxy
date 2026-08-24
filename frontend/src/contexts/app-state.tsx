@@ -61,6 +61,9 @@ interface MihomoRuntimeState {
   traffic: { up: number; down: number };
   trafficHistory: TrafficPoint[];
   trafficConnected: boolean;
+  connectionCount: number;
+  trafficTotals: { up: number; down: number };
+  connectionsConnected: boolean;
   mode: MihomoMode;
   modePending: boolean;
   switchMode: (mode: MihomoMode) => Promise<void>;
@@ -82,6 +85,9 @@ export function MihomoRuntimeProvider({ children }: { children: ReactNode }) {
   const [traffic, setTraffic] = useState({ up: 0, down: 0 });
   const [trafficHistory, setTrafficHistory] = useState<TrafficPoint[]>([]);
   const [trafficConnected, setTrafficConnected] = useState(false);
+  const [connectionCount, setConnectionCount] = useState(0);
+  const [trafficTotals, setTrafficTotals] = useState({ up: 0, down: 0 });
+  const [connectionsConnected, setConnectionsConnected] = useState(false);
   const [mode, setMode] = useState<MihomoMode>("rule");
   const [modePending, setModePending] = useState(false);
 
@@ -110,6 +116,25 @@ export function MihomoRuntimeProvider({ children }: { children: ReactNode }) {
         }
       },
       setTrafficConnected,
+    );
+  }, []);
+
+  useEffect(() => {
+    return openStream(
+      "/api/ws/connections",
+      (data) => {
+        try {
+          const payload = JSON.parse(data);
+          setConnectionCount(Array.isArray(payload.connections) ? payload.connections.length : 0);
+          setTrafficTotals({
+            up: Number(payload.uploadTotal) || 0,
+            down: Number(payload.downloadTotal) || 0,
+          });
+        } catch {
+          // 忽略单条异常推送，等待下一条有效数据。
+        }
+      },
+      setConnectionsConnected,
     );
   }, []);
 
@@ -143,11 +168,23 @@ export function MihomoRuntimeProvider({ children }: { children: ReactNode }) {
       traffic,
       trafficHistory,
       trafficConnected,
+      connectionCount,
+      trafficTotals,
+      connectionsConnected,
       mode,
       modePending,
       switchMode,
     }),
-    [traffic, trafficHistory, trafficConnected, mode, modePending],
+    [
+      traffic,
+      trafficHistory,
+      trafficConnected,
+      connectionCount,
+      trafficTotals,
+      connectionsConnected,
+      mode,
+      modePending,
+    ],
   );
 
   return <MihomoRuntimeContext.Provider value={value}>{children}</MihomoRuntimeContext.Provider>;

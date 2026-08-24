@@ -5,7 +5,6 @@ import { Pause, Play, X, XCircle, ArrowDownUp } from "lucide-react";
 import { MihomoConnection, mihomo } from "@/lib/api";
 import { openStream } from "@/lib/ws";
 import { formatSpeed, formatBytes, formatDuration, cn } from "@/lib/utils";
-import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -22,7 +21,6 @@ export default function ConnectionsPage() {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<"speed" | "total" | "time">("speed");
   const [live, setLive] = useState(false);
-  const [summary, setSummary] = useState({ count: 0, up: 0, down: 0 });
   const pausedRef = useRef(false);
   pausedRef.current = paused;
 
@@ -47,11 +45,6 @@ export default function ConnectionsPage() {
         });
         prev = next;
         setRows(out);
-        setSummary({
-          count: conns.length,
-          up: out.reduce((s, r) => s + r.upSpeed, 0),
-          down: out.reduce((s, r) => s + r.downSpeed, 0),
-        });
       } catch { /* ignore */ }
     }, setLive);
   }, []);
@@ -96,7 +89,7 @@ export default function ConnectionsPage() {
     }
   };
   const closeAll = async () => {
-    if (!confirm(`关闭全部 ${summary.count} 条连接？`)) return;
+    if (!confirm(`关闭全部 ${rows.length} 条连接？`)) return;
     try {
       await mihomo.closeAllConns();
       setRows([]);
@@ -113,21 +106,6 @@ export default function ConnectionsPage() {
           <span className={cn("h-2 w-2 rounded-full", live && !paused ? "bg-emerald-500 animate-pulse" : "bg-zinc-500")} />
           {live && !paused ? "实时推送中" : paused ? "已暂停" : "等待数据（需内核运行）"}
         </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-1"><CardDescription>活跃连接</CardDescription></CardHeader>
-          <CardContent><div className="text-2xl font-semibold">{summary.count}</div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1"><CardDescription>下行速率</CardDescription></CardHeader>
-          <CardContent className="text-lg text-emerald-500">{formatSpeed(summary.down)}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1"><CardDescription>上行速率</CardDescription></CardHeader>
-          <CardContent className="text-lg text-sky-500">{formatSpeed(summary.up)}</CardContent>
-        </Card>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -162,7 +140,7 @@ export default function ConnectionsPage() {
           <span className="text-right">时长</span>
           <span />
         </div>
-        <div ref={parentRef} className="h-[calc(100vh-430px)] min-h-[240px] overflow-auto">
+        <div ref={parentRef} className="h-[calc(100vh-300px)] min-h-[320px] overflow-auto">
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {virtualizer.getVirtualItems().map((vRow) => {
               const r = filtered[vRow.index];

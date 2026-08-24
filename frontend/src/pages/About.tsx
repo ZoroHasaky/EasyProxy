@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertCircle, ExternalLink, RefreshCw, Rocket, Undo2 } from "lucide-react";
@@ -7,7 +7,6 @@ import { useUpdate } from "@/contexts/update-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -19,20 +18,13 @@ export default function AboutPage() {
   const meta = useQuery({ queryKey: ["meta"], queryFn: () => api.get<MetaInfo>("/api/meta") });
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => api.get<Settings>("/api/settings") });
   const [repo, setRepo] = useState("");
-  const [viaProxy, setViaProxy] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    if (viaProxy === null && settings.data) setViaProxy(settings.data.update_via_proxy);
-  }, [settings.data, viaProxy]);
 
   const taskRunning = task?.running ?? false;
   const repoValue = repo || settings.data?.update_repo || OfficialRepo;
-  const proxyValue = viaProxy ?? settings.data?.update_via_proxy ?? false;
 
   const persistSettings = async () => {
     await api.put("/api/settings", {
       update_repo: repoValue,
-      update_via_proxy: proxyValue,
     });
     qc.invalidateQueries({ queryKey: ["settings"] });
   };
@@ -88,16 +80,6 @@ export default function AboutPage() {
             <Button variant="outline" title={`恢复官方源 ${OfficialRepo}`} onClick={() => setRepo(OfficialRepo)}>
               <Undo2 className="h-4 w-4" /> 官方源
             </Button>
-          </div>
-
-          <div className="flex items-center justify-between rounded-md border p-3">
-            <div className="space-y-1">
-              <Label>经 mihomo 代理检查和下载</Label>
-              <p className="text-xs text-muted-foreground">
-                使用当前混合代理端口；启用时需要 mihomo 内核正在运行。
-              </p>
-            </div>
-            <Switch checked={proxyValue} onCheckedChange={setViaProxy} />
           </div>
 
           <div className="flex justify-end gap-2">

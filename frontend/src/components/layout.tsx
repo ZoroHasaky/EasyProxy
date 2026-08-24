@@ -124,7 +124,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const { theme, toggleTheme } = useTheme();
   const { hasUpdate, openDialog: openUpdateDialog } = useUpdate();
-  const { traffic, trafficConnected, mode, modePending, switchMode } = useMihomoRuntime();
+  const {
+    traffic,
+    trafficConnected,
+    connectionCount,
+    connectionsConnected,
+    mode,
+    modePending,
+    switchMode,
+  } = useMihomoRuntime();
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true",
   );
@@ -222,19 +230,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </button>
         </div>
 
-        <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-3">
-          <div
-            className="flex min-w-[4.5rem] flex-col items-end text-[10px] leading-tight sm:min-w-0 sm:flex-row sm:items-center sm:gap-2 sm:text-xs"
-            title={trafficConnected ? "实时速率" : "等待内核流量数据"}
-          >
-            <span className={cn("text-emerald-500", !trafficConnected && "text-muted-foreground")}>
-              ↓ {trafficConnected ? formatSpeed(traffic.down) : "--"}
-            </span>
-            <span className={cn("text-sky-500", !trafficConnected && "text-muted-foreground")}>
-              ↑ {trafficConnected ? formatSpeed(traffic.up) : "--"}
-            </span>
-          </div>
-
+        <div className="ml-2 flex min-w-0 items-center gap-1.5 sm:ml-0 sm:gap-3">
           <div className="flex rounded-md border bg-background p-0.5">
             {modes.map((item) => (
               <button
@@ -242,7 +238,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 onClick={() => switchMode(item.key)}
                 disabled={modePending}
                 className={cn(
-                  "h-7 rounded px-2 text-[11px] font-medium transition-colors disabled:opacity-50 sm:px-3 sm:text-xs",
+                  "h-7 rounded px-1.5 text-[10px] font-medium transition-colors disabled:opacity-50 sm:px-3 sm:text-xs",
                   mode === item.key
                     ? "bg-primary text-primary-foreground shadow-sm"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -253,14 +249,37 @@ export function Layout({ children }: { children: React.ReactNode }) {
             ))}
           </div>
 
-          <button
-            onClick={toggleTheme}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-            title={theme === "dark" ? "切换到浅色" : "切换到深色"}
+          <div
+            className="hidden min-w-[4.5rem] flex-col text-[10px] leading-tight min-[390px]:flex sm:min-w-0 sm:flex-row sm:items-center sm:gap-2 sm:text-xs"
+            title={trafficConnected ? "实时速率" : "等待内核流量数据"}
           >
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </button>
+            <span className={cn("text-emerald-500", !trafficConnected && "text-muted-foreground")}>
+              ↓ {trafficConnected ? formatSpeed(traffic.down) : "--"}
+            </span>
+            <span className={cn("text-sky-500", !trafficConnected && "text-muted-foreground")}>
+              ↑ {trafficConnected ? formatSpeed(traffic.up) : "--"}
+            </span>
+          </div>
+
+          <div
+            className={cn(
+              "hidden items-center gap-1 text-[10px] min-[520px]:flex sm:text-xs",
+              connectionsConnected ? "text-foreground" : "text-muted-foreground",
+            )}
+            title={connectionsConnected ? "当前活跃连接" : "等待内核连接数据"}
+          >
+            <Cable className="h-3.5 w-3.5" />
+            <span>活跃连接 {connectionsConnected ? connectionCount : "--"}</span>
+          </div>
         </div>
+
+        <button
+          onClick={toggleTheme}
+          className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          title={theme === "dark" ? "切换到浅色" : "切换到深色"}
+        >
+          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </button>
       </header>
 
       <aside className="hidden min-h-0 flex-col border-r bg-card md:col-start-1 md:row-start-2 md:flex">

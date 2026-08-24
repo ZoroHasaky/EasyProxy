@@ -1,25 +1,16 @@
-import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Area, AreaChart, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { api, MetaInfo, MihomoProxiesResp, mihomo } from "@/lib/api";
-import { openStream } from "@/lib/ws";
-import { type MihomoMode, useMihomoRuntime } from "@/contexts/app-state";
+import { useMihomoRuntime } from "@/contexts/app-state";
 import { formatSpeed, formatBytes } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-const MODES: { key: MihomoMode; label: string }[] = [
-  { key: "rule", label: "规则" },
-  { key: "global", label: "全局" },
-  { key: "direct", label: "直连" },
-];
 
 export default function DashboardPage() {
   const qc = useQueryClient();
-  const { traffic, trafficHistory: history, mode, modePending, switchMode } = useMihomoRuntime();
+  const { trafficHistory: history, trafficTotals: totals } = useMihomoRuntime();
   const meta = useQuery({
     queryKey: ["meta"],
     queryFn: () => api.get<MetaInfo>("/api/meta"),
@@ -30,19 +21,6 @@ export default function DashboardPage() {
     queryFn: () => mihomo.proxies(),
     refetchInterval: 15_000,
   });
-
-  const [connCount, setConnCount] = useState(0);
-  const [totals, setTotals] = useState({ up: 0, down: 0 });
-
-  useEffect(() => {
-    return openStream("/api/ws/connections", (data) => {
-      try {
-        const p = JSON.parse(data);
-        setConnCount(p.connections ? p.connections.length : 0);
-        setTotals({ up: p.uploadTotal, down: p.downloadTotal });
-      } catch { /* ignore */ }
-    });
-  }, []);
 
   const proxyGroup = proxies.data?.proxies?.["PROXY"];
   const groups = Object.values(proxies.data?.proxies ?? {}).filter(
@@ -62,7 +40,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader className="pb-2"><CardDescription>内核状态</CardDescription></CardHeader>
           <CardContent>
@@ -76,19 +54,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardDescription>实时速率</CardDescription></CardHeader>
-          <CardContent className="text-sm">
-            <div className="text-emerald-500">↓ {formatSpeed(traffic.down)}</div>
-            <div className="text-sky-500">↑ {formatSpeed(traffic.up)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardDescription>活跃连接</CardDescription></CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold">{connCount}</div>
-          </CardContent>
-        </Card>
-        <Card>
           <CardHeader className="pb-2"><CardDescription>累计流量</CardDescription></CardHeader>
           <CardContent className="text-sm">
             <div className="text-emerald-500">↓ {formatBytes(totals.down)}</div>
@@ -98,21 +63,8 @@ export default function DashboardPage() {
       </div>
 
       <Card>
-        <CardHeader className="flex-row items-center justify-between pb-2">
+        <CardHeader className="pb-2">
           <CardTitle>流量</CardTitle>
-          <div className="flex gap-1">
-            {MODES.map((m) => (
-              <Button
-                key={m.key}
-                size="sm"
-                variant={mode === m.key ? "default" : "outline"}
-                onClick={() => switchMode(m.key)}
-                disabled={modePending}
-              >
-                {m.label}
-              </Button>
-            ))}
-          </div>
         </CardHeader>
         <CardContent className="h-56">
           <ResponsiveContainer width="100%" height="100%">
@@ -133,8 +85,8 @@ export default function DashboardPage() {
                 formatter={(v: any, name: any) => [formatSpeed(Number(v)), name === "down" ? "下载" : "上传"]}
                 contentStyle={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 8, fontSize: 12 }}
               />
-              <Area type="monotone" dataKey="down" stroke="#10b981" fill="url(#down)" strokeWidth={1.5} />
-              <Area type="monotone" dataKey="up" stroke="#0ea5e9" fill="url(#up)" strokeWidth={1.5} />
+              <Area type="monotone" dataKey="down" stroke="#10b981" fill="url(#down)" strokeWidth={1.5} isAnimationActive={false} />
+              <Area type="monotone" dataKey="up" stroke="#0ea5e9" fill="url(#up)" strokeWidth={1.5} isAnimationActive={false} />
             </AreaChart>
           </ResponsiveContainer>
         </CardContent>
