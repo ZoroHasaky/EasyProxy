@@ -12,23 +12,23 @@ set "BACKEND_DIR=%ROOT_DIR%backend"
 set "WEB_DIR=%ROOT_DIR%frontend"
 set "DATA_DIR=%ROOT_DIR%data"
 
-if not exist "%BACKEND_DIR%\NUL" (
+if not exist "%BACKEND_DIR%" (
   echo Backend directory not found: "%BACKEND_DIR%"
-  exit /b 1
+  goto :error
 )
 
-if not exist "%WEB_DIR%\NUL" (
+if not exist "%WEB_DIR%" (
   echo Frontend directory not found: "%WEB_DIR%"
-  exit /b 1
+  goto :error
 )
 
-if not exist "%DATA_DIR%\NUL" mkdir "%DATA_DIR%"
+if not exist "%DATA_DIR%" mkdir "%DATA_DIR%"
 
 echo [1/2] Starting backend (Go :8080)...
-start "EasyProxy-Backend" /D "%BACKEND_DIR%" go run ./cmd/server -data "%DATA_DIR%" -addr :8080
+start "EasyProxy-Backend" /D "%BACKEND_DIR%" cmd /k go run ./cmd/server -data "%DATA_DIR%" -addr :8080
 
 echo [2/2] Starting frontend (Vite :5173)...
-start "EasyProxy-Frontend" /D "%WEB_DIR%" cmd /c "npx vite --port 5173 --open"
+start "EasyProxy-Frontend" /D "%WEB_DIR%" cmd /k "npx vite --port 5173 --open"
 
 echo.
 echo ==========================================
@@ -39,3 +39,10 @@ echo ==========================================
 echo.
 pause
 endlocal
+exit /b 0
+
+:error
+echo.
+echo Unable to start EasyProxy. Please check the message above.
+pause
+exit /b 1

@@ -449,13 +449,13 @@ export default function NodesPage() {
         }}
       >
         <TabsList>
-          <TabsTrigger value="nodes" className="gap-2">
-            <Server className="h-4 w-4" />
-            节点池
-          </TabsTrigger>
           <TabsTrigger value="subscriptions" className="gap-2">
             <Radio className="h-4 w-4" />
             订阅管理
+          </TabsTrigger>
+          <TabsTrigger value="nodes" className="gap-2">
+            <Server className="h-4 w-4" />
+            节点池
           </TabsTrigger>
         </TabsList>
 

@@ -4,6 +4,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -69,18 +70,9 @@ export function useTheme() {
 
 export type MihomoMode = "rule" | "global" | "direct";
 
-export interface TrafficPoint {
-  t: string;
-  up: number;
-  down: number;
-}
-
 interface MihomoRuntimeState {
   traffic: { up: number; down: number };
-  trafficHistory: TrafficPoint[];
-  trafficConnected: boolean;
   connectionCount: number;
-  trafficTotals: { up: number; down: number };
   connectionsConnected: boolean;
   mode: MihomoMode;
   modePending: boolean;
@@ -99,29 +91,16 @@ function isMihomoMode(value: string): value is MihomoMode {
   return value === "rule" || value === "global" || value === "direct";
 }
 
-const MAX_HISTORY = 40;
-
 export function MihomoRuntimeProvider({ children }: { children: ReactNode }) {
   const [traffic, setTraffic] = useState<{ up: number; down: number }>({
     up: 0,
     down: 0,
   });
-  const [trafficHistory, setTrafficHistory] = useState<TrafficPoint[]>(() =>
-    Array.from({ length: 20 }, (_, i) => ({
-      t: `${i}s`,
-      up: 0,
-      down: 0,
-    }))
-  );
-  const [trafficConnected, setTrafficConnected] = useState(false);
   const [connectionCount, setConnectionCount] = useState(0);
-  const [trafficTotals, setTrafficTotals] = useState<{ up: number; down: number }>({
-    up: 0,
-    down: 0,
-  });
   const [connectionsConnected, setConnectionsConnected] = useState(false);
   const [mode, setMode] = useState<MihomoMode>("rule");
   const [modePending, setModePending] = useState(false);
+  const trafficSampleRef = useRef<{ up: number; down: number; at: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,37 +127,6 @@ export function MihomoRuntimeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    return openStream<{ up: number; down: number }>(
-      "/api/mihomo/traffic",
-      (data) => {
-        const up = Math.max(0, Number(data.up) || 0);
-        const down = Math.max(0, Number(data.down) || 0);
-        const t = new Date().toLocaleTimeString("zh-CN", {
-          hour12: false,
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        });
-
-        setTraffic({ up, down });
-        setTrafficHistory((prev) => {
-          const next = [...prev, { t, up, down }];
-          if (next.length > MAX_HISTORY) {
-            return next.slice(next.length - MAX_HISTORY);
-          }
-          return next;
-        });
-      },
-      (connected) => {
-        setTrafficConnected(connected);
-        if (!connected) {
-          setTraffic({ up: 0, down: 0 });
-        }
-      },
-    );
-  }, []);
-
-  useEffect(() => {
     return openStream<{
       connections?: Array<unknown> | null;
       uploadTotal?: number;
@@ -187,16 +135,27 @@ export function MihomoRuntimeProvider({ children }: { children: ReactNode }) {
       "/api/mihomo/connections",
       (data) => {
         const count = Array.isArray(data.connections) ? data.connections.length : 0;
+        const up = Math.max(0, Number(data.uploadTotal) || 0);
+        const down = Math.max(0, Number(data.downloadTotal) || 0);
+        const now = Date.now();
+        const previous = trafficSampleRef.current;
+
         setConnectionCount(count);
-        setTrafficTotals({
-          up: Number(data.uploadTotal) || 0,
-          down: Number(data.downloadTotal) || 0,
-        });
+        if (previous) {
+          const elapsedSeconds = Math.max((now - previous.at) / 1000, 0.001);
+          setTraffic({
+            up: Math.max(0, (up - previous.up) / elapsedSeconds),
+            down: Math.max(0, (down - previous.down) / elapsedSeconds),
+          });
+        }
+        trafficSampleRef.current = { up, down, at: now };
       },
       (connected) => {
         setConnectionsConnected(connected);
         if (!connected) {
           setConnectionCount(0);
+          setTraffic({ up: 0, down: 0 });
+          trafficSampleRef.current = null;
         }
       },
     );
@@ -221,10 +180,7 @@ export function MihomoRuntimeProvider({ children }: { children: ReactNode }) {
   const value = useMemo<MihomoRuntimeState>(
     () => ({
       traffic,
-      trafficHistory,
-      trafficConnected,
       connectionCount,
-      trafficTotals,
       connectionsConnected,
       mode,
       modePending,
@@ -232,10 +188,7 @@ export function MihomoRuntimeProvider({ children }: { children: ReactNode }) {
     }),
     [
       traffic,
-      trafficHistory,
-      trafficConnected,
       connectionCount,
-      trafficTotals,
       connectionsConnected,
       mode,
       modePending,

@@ -16,7 +16,7 @@ import {
 import {
   SortableContext,
   useSortable,
-  verticalListSortingStrategy,
+  rectSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -109,21 +109,19 @@ const KIND_LABELS: Record<string, string> = {
   MATCH: "最终兜底",
 };
 
-function SortableOutboundRow({
+function SortableOutboundCard({
   rule,
   index,
   targetOptions,
-  providers,
   onToggle,
-  onTargetChange,
+  onEdit,
   onDelete,
 }: {
   rule: Rule;
   index: number;
   targetOptions: RuleTargetOption[];
-  providers: RuleProvider[];
   onToggle: (enabled: boolean) => void;
-  onTargetChange: (target: string) => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const {
@@ -139,61 +137,68 @@ function SortableOutboundRow({
     transform: CSS.Transform.toString(transform),
     transition,
   };
+  const targetName =
+    ({ PROXY: "PROXY（默认代理）", DIRECT: "DIRECT（直连）", REJECT: "REJECT（拒绝连接）" } as Record<string, string>)[rule.target] ??
+    targetOptions.find((option) => option.value === rule.target)?.name ??
+    rule.target;
 
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={cn(
-        "group flex items-center gap-3 p-3 rounded-xl border bg-card/60 backdrop-blur-sm transition-all duration-150",
+        "group flex min-h-52 flex-col rounded-2xl border bg-card/60 p-4 backdrop-blur-sm transition-all duration-150",
         isDragging
           ? "opacity-50 shadow-2xl border-primary scale-[1.01] z-50"
           : "border-border/60 hover:border-primary/40",
         !rule.enabled && "opacity-40"
       )}
     >
-      <button
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground/50 hover:text-foreground rounded-md transition-colors"
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-
-      <span className="font-mono text-xs text-muted-foreground w-6 text-center">
-        {index + 1}
-      </span>
-
-      <Badge variant="outline" className="font-mono text-[10px] uppercase w-28 justify-center shrink-0">
-        {rule.kind}
-      </Badge>
-
-      <div className="flex-1 font-mono text-xs truncate max-w-sm" title={rule.value}>
-        {rule.value || <span className="text-muted-foreground italic">(兜底规则)</span>}
-      </div>
-
-      <div className="w-48 shrink-0">
-        <Select
-          value={rule.target}
-          onChange={(e) => onTargetChange(e.target.value)}
-          className="h-8 text-xs py-0"
-        >
-          <option value="PROXY">PROXY (默认代理)</option>
-          <option value="DIRECT">DIRECT (直连)</option>
-          <option value="REJECT">REJECT (拒绝连接)</option>
-          {targetOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.name}
-            </option>
-          ))}
-        </Select>
-      </div>
-
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            {...attributes}
+            {...listeners}
+            title="拖拽调整优先级"
+            className="cursor-grab rounded-md p-1 text-muted-foreground/50 transition-colors hover:text-foreground active:cursor-grabbing"
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+          <Badge variant="outline" className="font-mono text-[10px] uppercase">
+            {rule.kind}
+          </Badge>
+        </div>
         <Switch checked={rule.enabled} onCheckedChange={onToggle} />
-        <Button variant="ghost" size="iconSm" onClick={onDelete} title="删除出站规则">
-          <Trash2 className="h-3.5 w-3.5 text-rose-500 hover:text-rose-600" />
-        </Button>
+      </div>
+
+      <div className="flex-1 space-y-4 pt-4">
+        <div>
+          <div className="text-[11px] text-muted-foreground">匹配条件</div>
+          <div className="mt-1 truncate font-mono text-xs font-medium" title={rule.value}>
+            {rule.value || <span className="italic text-muted-foreground">(最终兜底规则)</span>}
+          </div>
+        </div>
+        <div className="flex items-end justify-between gap-3 border-t border-border/40 pt-3">
+          <div className="min-w-0">
+            <div className="text-[11px] text-muted-foreground">目标出口</div>
+            <div className="mt-1 truncate text-xs font-semibold text-primary" title={targetName}>
+              {targetName}
+            </div>
+          </div>
+          {rule.no_resolve && <Badge variant="secondary" className="shrink-0 text-[10px]">不解析 DNS</Badge>}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between border-t border-border/40 pt-3">
+        <span className="font-mono text-[11px] text-muted-foreground">优先级 #{index + 1}</span>
+        <div className="flex items-center gap-1">
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onEdit}>
+            <Pencil className="h-3.5 w-3.5" /> 编辑
+          </Button>
+          <Button variant="ghost" size="iconSm" onClick={onDelete} title="删除出站规则">
+            <Trash2 className="h-3.5 w-3.5 text-rose-500 hover:text-rose-600" />
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -293,23 +298,21 @@ export function RecognitionRulesPanel({
 
 export function OutboundRulesPanel({
   rules,
-  providers,
   targetOptions,
   onAddRule,
   onPreviewYaml,
   onDragEnd,
   onToggleRule,
-  onTargetChange,
+  onEditRule,
   onDeleteRule,
 }: {
   rules: Rule[];
-  providers: RuleProvider[];
   targetOptions: RuleTargetOption[];
   onAddRule: () => void;
   onPreviewYaml: () => void;
   onDragEnd: (event: DragEndEvent) => void;
   onToggleRule: (id: number, enabled: boolean) => void;
-  onTargetChange: (id: number, target: string) => void;
+  onEditRule: (rule: Rule) => void;
   onDeleteRule: (id: number) => void;
 }) {
   const [q, setQ] = useState("");
@@ -371,18 +374,17 @@ export function OutboundRulesPanel({
       >
         <SortableContext
           items={filteredRules.map((r) => r.id)}
-          strategy={verticalListSortingStrategy}
+          strategy={rectSortingStrategy}
         >
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filteredRules.map((rule, idx) => (
-              <SortableOutboundRow
+              <SortableOutboundCard
                 key={rule.id}
                 rule={rule}
                 index={idx}
                 targetOptions={targetOptions}
-                providers={providers}
                 onToggle={(en) => onToggleRule(rule.id, en)}
-                onTargetChange={(target) => onTargetChange(rule.id, target)}
+                onEdit={() => onEditRule(rule)}
                 onDelete={() => onDeleteRule(rule.id)}
               />
             ))}
@@ -425,10 +427,12 @@ export default function RulesPage() {
   );
 
   // 出站规则编辑
-  const [addRuleOpen, setAddRuleOpen] = useState(false);
+  const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
+  const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [newKind, setNewKind] = useState("DOMAIN-SUFFIX");
   const [newValue, setNewValue] = useState("");
   const [newTarget, setNewTarget] = useState("PROXY");
+  const [newNoResolve, setNewNoResolve] = useState(false);
 
   const rulesQuery = useQuery({
     queryKey: ["currentRules"],
@@ -558,16 +562,6 @@ export default function RulesPage() {
     });
   };
 
-  const handleTargetChange = async (id: number, target: string) => {
-    const nextRules = rawRules.map((r) =>
-      r.id === id ? { ...r, target, target_override: true } : r
-    );
-    await persistPayload.mutateAsync({
-      nextRules,
-      nextProviders: providers,
-    });
-  };
-
   const handleDeleteRule = async (id: number) => {
     if (!confirm("确定删除这条出站规则吗？")) return;
     const nextRules = rawRules.filter((r) => r.id !== id);
@@ -578,25 +572,57 @@ export default function RulesPage() {
     toast.success("出站规则已删除");
   };
 
-  const handleAddRule = async () => {
-    const nextRule: Rule = {
-      id: -Date.now(),
-      template_id: 0,
-      kind: newKind,
-      value: newKind === "MATCH" ? "" : newValue.trim(),
-      target: newTarget,
-      base_target: newTarget,
-      target_override: false,
-      no_resolve: false,
-      position: rawRules.length,
-      enabled: true,
-    };
+  const openAddRule = () => {
+    setEditingRule(null);
+    setNewKind("DOMAIN-SUFFIX");
+    setNewValue("");
+    setNewTarget("PROXY");
+    setNewNoResolve(false);
+    setRuleDialogOpen(true);
+  };
+
+  const openEditRule = (rule: Rule) => {
+    setEditingRule(rule);
+    setNewKind(rule.kind);
+    setNewValue(rule.value);
+    setNewTarget(rule.target);
+    setNewNoResolve(rule.no_resolve);
+    setRuleDialogOpen(true);
+  };
+
+  const saveRule = async () => {
+    const value = newKind === "MATCH" ? "" : newValue.trim();
+    const nextRule: Rule = editingRule
+      ? {
+          ...editingRule,
+          kind: newKind,
+          value,
+          target: newTarget,
+          target_override:
+            editingRule.target_override || editingRule.target !== newTarget,
+          no_resolve: newNoResolve,
+        }
+      : {
+          id: -Date.now(),
+          template_id: 0,
+          kind: newKind,
+          value,
+          target: newTarget,
+          base_target: newTarget,
+          target_override: false,
+          no_resolve: newNoResolve,
+          position: rawRules.length,
+          enabled: true,
+        };
     await persistPayload.mutateAsync({
-      nextRules: [...rawRules, nextRule],
+      nextRules: editingRule
+        ? rawRules.map((rule) => (rule.id === editingRule.id ? nextRule : rule))
+        : [...rawRules, nextRule],
       nextProviders: providers,
     });
-    toast.success("出站规则已添加");
-    setAddRuleOpen(false);
+    toast.success(editingRule ? "出站规则已更新" : "出站规则已添加");
+    setRuleDialogOpen(false);
+    setEditingRule(null);
     setNewValue("");
   };
 
@@ -677,13 +703,12 @@ export default function RulesPage() {
         <TabsContent value="outbound">
           <OutboundRulesPanel
             rules={rawRules}
-            providers={providers}
             targetOptions={targetOptions}
-            onAddRule={() => setAddRuleOpen(true)}
+            onAddRule={openAddRule}
             onPreviewYaml={() => setPreviewModalOpen(true)}
             onDragEnd={handleDragEnd}
             onToggleRule={handleToggleRule}
-            onTargetChange={handleTargetChange}
+            onEditRule={openEditRule}
             onDeleteRule={handleDeleteRule}
           />
         </TabsContent>
@@ -777,13 +802,19 @@ export default function RulesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 出站规则添加 Dialog */}
-      <Dialog open={addRuleOpen} onOpenChange={setAddRuleOpen}>
+      {/* 出站规则编辑 Dialog */}
+      <Dialog
+        open={ruleDialogOpen}
+        onOpenChange={(open) => {
+          setRuleDialogOpen(open);
+          if (!open) setEditingRule(null);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>添加出站分流规则</DialogTitle>
+            <DialogTitle>{editingRule ? "编辑出站分流规则" : "添加出站分流规则"}</DialogTitle>
             <DialogDescription>
-              选择识别类型（或引用的识别规则集），并指定目标处理策略组
+              配置匹配类型、匹配内容及目标出口；保存后立即写入当前规则集。
             </DialogDescription>
           </DialogHeader>
 
@@ -835,18 +866,26 @@ export default function RulesPage() {
                 ))}
               </Select>
             </div>
+
+            <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/40 p-3">
+              <div className="space-y-0.5">
+                <div className="text-xs font-semibold">不解析 DNS (no-resolve)</div>
+                <div className="text-[11px] text-muted-foreground">适用于 IP 网段类规则，避免额外 DNS 解析。</div>
+              </div>
+              <Switch checked={newNoResolve} onCheckedChange={setNewNoResolve} />
+            </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setAddRuleOpen(false)}>
+            <Button variant="outline" size="sm" onClick={() => setRuleDialogOpen(false)}>
               取消
             </Button>
             <Button
               size="sm"
-              onClick={handleAddRule}
+              onClick={saveRule}
               disabled={newKind !== "MATCH" && !newValue.trim()}
             >
-              保存出站规则
+              {editingRule ? "保存修改" : "保存出站规则"}
             </Button>
           </DialogFooter>
         </DialogContent>

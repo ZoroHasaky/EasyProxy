@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import CodeMirror from "@uiw/react-codemirror";
@@ -36,7 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { cn, formatCoreVersion } from "@/lib/utils";
 
 const LOG_LEVELS = [
   { value: "silent", label: "静默 (silent)" },
@@ -52,6 +52,7 @@ export default function KernelPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [coreVer, setCoreVer] = useState("");
   const [uploading, setUploading] = useState(false);
+  const coreFileInputRef = useRef<HTMLInputElement>(null);
 
   const settings = useQuery({
     queryKey: ["settings"],
@@ -145,6 +146,12 @@ export default function KernelPage() {
     }
   };
 
+  const handleCoreFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) void handleUpload(file);
+  };
+
   const isRunning = core.data?.state === "running";
 
   return (
@@ -206,7 +213,7 @@ export default function KernelPage() {
               <div>
                 <div className="text-muted-foreground">已装版本</div>
                 <div className="font-mono font-semibold mt-0.5">
-                  {core.data?.installed_version || "未安装"}
+                  {core.data?.installed_version ? formatCoreVersion(core.data.installed_version) : "未安装"}
                 </div>
               </div>
               <div>
@@ -267,23 +274,24 @@ export default function KernelPage() {
 
             <div className="pt-2 border-t border-border/50 flex items-center justify-between">
               <span className="text-xs text-muted-foreground">或者手动上传内核:</span>
-              <label className="cursor-pointer">
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleUpload(f);
-                  }}
-                  disabled={uploading}
-                />
-                <Button variant="secondary" size="sm" asChild disabled={uploading}>
-                  <span>
-                    <UploadCloud className="h-3.5 w-3.5" />
-                    {uploading ? "正在上传…" : "选择文件上传"}
-                  </span>
-                </Button>
-              </label>
+              <input
+                ref={coreFileInputRef}
+                type="file"
+                className="hidden"
+                accept=".gz,.tgz,.tar.gz,application/gzip,application/octet-stream"
+                onChange={handleCoreFileChange}
+                disabled={uploading}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={uploading}
+                onClick={() => coreFileInputRef.current?.click()}
+              >
+                <UploadCloud className="h-3.5 w-3.5" />
+                {uploading ? "正在上传…" : "选择文件上传"}
+              </Button>
             </div>
           </CardContent>
         </Card>

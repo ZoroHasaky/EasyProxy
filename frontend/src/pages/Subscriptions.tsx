@@ -34,7 +34,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { timeAgo, cn } from "@/lib/utils";
+import { subscriptionUsage, timeAgo, cn } from "@/lib/utils";
 
 export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
@@ -186,6 +186,7 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
       {/* 订阅卡片网格 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {subs.data?.map((sub) => {
+          const usage = subscriptionUsage(sub.user_info);
           return (
             <Card key={sub.id} className={cn("flex flex-col justify-between transition-all hover:border-primary/40", !sub.enabled && "opacity-60")}>
               <CardHeader className="p-5 pb-3">
@@ -195,9 +196,6 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
                       <span className="truncate max-w-[180px]">{sub.name}</span>
                       {!sub.enabled && <Badge variant="secondary" className="text-[10px]">已禁用</Badge>}
                     </CardTitle>
-                    <CardDescription className="text-xs font-mono truncate max-w-[220px]">
-                      {sub.url}
-                    </CardDescription>
                   </div>
                   <Badge variant="purple" className="font-mono text-xs">
                     {sub.node_count} 节点
@@ -220,9 +218,18 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
                   </div>
                 </div>
 
-                {sub.user_info && (
-                  <div className="text-[11px] font-mono p-2 rounded-lg bg-muted/40 text-muted-foreground truncate">
-                    {sub.user_info}
+                {usage && (
+                  <div className="space-y-1.5 rounded-lg bg-muted/40 p-2.5 text-[11px]">
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span>流量使用情况</span>
+                      <span className="font-mono text-foreground">
+                        {usage.usedGB} / {usage.totalGB} GB
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-border/70">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${usage.percent}%` }} />
+                    </div>
+                    <div className="text-right font-mono text-muted-foreground">{usage.percent.toFixed(1)}%</div>
                   </div>
                 )}
 

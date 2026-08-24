@@ -2,9 +2,6 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Activity,
-  ArrowDown,
-  ArrowUp,
   Cable,
   Check,
   CheckCircle2,
@@ -20,17 +17,9 @@ import {
   ShieldCheck,
   Zap,
 } from "lucide-react";
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-} from "recharts";
 import { api, MetaInfo, mihomo, ProxyGroup } from "@/lib/api";
 import { useMihomoRuntime } from "@/contexts/app-state";
-import { formatBytes, formatSpeed, cn } from "@/lib/utils";
+import { cn, formatCoreVersion } from "@/lib/utils";
 import {
   Card,
   CardContent,
@@ -51,8 +40,7 @@ import {
 
 export default function DashboardPage() {
   const qc = useQueryClient();
-  const { trafficTotals: totals, traffic, trafficHistory, mode, switchMode, connectionCount } =
-    useMihomoRuntime();
+  const { mode, switchMode, connectionCount } = useMihomoRuntime();
   const [nodeDialogOpen, setNodeDialogOpen] = useState(false);
   const [nodeSearch, setNodeSearch] = useState("");
   const [selecting, setSelecting] = useState<string | null>(null);
@@ -124,8 +112,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* 顶部指标看板（4大卡片） */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* 顶部指标看板 */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* 内核状态 */}
         <Card className="relative overflow-hidden border-border/70 hover:border-primary/40">
           <CardHeader className="pb-2">
@@ -144,68 +132,8 @@ export default function DashboardPage() {
               <span className={cn("inline-block h-2 w-2 rounded-full", running ? "bg-emerald-500 animate-ping" : "bg-rose-500")} />
             </div>
             <p className="mt-1 text-xs text-muted-foreground font-mono">
-              {meta.data?.core?.version ? `Mihomo ${meta.data.core.version}` : "未安装内核"}
+              {meta.data?.core?.version ? `Mihomo ${formatCoreVersion(meta.data.core.version)}` : "未安装内核"}
             </p>
-          </CardContent>
-        </Card>
-
-        {/* 实时速率 */}
-        <Card className="relative overflow-hidden border-border/70 hover:border-primary/40">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardDescription className="font-semibold">当前网络速率</CardDescription>
-              <div className="p-2 rounded-xl bg-primary/10 text-primary">
-                <Activity className="h-4 w-4" />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <ArrowDown className="h-3 w-3 text-emerald-500" /> 下行
-                </div>
-                <div className="text-lg font-bold text-emerald-500 font-mono">
-                  {formatSpeed(traffic.down)}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
-                  <ArrowUp className="h-3 w-3 text-sky-500" /> 上行
-                </div>
-                <div className="text-lg font-bold text-sky-500 font-mono">
-                  {formatSpeed(traffic.up)}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 累计流量 */}
-        <Card className="relative overflow-hidden border-border/70 hover:border-primary/40">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardDescription className="font-semibold">累计传输流量</CardDescription>
-              <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-500">
-                <Globe2 className="h-4 w-4" />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs text-muted-foreground">总下载</div>
-                <div className="text-base font-bold font-mono text-foreground/90">
-                  {formatBytes(totals.down)}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-muted-foreground">总上传</div>
-                <div className="text-base font-bold font-mono text-foreground/90">
-                  {formatBytes(totals.up)}
-                </div>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
@@ -229,63 +157,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* 实时流量图表 */}
-      <Card className="p-1">
-        <CardHeader className="p-5 pb-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base">实时流量监控</CardTitle>
-              <CardDescription>最近 40 秒上下行网络传输走势</CardDescription>
-            </div>
-            <div className="flex items-center gap-4 text-xs font-medium">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                <span className="text-muted-foreground">下载: {formatSpeed(traffic.down)}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
-                <span className="text-muted-foreground">上传: {formatSpeed(traffic.up)}</span>
-              </div>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-5 pt-3 h-52">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={trafficHistory} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="downGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
-                </linearGradient>
-                <linearGradient id="upGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="t" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-              <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-              <Tooltip
-                content={({ active, payload }) => {
-                  if (active && payload && payload.length) {
-                    const d = payload[0].payload;
-                    return (
-                      <div className="rounded-xl border border-border/80 bg-card/95 p-2.5 text-xs shadow-xl backdrop-blur-md">
-                        <div className="font-semibold text-muted-foreground mb-1">{d.t}</div>
-                        <div className="text-emerald-500 font-mono">↓ {formatSpeed(d.down)}</div>
-                        <div className="text-sky-500 font-mono">↑ {formatSpeed(d.up)}</div>
-                      </div>
-                    );
-                  }
-                  return null;
-                }}
-              />
-              <Area type="monotone" dataKey="down" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#downGrad)" />
-              <Area type="monotone" dataKey="up" stroke="#0ea5e9" strokeWidth={2} fillOpacity={1} fill="url(#upGrad)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
 
       {/* 主出口 PROXY 切换面板 */}
       {proxyGroup && (

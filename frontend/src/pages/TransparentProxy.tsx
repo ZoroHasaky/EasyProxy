@@ -172,18 +172,18 @@ export default function TransparentProxyPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>DNS 模式</Label>
-              <Select
-                value={form.dns_mode}
-                onChange={(e) => patch({ dns_mode: e.target.value })}
-              >
-                <option value="fake-ip">fake-ip（速度极快，推荐）</option>
-                <option value="redir-host">redir-host（真实解析回退）</option>
-              </Select>
-            </div>
+          <div className="space-y-1.5">
+            <Label>DNS 模式</Label>
+            <Select
+              value={form.dns_mode}
+              onChange={(e) => patch({ dns_mode: e.target.value })}
+            >
+              <option value="fake-ip">fake-ip（速度极快，推荐）</option>
+              <option value="redir-host">redir-host（真实解析回退）</option>
+            </Select>
+          </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>主 Nameserver (按回车换行)</Label>
               <Textarea
@@ -199,6 +199,24 @@ export default function TransparentProxyPage() {
                 rows={3}
                 className="font-mono text-xs"
                 placeholder="223.5.5.5&#10;119.29.29.29"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>备用 Nameserver (按回车换行)</Label>
+              <Textarea
+                value={(form.dns_fallback || []).join("\n")}
+                onChange={(e) =>
+                  patch({
+                    dns_fallback: e.target.value
+                      .split("\n")
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  })
+                }
+                rows={3}
+                className="font-mono text-xs"
+                placeholder="https://dns.cloudflare.com/dns-query&#10;https://dns.google/dns-query"
               />
             </div>
           </div>

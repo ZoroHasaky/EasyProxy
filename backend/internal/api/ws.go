@@ -11,7 +11,7 @@ var wsUpgrader = websocket.Upgrader{
 	CheckOrigin: func(*http.Request) bool { return true },
 }
 
-// handleWS 将 /api/ws/{traffic|logs|connections} 中继到 mihomo 对应 WebSocket
+// handleWS 将 /api/ws/{logs|connections} 中继到 mihomo 对应 WebSocket
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if !s.sessions.Valid(r) {
 		writeErr(w, http.StatusUnauthorized, "未登录")
@@ -20,8 +20,6 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	stream := r.PathValue("stream")
 	var target string
 	switch stream {
-	case "traffic":
-		target = "/traffic"
 	case "logs":
 		target = "/logs"
 		if r.URL.RawQuery != "" {

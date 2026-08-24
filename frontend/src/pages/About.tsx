@@ -95,7 +95,9 @@ export default function AboutPage() {
           <CardContent className="space-y-2 text-xs">
             <div className="flex justify-between py-1.5 border-b border-border/50">
               <span className="text-muted-foreground">面板版本:</span>
-              <span className="font-mono font-semibold">{meta.data?.version || "v0.1.0"}</span>
+              <span className="font-mono font-semibold">
+                {meta.data?.version ? (meta.data.version.startsWith("v") ? meta.data.version : `v${meta.data.version}`) : "—"}
+              </span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-border/50">
               <span className="text-muted-foreground">架构风格:</span>

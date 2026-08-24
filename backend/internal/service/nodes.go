@@ -193,7 +193,7 @@ func resolveManualNodeRegions(nodes []model.Node) map[string]string {
 	return regions
 }
 
-// isSubscriptionInfoNode 识别机场订阅中伪装成代理节点的流量/到期提示。
+// isSubscriptionInfoNode 识别机场订阅中伪装成代理节点的流量、公告和到期提示。
 // 仅在订阅同步时过滤，手动导入仍保留用户明确提交的内容。
 func isSubscriptionInfoNode(name string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
@@ -202,13 +202,16 @@ func isSubscriptionInfoNode(name string) bool {
 	}
 	for _, keyword := range []string{
 		"剩余流量", "流量剩余", "套餐到期", "到期时间", "过期时间", "有效期至",
+		"下次重置", "重置剩余", "流量重置", "防丢失官网", "放丢失官网",
 		"remaining traffic", "traffic remaining", "expire date", "expiration date",
 	} {
 		if strings.Contains(name, keyword) {
 			return true
 		}
 	}
-	return false
+	// “建议：……” 和 “提示：……” 是订阅中常见的公告格式，不作为可用代理节点。
+	return strings.HasPrefix(name, "建议：") || strings.HasPrefix(name, "建议:") ||
+		strings.HasPrefix(name, "提示：") || strings.HasPrefix(name, "提示:")
 }
 
 // FetchSubscription 抓取订阅内容；proxyAddr 非空时经 mihomo 混合端口请求

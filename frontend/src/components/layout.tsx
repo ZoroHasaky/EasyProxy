@@ -1,10 +1,8 @@
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Cable,
-  Check,
   ChevronLeft,
   ChevronRight,
   Cpu,
@@ -26,8 +24,6 @@ import {
   Sparkles,
   ArrowUp,
   ArrowDown,
-  Activity,
-  Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, MetaInfo } from "@/lib/api";
@@ -72,28 +68,29 @@ const themes: { key: Theme; label: string; icon: typeof Sun }[] = [
 interface SidebarContentProps {
   collapsed: boolean;
   coreState: string;
+  version: string;
   onLogout: () => void;
   onNavigate?: () => void;
 }
 
-function SidebarContent({ collapsed, coreState, onLogout, onNavigate }: SidebarContentProps) {
+function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }: SidebarContentProps) {
   const running = coreState === "running";
   const coreLabel = running ? "正常运行" : coreState === "failed" ? "异常" : "已停止";
+  const displayVersion = version ? (version.startsWith("v") ? version : `v${version}`) : "v…";
 
   return (
     <div className="flex flex-col h-full">
       {/* 品牌区 */}
-      <div className={cn("flex items-center gap-3 px-4 py-5 border-b border-border/60", collapsed && "justify-center px-2")}>
+      <div className={cn("flex h-16 items-center gap-3 border-b border-border/60 px-4", collapsed && "justify-center px-2")}>
         <div className="relative flex items-center justify-center h-10 w-10 rounded-2xl bg-gradient-to-tr from-primary to-indigo-400 text-white shadow-md shadow-primary/25">
           <Zap className="h-5 w-5 fill-white" />
-          <span className={cn("absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card", running ? "bg-emerald-500" : "bg-rose-500")} />
         </div>
         {!collapsed && (
           <div className="flex flex-col">
             <span className="font-bold text-base tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
               EasyProxy
             </span>
-            <span className="text-[11px] text-muted-foreground font-mono font-medium">v0.1.0 • Next</span>
+            <span className="text-[11px] text-muted-foreground font-mono font-medium">{displayVersion}</span>
           </div>
         )}
       </div>
@@ -206,6 +203,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const cycleTheme = () => {
+    const current = themes.findIndex((item) => item.key === theme);
+    const next = themes[(current + 1) % themes.length];
+    setTheme(next.key);
+  };
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* 桌面端侧边栏 */}
@@ -218,6 +221,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <SidebarContent
           collapsed={collapsed}
           coreState={meta.data?.core?.state ?? "unknown"}
+          version={meta.data?.version ?? ""}
           onLogout={logout}
         />
 
@@ -247,6 +251,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <SidebarContent
               collapsed={false}
               coreState={meta.data?.core?.state ?? "unknown"}
+              version={meta.data?.version ?? ""}
               onLogout={logout}
               onNavigate={() => setMobileOpen(false)}
             />
@@ -287,10 +292,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 );
               })}
             </div>
-          </div>
 
-          {/* 右侧：实时网速 + 更新提示 + 主题切换 */}
-          <div className="flex items-center gap-3">
             {/* 实时网速胶囊 */}
             <div className="hidden sm:flex items-center gap-3.5 px-3 py-1.5 rounded-xl bg-card border border-border/60 shadow-2xs text-xs font-mono font-medium">
               <div className="flex items-center gap-1 text-emerald-500">
@@ -303,7 +305,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <span>{formatSpeed(traffic.up)}</span>
               </div>
             </div>
+          </div>
 
+          {/* 右侧：更新提示 + 主题切换 */}
+          <div className="flex items-center gap-3">
             {/* 升级提示按钮 */}
             {checkData?.has_update && (
               <Button
@@ -317,45 +322,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </Button>
             )}
 
-            {/* 主题选择菜单 */}
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger asChild>
-                <button className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/80 bg-card/60 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors shadow-2xs">
-                  {theme === "light" ? (
-                    <Sun className="h-4 w-4 text-amber-500" />
-                  ) : theme === "dark" ? (
-                    <Moon className="h-4 w-4 text-primary" />
-                  ) : (
-                    <Monitor className="h-4 w-4" />
-                  )}
-                </button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content
-                  align="end"
-                  className="z-50 min-w-[130px] rounded-xl border border-border/80 bg-card/95 backdrop-blur-md p-1.5 shadow-xl animate-in fade-in-80 duration-150"
-                >
-                  {themes.map((t) => (
-                    <DropdownMenu.Item
-                      key={t.key}
-                      onClick={() => setTheme(t.key)}
-                      className={cn(
-                        "flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-medium cursor-pointer outline-none transition-colors",
-                        theme === t.key
-                          ? "bg-primary/10 text-primary font-semibold"
-                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                      )}
-                    >
-                      <div className="flex items-center gap-2">
-                        <t.icon className="h-3.5 w-3.5" />
-                        <span>{t.label}</span>
-                      </div>
-                      {theme === t.key && <Check className="h-3.5 w-3.5" />}
-                    </DropdownMenu.Item>
-                  ))}
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
+            <button
+              onClick={cycleTheme}
+              title={`当前主题：${themes.find((item) => item.key === theme)?.label ?? "自动"}；单击切换`}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/80 bg-card/60 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors shadow-2xs"
+            >
+              {theme === "light" ? (
+                <Sun className="h-4 w-4 text-amber-500" />
+              ) : theme === "dark" ? (
+                <Moon className="h-4 w-4 text-primary" />
+              ) : (
+                <Monitor className="h-4 w-4" />
+              )}
+            </button>
           </div>
         </header>
 
