@@ -15,6 +15,7 @@ import LogsPage from "@/pages/Logs";
 import SettingsPage from "@/pages/Settings";
 import AboutPage from "@/pages/About";
 import { MihomoRuntimeProvider } from "@/contexts/app-state";
+import { UpdateProvider } from "@/contexts/update-state";
 
 function Me() {
   const me = useQuery({
@@ -41,30 +42,32 @@ function Me() {
     return <ChangePasswordPage onDone={() => me.refetch()} />;
   }
   return (
-    <MihomoRuntimeProvider>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route
-            path="/subscriptions"
-            element={<Navigate to="/nodes?tab=subscriptions" replace />}
-          />
-          <Route path="/nodes" element={<NodesPage />} />
-          <Route path="/rules" element={<RulesPage />} />
-          <Route
-            path="/groups"
-            element={<Navigate to="/rules?tab=groups" replace />}
-          />
-          <Route path="/connections" element={<ConnectionsPage />} />
-          <Route path="/kernel" element={<KernelPage />} />
-          <Route path="/tun" element={<TransparentProxyPage />} />
-          <Route path="/logs" element={<LogsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/about" element={<AboutPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Layout>
-    </MihomoRuntimeProvider>
+    <UpdateProvider>
+      <MihomoRuntimeProvider>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<DashboardPage />} />
+            <Route
+              path="/subscriptions"
+              element={<Navigate to="/nodes?tab=subscriptions" replace />}
+            />
+            <Route path="/nodes" element={<NodesPage />} />
+            <Route path="/rules" element={<RulesPage />} />
+            <Route
+              path="/groups"
+              element={<Navigate to="/rules?tab=groups" replace />}
+            />
+            <Route path="/connections" element={<ConnectionsPage />} />
+            <Route path="/kernel" element={<KernelPage />} />
+            <Route path="/tun" element={<TransparentProxyPage />} />
+            <Route path="/logs" element={<LogsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Layout>
+      </MihomoRuntimeProvider>
+    </UpdateProvider>
   );
 }
 

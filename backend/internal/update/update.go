@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,18 +22,12 @@ import (
 	"easyproxy/internal/core"
 )
 
-const githubAPI = "https://api.github.com"
-
-type Asset struct {
-	Name string `json:"name"`
-	URL  string `json:"browser_download_url"`
-	Size int64  `json:"size"`
-}
+const githubWeb = "https://github.com"
 
 type Release struct {
-	TagName string  `json:"tag_name"`
-	Notes   string  `json:"body"`
-	Assets  []Asset `json:"assets"`
+	TagName string
+	Notes   string
+	Repo    string
 }
 
 type CheckResult struct {
@@ -60,34 +53,54 @@ func newHTTPClient(proxyAddr string) (*http.Client, error) {
 	return &http.Client{Transport: transport}, nil
 }
 
+var githubRepoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+
+func normalizeRepo(repo string) (string, error) {
+	repo = strings.Trim(strings.TrimSpace(repo), "/")
+	if !githubRepoPattern.MatchString(repo) {
+		return "", fmt.Errorf("GitHub 仓库格式无效，应为 owner/repo")
+	}
+	return repo, nil
+}
+
+func releaseTagFromURL(finalURL *url.URL, repo string) (string, error) {
+	if finalURL == nil {
+		return "", fmt.Errorf("GitHub Releases 未返回最终地址")
+	}
+	prefix := "/" + repo + "/releases/tag/"
+	if len(finalURL.Path) <= len(prefix) || !strings.EqualFold(finalURL.Path[:len(prefix)], prefix) {
+		return "", fmt.Errorf("GitHub Releases 未找到最新版本，最终地址: %s", finalURL.String())
+	}
+	tag := strings.TrimSpace(finalURL.Path[len(prefix):])
+	if tag == "" || strings.Contains(tag, "/") {
+		return "", fmt.Errorf("GitHub Releases 返回的版本标签无效")
+	}
+	return tag, nil
+}
+
 func getLatest(ctx context.Context, repo string, hc *http.Client) (*Release, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubAPI+"/repos/"+repo+"/releases/latest", nil)
+	repo, err := normalizeRepo(repo)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, githubWeb+"/"+repo+"/releases/latest", nil)
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set("User-Agent", "EasyProxy")
 	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		var apiErr struct {
-			Message string `json:"message"`
-		}
-		_ = json.Unmarshal(body, &apiErr)
-		if apiErr.Message != "" {
-			return nil, fmt.Errorf("GitHub API HTTP %d: %s", resp.StatusCode, apiErr.Message)
-		}
-		return nil, fmt.Errorf("GitHub API HTTP %d", resp.StatusCode)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("GitHub Releases HTTP %d", resp.StatusCode)
 	}
-	var rel Release
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+	tag, err := releaseTagFromURL(resp.Request.URL, repo)
+	if err != nil {
 		return nil, err
 	}
-	return &rel, nil
+	return &Release{TagName: tag, Repo: repo}, nil
 }
 
 // Check 检查面板新版本
@@ -107,7 +120,7 @@ func Check(repo, current, proxyAddr string) *CheckResult {
 		Current: current,
 		Latest:  latest,
 		Notes:   rel.Notes,
-		URL:     "https://github.com/" + repo + "/releases/latest",
+		URL:     githubWeb + "/" + rel.Repo + "/releases/tag/" + url.PathEscape(rel.TagName),
 	}
 	if core.CompareSemver(current, latest) < 0 {
 		res.HasUpdate = true
@@ -115,13 +128,8 @@ func Check(repo, current, proxyAddr string) *CheckResult {
 	return res
 }
 
-func assetURL(rel *Release, name string) string {
-	for _, a := range rel.Assets {
-		if a.Name == name {
-			return a.URL
-		}
-	}
-	return ""
+func releaseAssetURL(repo, tag, name string) string {
+	return githubWeb + "/" + repo + "/releases/download/" + url.PathEscape(tag) + "/" + url.PathEscape(name)
 }
 
 type progressReader struct {
@@ -182,26 +190,22 @@ func Apply(repo, current, dataDir, proxyAddr string, progress ProgressFunc) (*Re
 	}
 	arch := runtime.GOARCH
 	tarName := fmt.Sprintf("easyproxy-linux-%s.tar.gz", arch)
-	tarURL := assetURL(rel, tarName)
-	if tarURL == "" {
-		return nil, fmt.Errorf("Release 中缺少资源 %s", tarName)
-	}
+	tarURL := releaseAssetURL(rel.Repo, rel.TagName, tarName)
 	body, err := download(ctx, hc, tarURL, "downloading", progress)
 	if err != nil {
 		return nil, err
 	}
 	// sha256 校验（资产缺失则跳过）
-	if sumURL := assetURL(rel, tarName+".sha256"); sumURL != "" {
-		if progress != nil {
-			progress("verifying", 0, 0)
-		}
-		if sum, err := download(ctx, hc, sumURL, "verifying", nil); err == nil {
-			want := strings.Fields(string(sum))
-			if len(want) > 0 {
-				got := sha256.Sum256(body)
-				if !strings.EqualFold(want[0], hex.EncodeToString(got[:])) {
-					return nil, fmt.Errorf("sha256 校验失败")
-				}
+	sumURL := releaseAssetURL(rel.Repo, rel.TagName, tarName+".sha256")
+	if progress != nil {
+		progress("verifying", 0, 0)
+	}
+	if sum, err := download(ctx, hc, sumURL, "verifying", nil); err == nil {
+		want := strings.Fields(string(sum))
+		if len(want) > 0 {
+			got := sha256.Sum256(body)
+			if !strings.EqualFold(want[0], hex.EncodeToString(got[:])) {
+				return nil, fmt.Errorf("sha256 校验失败")
 			}
 		}
 	}

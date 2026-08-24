@@ -264,6 +264,7 @@ func (s *Server) Handler() http.Handler {
 	route("GET /api/update/check", s.handleUpdateCheck)
 	route("GET /api/update/status", s.handleUpdateStatus)
 	route("POST /api/update/apply", s.handleUpdateApply)
+	route("POST /api/update/restart", s.handleUpdateRestart)
 
 	route("GET /api/settings", s.handleGetSettings)
 	route("PUT /api/settings", s.handlePutSettings)

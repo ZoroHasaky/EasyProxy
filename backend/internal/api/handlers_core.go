@@ -246,21 +246,42 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 		}
 		version := strings.TrimPrefix(rel.TagName, "v")
 		s.updateMu.Lock()
-		s.updateTask.State = "restarting"
-		s.updateTask.Version = version
-		s.updateTask.Percent = 100
-		s.updateMu.Unlock()
-		time.Sleep(2 * time.Second)
-		_ = s.mgr.Stop()
-		update.ExecNewest(s.dataDir, s.version)
-		// Exec 成功时不会返回；返回说明当前平台不支持或切换失败。
-		s.updateMu.Lock()
 		s.updateTask.State = "ready"
 		s.updateTask.Running = false
-		s.updateTask.Error = "新版本已安装，请手动重启面板完成切换"
+		s.updateTask.Version = version
+		s.updateTask.Percent = 100
+		s.updateTask.Error = ""
 		s.updateMu.Unlock()
 	}()
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "message": "更新任务已在后台启动"})
+}
+
+func (s *Server) handleUpdateRestart(w http.ResponseWriter, r *http.Request) {
+	s.updateMu.Lock()
+	if s.updateTask.State != "ready" || s.updateTask.Version == "" {
+		s.updateMu.Unlock()
+		writeErr(w, http.StatusConflict, "尚无已下载完成的更新")
+		return
+	}
+	s.updateTask.State = "restarting"
+	s.updateTask.Running = true
+	s.updateTask.Error = ""
+	s.updateMu.Unlock()
+
+	go func() {
+		// 先让 HTTP 响应返回给前端，再切换当前进程。
+		time.Sleep(time.Second)
+		_ = s.mgr.Stop()
+		update.ExecNewest(s.dataDir, s.version)
+		// Exec 成功时不会返回；返回说明当前平台不支持或切换失败。
+		_ = s.mgr.Start()
+		s.updateMu.Lock()
+		s.updateTask.State = "ready"
+		s.updateTask.Running = false
+		s.updateTask.Error = "自动重启失败，请手动重启应用完成更新"
+		s.updateMu.Unlock()
+	}()
+	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "message": "应用正在重启"})
 }
 
 // ---------- 设置 ----------

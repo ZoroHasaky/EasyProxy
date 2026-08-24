@@ -27,6 +27,8 @@ import {
   useMihomoRuntime,
   useTheme,
 } from "@/contexts/app-state";
+import { useUpdate } from "@/contexts/update-state";
+import { UpdateDialog } from "@/components/update-dialog";
 import { cn, formatSpeed } from "@/lib/utils";
 
 const nav = [
@@ -121,6 +123,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { theme, toggleTheme } = useTheme();
+  const { hasUpdate, openDialog: openUpdateDialog } = useUpdate();
   const { traffic, trafficConnected, mode, modePending, switchMode } = useMihomoRuntime();
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true",
@@ -159,13 +162,31 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )}
     >
       <div className="relative hidden items-center border-b border-r bg-card px-3 md:flex">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-sm font-bold text-white">
+        <button
+          onClick={openUpdateDialog}
+          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-sm font-bold text-white"
+          title={hasUpdate ? "发现新版本，点击更新" : "查看应用更新"}
+        >
           ez
-        </div>
+          {collapsed && hasUpdate && (
+            <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-card bg-amber-400" />
+          )}
+        </button>
         {!collapsed && (
           <div className="ml-2 min-w-0">
             <div className="truncate text-sm font-semibold leading-tight">EasyProxy</div>
-            <div className="text-[11px] text-muted-foreground">v{meta.data?.version ?? "…"}</div>
+            <button
+              onClick={openUpdateDialog}
+              className={cn(
+                "mt-0.5 rounded-full text-[11px] transition-colors",
+                hasUpdate
+                  ? "bg-amber-500/15 px-2 py-0.5 font-medium text-amber-500 hover:bg-amber-500/25"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              title={hasUpdate ? "发现新版本，点击更新" : "查看应用更新"}
+            >
+              v{meta.data?.version ?? "…"}{hasUpdate ? " · 可更新" : ""}
+            </button>
           </div>
         )}
         <button
@@ -189,9 +210,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-xs font-bold text-white">
+          <button
+            onClick={openUpdateDialog}
+            className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-xs font-bold text-white"
+            title={hasUpdate ? "发现新版本，点击更新" : "查看应用更新"}
+          >
             ez
-          </div>
+            {hasUpdate && (
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-card bg-amber-400" />
+            )}
+          </button>
         </div>
 
         <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-3">
@@ -248,12 +276,29 @@ export function Layout({ children }: { children: React.ReactNode }) {
           />
           <aside className="relative flex h-full w-64 flex-col border-r bg-card shadow-xl">
             <div className="flex h-16 items-center border-b px-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-sm font-bold text-white">
+              <button
+                onClick={openUpdateDialog}
+                className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-sm font-bold text-white"
+                title={hasUpdate ? "发现新版本，点击更新" : "查看应用更新"}
+              >
                 ez
-              </div>
+                {hasUpdate && (
+                  <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-card bg-amber-400" />
+                )}
+              </button>
               <div className="ml-2">
                 <div className="text-sm font-semibold leading-tight">EasyProxy</div>
-                <div className="text-[11px] text-muted-foreground">v{meta.data?.version ?? "…"}</div>
+                <button
+                  onClick={openUpdateDialog}
+                  className={cn(
+                    "mt-0.5 rounded-full text-[11px]",
+                    hasUpdate
+                      ? "bg-amber-500/15 px-2 py-0.5 font-medium text-amber-500"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  v{meta.data?.version ?? "…"}{hasUpdate ? " · 可更新" : ""}
+                </button>
               </div>
               <button
                 onClick={() => setMobileOpen(false)}
@@ -287,6 +332,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       >
         <RefreshCw className="h-4 w-4" />
       </button>
+      <UpdateDialog />
     </div>
   );
 }
