@@ -60,6 +60,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           VERSION=$(cat ../VERSION | tr -d ' \n')
+          cp -a ../frontend/dist/. ./internal/web/dist/
           go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o /tmp/easyproxy ./cmd/server
           cd /tmp
           tar -czf "easyproxy-linux-${{ matrix.goarch }}.tar.gz" easyproxy
