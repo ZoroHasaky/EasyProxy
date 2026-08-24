@@ -1,9 +1,9 @@
 # ---- frontend build ----
 FROM node:20-alpine AS web
 WORKDIR /web
-COPY frontend/package.json frontend/package-lock.json ./
+COPY fronted/package.json fronted/package-lock.json ./
 RUN npm ci
-COPY frontend/ ./
+COPY fronted/ ./
 RUN npm run build
 
 # ---- backend build ----
@@ -12,8 +12,8 @@ WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
-# vite outDir 为 ../backend/internal/web/dist，在容器内相对 /web 解析到 /backend/ 下
-COPY --from=web /backend/internal/web/dist/ ./internal/web/dist/
+# Vite 默认将产物输出到 /web/dist。
+COPY --from=web /web/dist/ ./internal/web/dist/
 COPY VERSION /src/VERSION
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.version=$(cat VERSION)" \

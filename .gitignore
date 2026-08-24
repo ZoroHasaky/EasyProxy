@@ -1,7 +1,7 @@
-# frontend
-frontend/node_modules/
-frontend/dist/
-frontend/tsconfig.tsbuildinfo
+# fronted
+fronted/node_modules/
+fronted/dist/
+fronted/tsconfig.tsbuildinfo
 
 # backend embed: 只保留占位文件
 backend/internal/web/dist/*

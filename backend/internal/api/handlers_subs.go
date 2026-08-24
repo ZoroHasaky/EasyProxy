@@ -33,7 +33,6 @@ func (s *Server) handleCreateSub(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "名称和 URL 必填")
 		return
 	}
-	sub.Enabled = true
 	// 先抓取验证再落库；内核运行中提供代理地址，抓取失败自动换路径重试
 	proxy := ""
 	if s.mgr.Status().State == core.StateRunning {

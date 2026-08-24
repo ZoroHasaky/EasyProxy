@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -174,8 +175,13 @@ func (s *Server) updateRepo() string {
 }
 
 func (s *Server) updateProxyAddr() (string, error) {
-	// 更新检查与下载不再显式接入 mihomo 代理。保留旧设置字段仅用于数据兼容。
-	return "", nil
+	if !s.st.GetSettingBool("update_via_proxy", false) {
+		return "", nil
+	}
+	if s.mgr.Status().State != core.StateRunning {
+		return "", fmt.Errorf("已启用通过本地代理更新，但 Mihomo 内核未运行")
+	}
+	return fmt.Sprintf("127.0.0.1:%d", s.st.GetSettingInt("mixed_port", 7890)), nil
 }
 
 func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
