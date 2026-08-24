@@ -182,7 +182,7 @@ func (s *Store) GetCurrentRuleProvider(id int64) (*model.RuleProvider, error) {
 	return &p, nil
 }
 
-// ReplaceCurrentRules 原子保存唯一的当前规则集。规则集来源按 ID 更新，避免编辑后 ID 变化；
+// ReplaceCurrentRules 原子保存唯一的当前规则集。识别规则按 ID 更新，避免编辑后 ID 变化；
 // 来源改名会联动 RULE-SET 引用，仍被引用的来源不能删除。
 func (s *Store) ReplaceCurrentRules(rules []model.Rule, providers []model.RuleProvider) error {
 	providerNames := map[string]bool{}
@@ -193,21 +193,21 @@ func (s *Store) ReplaceCurrentRules(rules []model.Rule, providers []model.RulePr
 		p.Behavior = strings.ToLower(strings.TrimSpace(p.Behavior))
 		p.Format = strings.ToLower(strings.TrimSpace(p.Format))
 		if p.Name == "" || p.URL == "" || providerNames[p.Name] {
-			return fmt.Errorf("规则集来源名称或 URL 为空，或名称重复")
+			return fmt.Errorf("识别规则名称或 URL 为空，或名称重复")
 		}
 		if strings.ContainsAny(p.Name, ",\r\n") {
-			return fmt.Errorf("规则集来源名称不能包含逗号或换行：%s", p.Name)
+			return fmt.Errorf("识别规则名称不能包含逗号或换行：%s", p.Name)
 		}
 		providerNames[p.Name] = true
 		switch p.Behavior {
 		case "domain", "ipcidr", "classical":
 		default:
-			return fmt.Errorf("规则集来源 %s 的匹配类型无效", p.Name)
+			return fmt.Errorf("识别规则 %s 的匹配类型无效", p.Name)
 		}
 		switch p.Format {
 		case "yaml", "text", "mrs":
 		default:
-			return fmt.Errorf("规则集来源 %s 的格式无效", p.Name)
+			return fmt.Errorf("识别规则 %s 的格式无效", p.Name)
 		}
 		if p.Interval <= 0 {
 			p.Interval = 86400
@@ -249,7 +249,7 @@ func (s *Store) ReplaceCurrentRules(rules []model.Rule, providers []model.RulePr
 		}
 		oldName, ok := existing[p.ID]
 		if !ok {
-			return fmt.Errorf("规则集来源 ID %d 不存在", p.ID)
+			return fmt.Errorf("识别规则 ID %d 不存在", p.ID)
 		}
 		kept[p.ID] = true
 		if oldName != p.Name {
@@ -280,9 +280,9 @@ func (s *Store) ReplaceCurrentRules(rules []model.Rule, providers []model.RulePr
 	}
 	for name, count := range missingReferences {
 		if existingNames[name] {
-			return fmt.Errorf("规则集来源 %s 仍被 %d 条规则引用，不能删除", name, count)
+			return fmt.Errorf("识别规则 %s 仍被 %d 条代理规则引用，不能删除", name, count)
 		}
-		return fmt.Errorf("规则集规则引用了不存在的来源：%s", name)
+		return fmt.Errorf("代理规则引用了不存在的识别规则：%s", name)
 	}
 
 	for _, p := range providers {

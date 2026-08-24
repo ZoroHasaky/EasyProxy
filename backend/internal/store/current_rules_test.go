@@ -75,7 +75,7 @@ func TestReplaceCurrentRulesPreservesProviderIDAndRenamesReferences(t *testing.T
 	if afterRules[0].Value != "new" {
 		t.Fatalf("RULE-SET reference was not renamed: %#v", afterRules[0])
 	}
-	if err := st.ReplaceCurrentRules(afterRules, nil); err == nil || !strings.Contains(err.Error(), "仍被 1 条规则引用") {
+	if err := st.ReplaceCurrentRules(afterRules, nil); err == nil || !strings.Contains(err.Error(), "仍被 1 条代理规则引用") {
 		t.Fatalf("deleting referenced provider should fail, got %v", err)
 	}
 	if err := st.ReplaceCurrentRules(nil, nil); err != nil {

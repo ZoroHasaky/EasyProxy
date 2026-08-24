@@ -112,7 +112,7 @@ function SubDialog({
   );
 }
 
-export default function SubscriptionsPage() {
+export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Subscription | null>(null);
@@ -139,7 +139,17 @@ export default function SubscriptionsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">订阅管理</h1>
+        <div>
+          {!embedded && <h1 className="text-xl font-semibold">订阅管理</h1>}
+          {embedded && (
+            <>
+              <div className="text-sm font-medium">订阅管理</div>
+              <p className="text-xs text-muted-foreground">
+                管理节点订阅来源、更新方式和流量信息。
+              </p>
+            </>
+          )}
+        </div>
         <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
           <Plus className="h-4 w-4" /> 添加订阅
         </Button>
@@ -202,4 +212,8 @@ export default function SubscriptionsPage() {
       <SubDialog open={dialogOpen} onClose={() => setDialogOpen(false)} initial={editing} key={editing?.id ?? "new"} />
     </div>
   );
+}
+
+export default function SubscriptionsPage() {
+  return <SubscriptionsPanel />;
 }

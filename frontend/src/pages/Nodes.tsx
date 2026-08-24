@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Gauge, Plus, Trash2, Zap, Eraser } from "lucide-react";
@@ -13,6 +14,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SubscriptionsPanel } from "@/pages/Subscriptions";
 
 function latencyBadge(n: ProxyNode) {
   if (!n.latency_at) return <span className="text-muted-foreground text-xs">未测速</span>;
@@ -21,7 +24,7 @@ function latencyBadge(n: ProxyNode) {
   return <Badge variant={v as any}>{n.latency} ms</Badge>;
 }
 
-export default function NodesPage() {
+export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
   const [region, setRegion] = useState("");
   const [source, setSource] = useState("");
@@ -112,7 +115,23 @@ export default function NodesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">节点池（{nodes.data?.length ?? 0}）</h1>
+        <div>
+          {!embedded && (
+            <h1 className="text-xl font-semibold">
+              节点池（{nodes.data?.length ?? 0}）
+            </h1>
+          )}
+          {embedded && (
+            <>
+              <div className="text-sm font-medium">
+                节点池（{nodes.data?.length ?? 0}）
+              </div>
+              <p className="text-xs text-muted-foreground">
+                查看、筛选、测速和管理订阅或手工导入的节点。
+              </p>
+            </>
+          )}
+        </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => check.mutate()} disabled={check.isPending}>
             <Gauge className={cn("h-4 w-4", check.isPending && "animate-pulse")} />
@@ -231,6 +250,47 @@ export default function NodesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+export default function NodesPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const activeTab = requestedTab === "pool" ? "pool" : "subscriptions";
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-xl font-semibold">节点</h1>
+        <p className="mt-1 text-xs text-muted-foreground">
+          统一管理订阅来源与节点池。
+        </p>
+      </div>
+
+      <Tabs
+        value={activeTab}
+        onValueChange={(tab) => setSearchParams({ tab }, { replace: true })}
+      >
+        <TabsList className="grid h-auto w-full grid-cols-2 p-1">
+          <TabsTrigger value="subscriptions">订阅</TabsTrigger>
+          <TabsTrigger value="pool">节点池</TabsTrigger>
+        </TabsList>
+        <TabsContent
+          value="subscriptions"
+          forceMount
+          className={cn("mt-4", activeTab !== "subscriptions" && "hidden")}
+        >
+          <SubscriptionsPanel embedded />
+        </TabsContent>
+        <TabsContent
+          value="pool"
+          forceMount
+          className={cn("mt-4", activeTab !== "pool" && "hidden")}
+        >
+          <NodesPanel embedded />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

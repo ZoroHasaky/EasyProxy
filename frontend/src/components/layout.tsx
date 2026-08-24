@@ -1,8 +1,17 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  LayoutDashboard, Rss, Server, ScrollText, Layers, Cable, Cpu, Network,
-  Earth, Terminal, Settings, Info, LogOut, RefreshCw,
+  LayoutDashboard,
+  Server,
+  ScrollText,
+  Cable,
+  Cpu,
+  Network,
+  Terminal,
+  Settings,
+  Info,
+  LogOut,
+  RefreshCw,
 } from "lucide-react";
 import { api, MetaInfo } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -10,14 +19,11 @@ import { toast } from "sonner";
 
 const nav = [
   { to: "/", label: "仪表盘", icon: LayoutDashboard },
-  { to: "/subscriptions", label: "订阅", icon: Rss },
-  { to: "/nodes", label: "节点池", icon: Server },
+  { to: "/nodes", label: "节点", icon: Server },
   { to: "/rules", label: "规则", icon: ScrollText },
-  { to: "/groups", label: "策略组", icon: Layers },
   { to: "/connections", label: "连接", icon: Cable },
   { to: "/kernel", label: "内核", icon: Cpu },
   { to: "/tun", label: "透明代理", icon: Network },
-  { to: "/geo", label: "Geo", icon: Earth },
   { to: "/logs", label: "日志", icon: Terminal },
   { to: "/settings", label: "设置", icon: Settings },
   { to: "/about", label: "关于", icon: Info },
@@ -51,7 +57,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
           <div>
             <div className="text-sm font-semibold leading-tight">EasyProxy</div>
-            <div className="text-[11px] text-muted-foreground">v{meta.data?.version ?? "…"}</div>
+            <div className="text-[11px] text-muted-foreground">
+              v{meta.data?.version ?? "…"}
+            </div>
           </div>
         </div>
         <nav className="flex-1 space-y-0.5 px-2">
@@ -77,10 +85,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <span
               className={cn(
                 "h-2 w-2 rounded-full",
-                running ? "bg-emerald-500 animate-pulse" : coreState === "failed" ? "bg-red-500" : "bg-zinc-500",
+                running
+                  ? "bg-emerald-500 animate-pulse"
+                  : coreState === "failed"
+                    ? "bg-red-500"
+                    : "bg-zinc-500",
               )}
             />
-            内核{running ? "运行中" : coreState === "failed" ? "异常" : "未运行"}
+            内核
+            {running ? "运行中" : coreState === "failed" ? "异常" : "未运行"}
           </div>
           <button
             onClick={logout}

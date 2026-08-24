@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import CodeMirror from "@uiw/react-codemirror";
@@ -27,6 +28,7 @@ import {
   FileInput,
   GripVertical,
   Info,
+  Pencil,
   Plus,
   RotateCcw,
   Save,
@@ -46,6 +48,7 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
@@ -58,7 +61,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { GroupsPanel } from "@/pages/Groups";
 
 const KINDS = [
   "DOMAIN",
@@ -229,7 +234,7 @@ function RuleRow({
   rule,
   providers,
   targetOptions,
-  onChange,
+  onEdit,
   onDelete,
   onViewProvider,
   dragged,
@@ -237,7 +242,7 @@ function RuleRow({
   rule: Rule;
   providers: RuleProvider[];
   targetOptions: RuleTargetOption[];
-  onChange: (rule: Rule) => void;
+  onEdit: () => void;
   onDelete: () => void;
   onViewProvider: (provider: RuleProvider) => void;
   dragged: boolean;
@@ -250,15 +255,15 @@ function RuleRow({
     transition,
     isDragging,
   } = useSortable({ id: rule.id });
-  const selectedTarget = normalizedTarget(rule.target, targetOptions);
-  const baseTarget = normalizedTarget(
-    rule.base_target || rule.target,
-    targetOptions,
-  );
   const matchedTarget = findTargetOption(rule.target, targetOptions);
   const targetAvailable =
     BUILTIN_TARGETS.includes(rule.target) || matchedTarget?.available === true;
   const provider = providers.find((item) => item.name === rule.value);
+  const displayTarget = BUILTIN_TARGETS.includes(rule.target)
+    ? targetLabel(rule.target)
+    : matchedTarget
+      ? optionLabel(matchedTarget)
+      : `${rule.target}（目标已失效）`;
   return (
     <div
       ref={setNodeRef}
@@ -268,7 +273,7 @@ function RuleRow({
         opacity: isDragging ? 0.5 : 1,
       }}
       className={cn(
-        "grid min-w-[980px] grid-cols-[24px_54px_215px_minmax(205px,1fr)_230px_110px_80px] items-center gap-2 border-b px-3 py-2 text-sm hover:bg-muted/30",
+        "grid min-w-[980px] grid-cols-[24px_64px_190px_minmax(220px,1fr)_230px_110px_100px] items-center gap-2 border-b px-3 py-2 text-sm hover:bg-muted/30",
         dragged && "ring-1 ring-emerald-600",
       )}
     >
@@ -279,55 +284,25 @@ function RuleRow({
       >
         <GripVertical className="h-4 w-4" />
       </button>
-      <Switch
-        checked={rule.enabled}
-        onCheckedChange={(enabled) => onChange({ ...rule, enabled })}
-      />
-      <Select
-        value={rule.kind}
-        onChange={(e) =>
-          onChange({
-            ...rule,
-            kind: e.target.value,
-            value: e.target.value === "MATCH" ? "" : rule.value,
-          })
-        }
-      >
-        {KINDS.map((kind) => (
-          <option key={kind} value={kind}>
-            {kindLabel(kind)}
-          </option>
-        ))}
-      </Select>
+      <Badge variant={rule.enabled ? "success" : "secondary"} className="w-fit">
+        {rule.enabled ? "启用" : "停用"}
+      </Badge>
+      <span>{kindLabel(rule.kind)}</span>
       <div className="min-w-0">
         {rule.kind === "MATCH" ? (
-          <div className="rounded-md border bg-muted/40 px-3 py-2 text-muted-foreground">
-            无需匹配内容，命中此前未匹配的所有流量
-          </div>
+          <span className="text-muted-foreground">命中此前未匹配的所有流量</span>
         ) : rule.kind === "RULE-SET" ? (
           <div className="flex items-center gap-2">
-            <Select
-              className={cn(!provider && "border-destructive")}
-              value={rule.value}
-              onChange={(e) => onChange({ ...rule, value: e.target.value })}
-            >
-              <option value="">请选择规则集来源</option>
-              {providers.map((item) => (
-                <option key={item.id} value={item.name}>
-                  {item.name} ·{" "}
-                  {BEHAVIOR_LABELS[item.behavior] ?? item.behavior} ·{" "}
-                  {providerStatusLabel(item.status)}
-                </option>
-              ))}
-              {!provider && rule.value && (
-                <option value={rule.value}>{rule.value}（来源已失效）</option>
-              )}
-            </Select>
+            <span className={cn("truncate", !provider && "text-destructive")}>
+              {provider
+                ? `${provider.name} · ${BEHAVIOR_LABELS[provider.behavior] ?? provider.behavior} · ${providerStatusLabel(provider.status)}`
+                : `${rule.value || "未选择"}（识别规则已失效）`}
+            </span>
             {provider && (
               <Button
                 size="icon"
                 variant="ghost"
-                title="查看规则集详情"
+                title="查看识别规则详情"
                 onClick={() => onViewProvider(provider)}
               >
                 <Info className="h-4 w-4" />
@@ -335,36 +310,13 @@ function RuleRow({
             )}
           </div>
         ) : (
-          <Input
-            value={rule.value}
-            placeholder={KIND_PLACEHOLDERS[rule.kind] ?? "输入匹配内容"}
-            onChange={(e) => onChange({ ...rule, value: e.target.value })}
-          />
-        )}
-        {rule.kind === "RULE-SET" && !provider && (
-          <div className="mt-1 flex items-center gap-1 text-xs text-destructive">
-            <AlertTriangle className="h-3.5 w-3.5" />
-            规则集来源已失效
-          </div>
+          <span className="break-all font-mono text-xs">{rule.value}</span>
         )}
       </div>
       <div>
-        <Select
-          value={selectedTarget}
-          onChange={(e) =>
-            onChange({
-              ...rule,
-              target: e.target.value,
-              base_target: baseTarget,
-              target_override: e.target.value !== baseTarget,
-            })
-          }
-        >
-          <TargetOptions options={targetOptions} />
-          {!matchedTarget && !BUILTIN_TARGETS.includes(rule.target) && (
-            <option value={rule.target}>{rule.target}（目标已失效）</option>
-          )}
-        </Select>
+        <div className={cn("truncate", !targetAvailable && "text-destructive")}>
+          {displayTarget}
+        </div>
         {rule.target_override && (
           <div className="mt-1 text-xs text-amber-700">
             已覆盖加载时的处理方式
@@ -376,36 +328,24 @@ function RuleRow({
           </div>
         )}
       </div>
-      <label
-        className="flex items-center gap-2 text-xs text-muted-foreground"
-        title="生成 no-resolve，跳过 DNS 解析"
-      >
-        <input
-          type="checkbox"
-          checked={rule.no_resolve}
-          onChange={(e) => onChange({ ...rule, no_resolve: e.target.checked })}
-        />
-        跳过 DNS 解析
-      </label>
+      <span className="text-xs text-muted-foreground">
+        {rule.no_resolve ? "跳过 DNS 解析" : "正常解析"}
+      </span>
       <div className="flex items-center justify-end gap-1">
-        {rule.target_override && (
-          <Button
-            size="icon"
-            variant="ghost"
-            title="恢复加载时的处理方式"
-            onClick={() =>
-              onChange({
-                ...rule,
-                target: baseTarget,
-                base_target: baseTarget,
-                target_override: false,
-              })
-            }
-          >
-            <RotateCcw className="h-4 w-4 text-amber-600" />
-          </Button>
-        )}
-        <Button size="icon" variant="ghost" title="删除规则" onClick={onDelete}>
+        <Button
+          size="icon"
+          variant="ghost"
+          title="修改代理规则"
+          onClick={onEdit}
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          title="删除代理规则"
+          onClick={onDelete}
+        >
           <Trash2 className="h-4 w-4 text-destructive" />
         </Button>
       </div>
@@ -415,8 +355,13 @@ function RuleRow({
 
 export default function RulesPage() {
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rules, setRules] = useState<Rule[] | null>(null);
   const [providers, setProviders] = useState<RuleProvider[] | null>(null);
+  const [providerDraft, setProviderDraft] = useState<RuleProvider | null>(null);
+  const [providerDraftIsNew, setProviderDraftIsNew] = useState(false);
+  const [ruleDraft, setRuleDraft] = useState<Rule | null>(null);
+  const [ruleDraftIsNew, setRuleDraftIsNew] = useState(false);
   const [loadOpen, setLoadOpen] = useState(false);
   const [templateURL, setTemplateURL] = useState("");
   const [templateContent, setTemplateContent] = useState("");
@@ -505,17 +450,16 @@ export default function RulesPage() {
     const names = new Set<string>();
     for (const provider of nextProviders) {
       const name = provider.name.trim();
-      if (!name || !provider.url.trim())
-        return "规则集来源的名称和 URL 不能为空";
+      if (!name || !provider.url.trim()) return "识别规则的名称和 URL 不能为空";
       if (/[,\r\n]/.test(name))
-        return `规则集来源名称不能包含逗号或换行：${name}`;
-      if (names.has(name)) return `规则集来源名称重复：${name}`;
+        return `识别规则名称不能包含逗号或换行：${name}`;
+      if (names.has(name)) return `识别规则名称重复：${name}`;
       names.add(name);
     }
     for (const rule of nextRules) {
       if (!rule.kind || !rule.target) return "存在缺少规则类型或处理方式的规则";
       if (rule.kind === "RULE-SET" && !names.has(rule.value))
-        return `规则集规则引用了不存在的来源：${rule.value || "未选择"}`;
+        return `代理规则引用了不存在的识别规则：${rule.value || "未选择"}`;
     }
     return "";
   };
@@ -626,71 +570,129 @@ export default function RulesPage() {
     else action();
   };
 
-  const updateProvider = (id: number, patch: Partial<RuleProvider>) => {
-    const existing = localProviders.find((provider) => provider.id === id);
-    if (existing && patch.name !== undefined && patch.name !== existing.name) {
+  const openAddProvider = () => {
+    setProviderDraftIsNew(true);
+    setProviderDraft({
+      id: -Date.now(),
+      template_id: 0,
+      name: "",
+      url: "",
+      behavior: "domain",
+      format: "yaml",
+      interval: 86400,
+      status: "not_loaded",
+    });
+  };
+  const openEditProvider = (provider: RuleProvider) => {
+    setProviderDraftIsNew(false);
+    setProviderDraft({ ...provider });
+  };
+  const commitProviderDraft = () => {
+    if (!providerDraft) return;
+    const next = {
+      ...providerDraft,
+      name: providerDraft.name.trim(),
+      url: providerDraft.url.trim(),
+      interval: providerDraft.interval || 86400,
+      status: "not_loaded" as const,
+    };
+    if (!next.name || !next.url) {
+      toast.error("识别规则的名称和 URL 不能为空");
+      return;
+    }
+    if (/[,\r\n]/.test(next.name)) {
+      toast.error("识别规则名称不能包含逗号或换行");
+      return;
+    }
+    if (
+      localProviders.some(
+        (provider) => provider.id !== next.id && provider.name === next.name,
+      )
+    ) {
+      toast.error(`识别规则名称重复：${next.name}`);
+      return;
+    }
+    const existing = localProviders.find((provider) => provider.id === next.id);
+    if (existing && next.name !== existing.name) {
       setRules((current) =>
         (current ?? []).map((rule) =>
           rule.kind === "RULE-SET" && rule.value === existing.name
-            ? { ...rule, value: patch.name! }
+            ? { ...rule, value: next.name }
             : rule,
         ),
       );
     }
     setProviders((items) =>
-      (items ?? []).map((provider) =>
-        provider.id === id
-          ? { ...provider, ...patch, status: "not_loaded" }
-          : provider,
-      ),
+      providerDraftIsNew
+        ? [...(items ?? []), next]
+        : (items ?? []).map((provider) =>
+            provider.id === next.id ? next : provider,
+          ),
     );
+    setProviderDraft(null);
   };
   const deleteProvider = (provider: RuleProvider) => {
     const references = localRules.filter(
       (rule) => rule.kind === "RULE-SET" && rule.value === provider.name,
     ).length;
     if (references > 0) {
-      toast.error(`“${provider.name}”仍被 ${references} 条规则引用，不能删除`);
+      toast.error(
+        `“${provider.name}”仍被 ${references} 条代理规则引用，不能删除`,
+      );
       return;
     }
+    if (!confirm(`确定删除识别规则“${provider.name}”？`)) return;
     setProviders((items) =>
       (items ?? []).filter((item) => item.id !== provider.id),
     );
   };
-  const addProvider = () =>
-    setProviders((items) => [
-      ...(items ?? []),
-      {
-        id: -Date.now(),
-        template_id: 0,
-        name: "",
-        url: "",
-        behavior: "domain",
-        format: "yaml",
-        interval: 86400,
-        status: "not_loaded",
-      },
-    ]);
-  const addRule = () =>
-    setRules((items) => [
-      ...(items ?? []),
-      {
-        id: -Date.now(),
-        template_id: 0,
-        kind: "DOMAIN-SUFFIX",
-        value: "",
-        target: "PROXY",
-        base_target: "PROXY",
-        target_override: false,
-        no_resolve: false,
-        position: 0,
-        enabled: true,
-      },
-    ]);
-  const updateRule = (updated: Rule) =>
+  const openAddRule = () => {
+    setRuleDraftIsNew(true);
+    setRuleDraft({
+      id: -Date.now(),
+      template_id: 0,
+      kind: "DOMAIN-SUFFIX",
+      value: "",
+      target: "PROXY",
+      base_target: "PROXY",
+      target_override: false,
+      no_resolve: false,
+      position: 0,
+      enabled: true,
+    });
+  };
+  const openEditRule = (rule: Rule) => {
+    setRuleDraftIsNew(false);
+    setRuleDraft({ ...rule });
+  };
+  const commitRuleDraft = () => {
+    if (!ruleDraft) return;
+    const next = {
+      ...ruleDraft,
+      value: ruleDraft.kind === "MATCH" ? "" : ruleDraft.value.trim(),
+    };
+    if (!next.kind || !next.target) {
+      toast.error("规则类型和处理方式不能为空");
+      return;
+    }
+    if (next.kind !== "MATCH" && !next.value) {
+      toast.error("匹配内容不能为空");
+      return;
+    }
+    if (
+      next.kind === "RULE-SET" &&
+      !localProviders.some((provider) => provider.name === next.value)
+    ) {
+      toast.error("请选择有效的识别规则");
+      return;
+    }
     setRules((items) =>
-      (items ?? []).map((rule) => (rule.id === updated.id ? updated : rule)),
+      ruleDraftIsNew
+        ? [...(items ?? []), next]
+        : (items ?? []).map((rule) => (rule.id === next.id ? next : rule)),
     );
+    setRuleDraft(null);
+  };
   const onDragEnd = (event: DragEndEvent) => {
     setDragId(null);
     if (!event.over || event.active.id === event.over.id) return;
@@ -711,7 +713,7 @@ export default function RulesPage() {
         (key) => (saved as any)[key] === (provider as any)[key],
       );
     if (provider.format !== "mrs" && (!saved || !unchanged)) {
-      toast.error("请先保存规则集来源，再查看实际内容");
+      toast.error("请先保存识别规则，再查看实际内容");
       return;
     }
     setContentInput("");
@@ -730,202 +732,489 @@ export default function RulesPage() {
     1,
     Math.ceil((providerContent.data?.total ?? 0) / 100),
   );
+  const requestedTab = searchParams.get("tab");
+  const activeTab = ["recognition", "proxy", "groups"].includes(
+    requestedTab ?? "",
+  )
+    ? requestedTab!
+    : "proxy";
+  const ruleDraftBaseTarget = ruleDraft
+    ? normalizedTarget(ruleDraft.base_target || ruleDraft.target, targetOptions)
+    : "PROXY";
+  const ruleDraftTarget = ruleDraft
+    ? normalizedTarget(ruleDraft.target, targetOptions)
+    : "PROXY";
+  const ruleDraftMatchedTarget = ruleDraft
+    ? findTargetOption(ruleDraft.target, targetOptions)
+    : undefined;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-xl font-semibold">规则编辑</h1>
+          <h1 className="text-xl font-semibold">规则</h1>
           <p className="mt-1 text-xs text-muted-foreground">
-            当前只维护一套规则；模板仅用于一次性提取规则，不会保存模板本身。
+            统一管理流量识别、代理处理和策略组。
           </p>
         </div>
-        <Button onClick={() => setLoadOpen(true)}>
-          <FileInput className="h-4 w-4" /> 从模板加载
-        </Button>
+        {activeTab !== "groups" && (
+          <Button onClick={() => setLoadOpen(true)}>
+            <FileInput className="h-4 w-4" /> 从模板加载
+          </Button>
+        )}
       </div>
 
-      <div className="rounded-lg border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-          <div>
-            <div className="text-sm font-medium">
-              规则集来源（{localProviders.length}）
+      <Tabs
+        value={activeTab}
+        onValueChange={(tab) => setSearchParams({ tab }, { replace: true })}
+      >
+        <TabsList className="grid h-auto w-full grid-cols-3 p-1">
+          <TabsTrigger value="recognition">
+            识别规则（{localProviders.length}）
+          </TabsTrigger>
+          <TabsTrigger value="proxy">
+            代理规则（{localRules.length}）
+          </TabsTrigger>
+          <TabsTrigger value="groups">策略组</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="recognition" className="mt-4">
+          <div className="rounded-lg border bg-card">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+              <div>
+                <div className="text-sm font-medium">
+                  识别规则（{localProviders.length}）
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  定义域名、IP 等流量的识别来源，供代理规则中的 RULE-SET 引用。
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={openAddProvider}>
+                  <Plus className="h-3.5 w-3.5" /> 添加识别规则
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => validateThen(() => saveRules.mutate())}
+                  disabled={saveRules.isPending}
+                >
+                  <Save className="h-3.5 w-3.5" /> 保存
+                </Button>
+              </div>
             </div>
-            <div className="text-xs text-muted-foreground">
-              供 RULE-SET 规则引用；下载状态来自 Mihomo 当前运行状态。
+            <div className="overflow-x-auto">
+              <div className="min-w-[900px]">
+                <div className="grid grid-cols-[150px_120px_90px_100px_minmax(250px,1fr)_130px_120px] gap-2 border-b bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
+                  <span>名称</span>
+                  <span>匹配类型</span>
+                  <span>格式</span>
+                  <span>更新间隔</span>
+                  <span>下载地址</span>
+                  <span>下载状态</span>
+                  <span className="text-right">操作</span>
+                </div>
+                {localProviders.map((provider) => (
+                  <div
+                    key={provider.id}
+                    className="grid grid-cols-[150px_120px_90px_100px_minmax(250px,1fr)_130px_120px] items-center gap-2 border-b px-3 py-2"
+                  >
+                    <span className="truncate font-medium" title={provider.name}>
+                      {provider.name}
+                    </span>
+                    <span>
+                      {BEHAVIOR_LABELS[provider.behavior] ?? provider.behavior}
+                    </span>
+                    <span>{provider.format.toUpperCase()}</span>
+                    <span>{provider.interval} 秒</span>
+                    <span
+                      className="truncate font-mono text-xs text-muted-foreground"
+                      title={provider.url}
+                    >
+                      {provider.url}
+                    </span>
+                    <Badge
+                      variant={providerStatusVariant(provider.status)}
+                      className="w-fit"
+                    >
+                      {providerStatusLabel(provider.status)}
+                    </Badge>
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title="查看详情"
+                        onClick={() => openProviderDetail(provider)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title="修改识别规则"
+                        onClick={() => openEditProvider(provider)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title="删除识别规则"
+                        onClick={() => deleteProvider(provider)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+                {localProviders.length === 0 && (
+                  <div className="py-8 text-center text-sm text-muted-foreground">
+                    尚无识别规则，可以手工添加或从模板加载。
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-          <Button size="sm" variant="outline" onClick={addProvider}>
-            <Plus className="h-3.5 w-3.5" /> 添加来源
-          </Button>
-        </div>
-        <div className="overflow-x-auto">
-          <div className="min-w-[900px]">
-            <div className="grid grid-cols-[150px_120px_90px_100px_minmax(250px,1fr)_130px_80px] gap-2 border-b bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
-              <span>名称</span>
-              <span>匹配类型</span>
-              <span>格式</span>
-              <span>更新间隔</span>
-              <span>下载地址</span>
-              <span>下载状态</span>
-              <span className="text-right">操作</span>
+        </TabsContent>
+
+        <TabsContent value="proxy" className="mt-4">
+          <div className="rounded-lg border bg-card">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+              <span className="text-sm font-medium">
+                代理规则（{localRules.length} 条，可拖拽排序）
+              </span>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={openAddRule}>
+                  <Plus className="h-3.5 w-3.5" /> 添加代理规则
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => validateThen(() => saveAndPreview.mutate())}
+                  disabled={saveAndPreview.isPending}
+                >
+                  <Eye className="h-3.5 w-3.5" /> 预览 YAML
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => validateThen(() => saveRules.mutate())}
+                  disabled={saveRules.isPending}
+                >
+                  <Save className="h-3.5 w-3.5" /> 保存
+                </Button>
+              </div>
             </div>
-            {localProviders.map((provider) => (
-              <div
-                key={provider.id}
-                className="grid grid-cols-[150px_120px_90px_100px_minmax(250px,1fr)_130px_80px] items-center gap-2 border-b px-3 py-2"
+            <div className="overflow-x-auto">
+              <div className="grid min-w-[980px] grid-cols-[24px_64px_190px_minmax(220px,1fr)_230px_110px_100px] gap-2 border-b bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
+                <span />
+                <span>启用</span>
+                <span>规则类型</span>
+                <span>匹配内容</span>
+                <span>处理方式</span>
+                <span>域名解析</span>
+                <span className="text-right">操作</span>
+              </div>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={(event) => setDragId(Number(event.active.id))}
+                onDragEnd={onDragEnd}
+                onDragCancel={() => setDragId(null)}
               >
-                <Input
-                  value={provider.name}
-                  placeholder="唯一名称"
-                  onChange={(e) =>
-                    updateProvider(provider.id, { name: e.target.value })
-                  }
-                />
-                <Select
-                  value={provider.behavior}
-                  onChange={(e) =>
-                    updateProvider(provider.id, { behavior: e.target.value })
-                  }
+                <SortableContext
+                  items={localRules.map((rule) => rule.id)}
+                  strategy={verticalListSortingStrategy}
                 >
-                  <option value="domain">域名</option>
-                  <option value="ipcidr">IP 网段</option>
-                  <option value="classical">经典规则</option>
-                </Select>
-                <Select
-                  value={provider.format}
-                  onChange={(e) =>
-                    updateProvider(provider.id, { format: e.target.value })
-                  }
-                >
-                  <option value="yaml">YAML</option>
-                  <option value="text">Text</option>
-                  <option value="mrs">MRS</option>
-                </Select>
+                  {localRules.map((rule) => (
+                    <RuleRow
+                      key={rule.id}
+                      rule={rule}
+                      providers={localProviders}
+                      targetOptions={targetOptions}
+                      onEdit={() => openEditRule(rule)}
+                      onDelete={() =>
+                        confirm("确定删除这条代理规则？") &&
+                        setRules((items) =>
+                          (items ?? []).filter((item) => item.id !== rule.id),
+                        )
+                      }
+                      onViewProvider={openProviderDetail}
+                      dragged={dragId === rule.id}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+              {localRules.length === 0 && (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  尚无规则，请从模板加载或手工添加。
+                </div>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent
+          value="groups"
+          forceMount
+          className={cn("mt-4", activeTab !== "groups" && "hidden")}
+        >
+          <GroupsPanel embedded />
+        </TabsContent>
+      </Tabs>
+
+      <Dialog
+        open={!!providerDraft}
+        onOpenChange={(open) => {
+          if (!open) setProviderDraft(null);
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>
+              {providerDraftIsNew ? "添加识别规则" : "修改识别规则"}
+            </DialogTitle>
+            <DialogDescription>
+              配置供 RULE-SET 代理规则引用的远程规则来源。
+            </DialogDescription>
+          </DialogHeader>
+          {providerDraft && (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label>名称</Label>
                 <Input
-                  type="number"
-                  min={1}
-                  value={provider.interval}
-                  onChange={(e) =>
-                    updateProvider(provider.id, {
-                      interval: Number(e.target.value) || 86400,
+                  value={providerDraft.name}
+                  placeholder="唯一名称，例如 category-ads-all"
+                  onChange={(event) =>
+                    setProviderDraft({
+                      ...providerDraft,
+                      name: event.target.value,
                     })
                   }
                 />
-                <Input
-                  value={provider.url}
-                  placeholder="https://..."
-                  onChange={(e) =>
-                    updateProvider(provider.id, { url: e.target.value })
-                  }
-                />
-                <Badge
-                  variant={providerStatusVariant(provider.status)}
-                  className="w-fit"
-                >
-                  {providerStatusLabel(provider.status)}
-                </Badge>
-                <div className="flex justify-end gap-1">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    title="查看详情"
-                    onClick={() => openProviderDetail(provider)}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>匹配类型</Label>
+                  <Select
+                    value={providerDraft.behavior}
+                    onChange={(event) =>
+                      setProviderDraft({
+                        ...providerDraft,
+                        behavior: event.target.value,
+                      })
+                    }
                   >
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    title="删除来源"
-                    onClick={() => deleteProvider(provider)}
+                    <option value="domain">域名</option>
+                    <option value="ipcidr">IP 网段</option>
+                    <option value="classical">经典规则</option>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>格式</Label>
+                  <Select
+                    value={providerDraft.format}
+                    onChange={(event) =>
+                      setProviderDraft({
+                        ...providerDraft,
+                        format: event.target.value,
+                      })
+                    }
                   >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+                    <option value="yaml">YAML</option>
+                    <option value="text">Text</option>
+                    <option value="mrs">MRS</option>
+                  </Select>
                 </div>
               </div>
-            ))}
-            {localProviders.length === 0 && (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                尚无规则集来源，可以手工添加或从模板加载。
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-lg border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-          <span className="text-sm font-medium">
-            规则列表（{localRules.length} 条，可拖拽排序）
-          </span>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={addRule}>
-              <Plus className="h-3.5 w-3.5" /> 添加规则
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => validateThen(() => saveAndPreview.mutate())}
-              disabled={saveAndPreview.isPending}
-            >
-              <Eye className="h-3.5 w-3.5" /> 预览 YAML
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => validateThen(() => saveRules.mutate())}
-              disabled={saveRules.isPending}
-            >
-              <Save className="h-3.5 w-3.5" /> 保存
-            </Button>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <div className="grid min-w-[980px] grid-cols-[24px_54px_215px_minmax(205px,1fr)_230px_110px_80px] gap-2 border-b bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
-            <span />
-            <span>启用</span>
-            <span>规则类型</span>
-            <span>匹配内容</span>
-            <span>处理方式</span>
-            <span>域名解析</span>
-            <span className="text-right">操作</span>
-          </div>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={(event) => setDragId(Number(event.active.id))}
-            onDragEnd={onDragEnd}
-            onDragCancel={() => setDragId(null)}
-          >
-            <SortableContext
-              items={localRules.map((rule) => rule.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              {localRules.map((rule) => (
-                <RuleRow
-                  key={rule.id}
-                  rule={rule}
-                  providers={localProviders}
-                  targetOptions={targetOptions}
-                  onChange={updateRule}
-                  onDelete={() =>
-                    setRules((items) =>
-                      (items ?? []).filter((item) => item.id !== rule.id),
-                    )
+              <div className="space-y-1.5">
+                <Label>下载地址</Label>
+                <Input
+                  value={providerDraft.url}
+                  placeholder="https://..."
+                  onChange={(event) =>
+                    setProviderDraft({
+                      ...providerDraft,
+                      url: event.target.value,
+                    })
                   }
-                  onViewProvider={openProviderDetail}
-                  dragged={dragId === rule.id}
                 />
-              ))}
-            </SortableContext>
-          </DndContext>
-          {localRules.length === 0 && (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              尚无规则，请从模板加载或手工添加。
+              </div>
+              <div className="space-y-1.5">
+                <Label>更新间隔（秒）</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={providerDraft.interval}
+                  onChange={(event) =>
+                    setProviderDraft({
+                      ...providerDraft,
+                      interval: Number(event.target.value) || 86400,
+                    })
+                  }
+                />
+              </div>
             </div>
           )}
-        </div>
-      </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProviderDraft(null)}>
+              取消
+            </Button>
+            <Button onClick={commitProviderDraft}>
+              {providerDraftIsNew ? "添加" : "确认修改"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!ruleDraft}
+        onOpenChange={(open) => {
+          if (!open) setRuleDraft(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {ruleDraftIsNew ? "添加代理规则" : "修改代理规则"}
+            </DialogTitle>
+            <DialogDescription>
+              配置匹配条件、处理方式和 DNS 解析行为。
+            </DialogDescription>
+          </DialogHeader>
+          {ruleDraft && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div>
+                  <Label>启用规则</Label>
+                  <p className="text-xs text-muted-foreground">
+                    停用后该规则不会写入最终配置。
+                  </p>
+                </div>
+                <Switch
+                  checked={ruleDraft.enabled}
+                  onCheckedChange={(enabled) =>
+                    setRuleDraft({ ...ruleDraft, enabled })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>规则类型</Label>
+                <Select
+                  value={ruleDraft.kind}
+                  onChange={(event) =>
+                    setRuleDraft({
+                      ...ruleDraft,
+                      kind: event.target.value,
+                      value: event.target.value === "MATCH" ? "" : ruleDraft.value,
+                    })
+                  }
+                >
+                  {KINDS.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {kindLabel(kind)}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>匹配内容</Label>
+                {ruleDraft.kind === "MATCH" ? (
+                  <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                    最终兜底规则无需填写匹配内容。
+                  </div>
+                ) : ruleDraft.kind === "RULE-SET" ? (
+                  <Select
+                    value={ruleDraft.value}
+                    onChange={(event) =>
+                      setRuleDraft({ ...ruleDraft, value: event.target.value })
+                    }
+                  >
+                    <option value="">请选择识别规则</option>
+                    {localProviders.map((provider) => (
+                      <option key={provider.id} value={provider.name}>
+                        {provider.name} ·{" "}
+                        {BEHAVIOR_LABELS[provider.behavior] ?? provider.behavior} ·{" "}
+                        {providerStatusLabel(provider.status)}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Input
+                    value={ruleDraft.value}
+                    placeholder={
+                      KIND_PLACEHOLDERS[ruleDraft.kind] ?? "输入匹配内容"
+                    }
+                    onChange={(event) =>
+                      setRuleDraft({ ...ruleDraft, value: event.target.value })
+                    }
+                  />
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label>处理方式</Label>
+                <Select
+                  value={ruleDraftTarget}
+                  onChange={(event) =>
+                    setRuleDraft({
+                      ...ruleDraft,
+                      target: event.target.value,
+                      base_target: ruleDraftBaseTarget,
+                      target_override: event.target.value !== ruleDraftBaseTarget,
+                    })
+                  }
+                >
+                  <TargetOptions options={targetOptions} />
+                  {!ruleDraftMatchedTarget &&
+                    !BUILTIN_TARGETS.includes(ruleDraft.target) && (
+                      <option value={ruleDraft.target}>
+                        {ruleDraft.target}（目标已失效）
+                      </option>
+                    )}
+                </Select>
+                {ruleDraft.target_override && (
+                  <div className="flex items-center justify-between rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    <span>已覆盖加载时的处理方式</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        setRuleDraft({
+                          ...ruleDraft,
+                          target: ruleDraftBaseTarget,
+                          base_target: ruleDraftBaseTarget,
+                          target_override: false,
+                        })
+                      }
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> 恢复基础目标
+                    </Button>
+                  </div>
+                )}
+              </div>
+              <label className="flex items-center gap-2 rounded-md border p-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={ruleDraft.no_resolve}
+                  onChange={(event) =>
+                    setRuleDraft({
+                      ...ruleDraft,
+                      no_resolve: event.target.checked,
+                    })
+                  }
+                />
+                跳过 DNS 解析（生成 no-resolve）
+              </label>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRuleDraft(null)}>
+              取消
+            </Button>
+            <Button onClick={commitRuleDraft}>
+              {ruleDraftIsNew ? "添加" : "确认修改"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={loadOpen}
@@ -938,7 +1227,7 @@ export default function RulesPage() {
           <DialogHeader>
             <DialogTitle>从模板加载</DialogTitle>
             <DialogDescription>
-              模板只用于提取规则和规则集来源；确认后覆盖当前规则，不保存模板名称、URL
+              模板只用于提取识别规则和代理规则；确认后覆盖当前规则，不保存模板名称、URL
               或原始内容。
             </DialogDescription>
           </DialogHeader>
@@ -973,11 +1262,11 @@ export default function RulesPage() {
               <div className="rounded-md border bg-muted/30 p-3 text-sm">
                 已提取 <strong>{templatePreview.rules.length}</strong> 条规则、
                 <strong>{templatePreview.providers.length}</strong>{" "}
-                个规则集来源。确认后将完整覆盖当前内容。
+                个识别规则。确认后将完整覆盖当前内容。
               </div>
               {templatePreview.providers.length > 0 && (
                 <div>
-                  <div className="mb-2 text-sm font-medium">规则集来源预览</div>
+                  <div className="mb-2 text-sm font-medium">识别规则预览</div>
                   <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto">
                     {templatePreview.providers.map((provider, index) => (
                       <Badge
@@ -1032,7 +1321,7 @@ export default function RulesPage() {
               )}
               <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                 <AlertTriangle className="h-4 w-4 shrink-0" />
-                此操作会覆盖当前规则和规则集来源。
+                此操作会覆盖当前识别规则和代理规则。
               </div>
             </div>
           )}
@@ -1078,7 +1367,7 @@ export default function RulesPage() {
       >
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>规则集详情</DialogTitle>
+            <DialogTitle>识别规则详情</DialogTitle>
             <DialogDescription>
               {detailProvider?.format === "mrs"
                 ? "MRS 是 Mihomo 二进制规则集，不展开具体条目。"
@@ -1154,7 +1443,7 @@ export default function RulesPage() {
               <div className="h-[42vh] overflow-auto rounded-md border bg-muted/20 p-2 font-mono text-xs">
                 {providerContent.isLoading && (
                   <div className="p-4 text-center text-muted-foreground">
-                    正在下载并解析规则集…
+                    正在下载并解析识别规则…
                   </div>
                 )}
                 {providerContent.error && (

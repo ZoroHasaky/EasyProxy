@@ -6,14 +6,11 @@ import { Layout } from "@/components/layout";
 import LoginPage from "@/pages/Login";
 import ChangePasswordPage from "@/pages/ChangePassword";
 import DashboardPage from "@/pages/Dashboard";
-import SubscriptionsPage from "@/pages/Subscriptions";
 import NodesPage from "@/pages/Nodes";
 import RulesPage from "@/pages/Rules";
-import GroupsPage from "@/pages/Groups";
 import ConnectionsPage from "@/pages/Connections";
 import KernelPage from "@/pages/Kernel";
 import TransparentProxyPage from "@/pages/TransparentProxy";
-import GeoDataPage from "@/pages/GeoData";
 import LogsPage from "@/pages/Logs";
 import SettingsPage from "@/pages/Settings";
 import AboutPage from "@/pages/About";
@@ -21,7 +18,10 @@ import AboutPage from "@/pages/About";
 function Me() {
   const me = useQuery({
     queryKey: ["me"],
-    queryFn: () => api.get<{ authenticated: boolean; must_change_password: boolean }>("/api/me"),
+    queryFn: () =>
+      api.get<{ authenticated: boolean; must_change_password: boolean }>(
+        "/api/me",
+      ),
     retry: false,
     refetchInterval: 30_000,
   });
@@ -43,14 +43,19 @@ function Me() {
     <Layout>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/subscriptions" element={<SubscriptionsPage />} />
+        <Route
+          path="/subscriptions"
+          element={<Navigate to="/nodes?tab=subscriptions" replace />}
+        />
         <Route path="/nodes" element={<NodesPage />} />
         <Route path="/rules" element={<RulesPage />} />
-        <Route path="/groups" element={<GroupsPage />} />
+        <Route
+          path="/groups"
+          element={<Navigate to="/rules?tab=groups" replace />}
+        />
         <Route path="/connections" element={<ConnectionsPage />} />
         <Route path="/kernel" element={<KernelPage />} />
         <Route path="/tun" element={<TransparentProxyPage />} />
-        <Route path="/geo" element={<GeoDataPage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/about" element={<AboutPage />} />
@@ -68,7 +73,11 @@ export default function App() {
     });
   }, []);
   if (fatal) {
-    return <div className="flex h-screen items-center justify-center text-destructive">{fatal}</div>;
+    return (
+      <div className="flex h-screen items-center justify-center text-destructive">
+        {fatal}
+      </div>
+    );
   }
   return <Me />;
 }

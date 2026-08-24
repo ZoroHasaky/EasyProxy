@@ -289,7 +289,7 @@ func (s *Server) handleRuleProviderContent(w http.ResponseWriter, r *http.Reques
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	provider, err := s.st.GetCurrentRuleProvider(id)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "规则集来源不存在")
+		writeErr(w, http.StatusNotFound, "识别规则不存在")
 		return
 	}
 	providers := []model.RuleProvider{*provider}
@@ -304,7 +304,7 @@ func (s *Server) handleRuleProviderContent(w http.ResponseWriter, r *http.Reques
 	}
 	content, err := s.fetchTemplateContent(provider.URL, "")
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, "规则集下载失败: "+err.Error())
+		writeErr(w, http.StatusBadGateway, "识别规则下载失败: "+err.Error())
 		return
 	}
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
