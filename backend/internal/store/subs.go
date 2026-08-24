@@ -65,11 +65,18 @@ func (s *Store) UpdateSubscription(sub *model.Subscription) error {
 }
 
 func (s *Store) DeleteSubscription(id int64) error {
-	if _, err := s.db.Exec(`DELETE FROM nodes WHERE source_type='sub' AND source_id=?`, id); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`DELETE FROM subscriptions WHERE id=?`, id)
-	return err
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM nodes WHERE source_type='sub' AND source_id=?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM subscriptions WHERE id=?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) TouchSubscription(id int64, nodeCount int, userInfo string) error {

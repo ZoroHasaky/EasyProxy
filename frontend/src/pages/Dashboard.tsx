@@ -1,16 +1,23 @@
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Area, AreaChart, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { api, MetaInfo, MihomoProxiesResp, mihomo } from "@/lib/api";
+import { Search } from "lucide-react";
+import { api, MetaInfo, mihomo } from "@/lib/api";
 import { useMihomoRuntime } from "@/contexts/app-state";
-import { formatSpeed, formatBytes } from "@/lib/utils";
+import { formatBytes } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 export default function DashboardPage() {
   const qc = useQueryClient();
-  const { trafficHistory: history, trafficTotals: totals } = useMihomoRuntime();
+  const { trafficTotals: totals } = useMihomoRuntime();
+  const [nodeDialogOpen, setNodeDialogOpen] = useState(false);
+  const [nodeSearch, setNodeSearch] = useState("");
+  const [selecting, setSelecting] = useState<string | null>(null);
   const meta = useQuery({
     queryKey: ["meta"],
     queryFn: () => api.get<MetaInfo>("/api/meta"),
@@ -26,13 +33,32 @@ export default function DashboardPage() {
   const groups = Object.values(proxies.data?.proxies ?? {}).filter(
     (p) => p.all && p.all.length > 0 && p.name !== "PROXY",
   );
+  const outletOptions = proxyGroup?.all ?? [];
+  const groupOptions = outletOptions.filter(
+    (name) => (proxies.data?.proxies?.[name]?.all?.length ?? 0) > 0,
+  );
+  const nodeOptions = outletOptions.filter(
+    (name) => !(proxies.data?.proxies?.[name]?.all?.length ?? 0),
+  );
+  const selectedNode = proxyGroup?.now && nodeOptions.includes(proxyGroup.now) ? proxyGroup.now : "";
+  const visibleNodes = useMemo(() => {
+    const keyword = nodeSearch.trim().toLocaleLowerCase();
+    return keyword
+      ? nodeOptions.filter((name) => name.toLocaleLowerCase().includes(keyword))
+      : nodeOptions;
+  }, [nodeOptions, nodeSearch]);
 
   const selectProxy = async (name: string) => {
+    setSelecting(name);
     try {
       await mihomo.select("PROXY", name);
-      qc.invalidateQueries({ queryKey: ["proxies"] });
+      await qc.invalidateQueries({ queryKey: ["proxies"] });
+      toast.success(`出口已切换到 ${name}`);
+      setNodeDialogOpen(false);
     } catch (e: any) {
       toast.error(e.message);
+    } finally {
+      setSelecting(null);
     }
   };
 
@@ -62,36 +88,6 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle>流量</CardTitle>
-        </CardHeader>
-        <CardContent className="h-56">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={history} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-              <defs>
-                <linearGradient id="down" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="up" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="t" hide />
-              <YAxis hide />
-              <Tooltip
-                formatter={(v: any, name: any) => [formatSpeed(Number(v)), name === "down" ? "下载" : "上传"]}
-                contentStyle={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 8, fontSize: 12 }}
-              />
-              <Area type="monotone" dataKey="down" stroke="#10b981" fill="url(#down)" strokeWidth={1.5} isAnimationActive={false} />
-              <Area type="monotone" dataKey="up" stroke="#0ea5e9" fill="url(#up)" strokeWidth={1.5} isAnimationActive={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-
       {proxyGroup && (
         <Card>
           <CardHeader className="pb-2">
@@ -99,15 +95,16 @@ export default function DashboardPage() {
             <CardDescription>当前：{proxyGroup.now ?? "-"}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
-            {(proxyGroup.all ?? []).map((name) => {
+            {groupOptions.map((name) => {
               const p = proxies.data?.proxies?.[name];
               const active = proxyGroup.now === name;
               return (
                 <button
                   key={name}
                   onClick={() => selectProxy(name)}
+                  disabled={selecting !== null}
                   className={cn(
-                    "rounded-md border px-3 py-1.5 text-xs transition-colors hover:bg-accent",
+                    "rounded-md border px-3 py-1.5 text-xs transition-colors hover:bg-accent disabled:opacity-50",
                     active ? "border-emerald-600 bg-emerald-600/15 text-emerald-400" : "border-border",
                   )}
                 >
@@ -116,6 +113,16 @@ export default function DashboardPage() {
                 </button>
               );
             })}
+            {selectedNode && (
+              <div className="flex items-center rounded-md border border-emerald-600 bg-emerald-600/15 px-3 py-1.5 text-xs text-emerald-500">
+                <span className="mr-1 text-muted-foreground">当前节点：</span>
+                {selectedNode}
+                {proxies.data?.proxies?.[selectedNode]?.alive && <span className="ml-1">●</span>}
+              </div>
+            )}
+            <Button variant="outline" size="sm" onClick={() => setNodeDialogOpen(true)}>
+              选择具体节点
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -135,6 +142,67 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog
+        open={nodeDialogOpen}
+        onOpenChange={(open) => {
+          setNodeDialogOpen(open);
+          if (!open) setNodeSearch("");
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>选择出口节点</DialogTitle>
+            <DialogDescription>这里只显示当前 PROXY 出口可选择的具体节点。</DialogDescription>
+          </DialogHeader>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={nodeSearch}
+              onChange={(event) => setNodeSearch(event.target.value)}
+              placeholder="搜索节点名称"
+              className="pl-9"
+            />
+          </div>
+          <div className="max-h-[55vh] space-y-1 overflow-y-auto pr-1">
+            {visibleNodes.map((name) => {
+              const node = proxies.data?.proxies?.[name];
+              const active = proxyGroup?.now === name;
+              const latestDelay = node?.history?.length
+                ? node.history[node.history.length - 1].delay
+                : 0;
+              return (
+                <button
+                  key={name}
+                  onClick={() => selectProxy(name)}
+                  disabled={selecting !== null}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors hover:bg-accent disabled:opacity-50",
+                    active && "border-emerald-600 bg-emerald-600/10",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "h-2.5 w-2.5 shrink-0 rounded-full",
+                      node?.alive ? "bg-emerald-500" : "bg-red-500",
+                    )}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{name}</span>
+                  {latestDelay ? (
+                    <span className="text-xs text-muted-foreground">{latestDelay} ms</span>
+                  ) : null}
+                  {active && <Badge variant="secondary">当前</Badge>}
+                </button>
+              );
+            })}
+            {visibleNodes.length === 0 && (
+              <div className="py-10 text-center text-sm text-muted-foreground">
+                {nodeSearch ? "没有匹配的节点" : "当前没有可选择的具体节点"}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

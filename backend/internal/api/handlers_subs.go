@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"easyproxy/internal/core"
 	"easyproxy/internal/model"
@@ -195,15 +196,22 @@ func (s *Server) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
-	if req.Name != nil && *req.Name != "" && *req.Name != node.Name {
-		if exists, _ := s.st.NodeNameExists(*req.Name, node.ID); exists {
-			writeErr(w, http.StatusBadRequest, "节点名已存在")
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			writeErr(w, http.StatusBadRequest, "节点名不能为空")
 			return
 		}
-		node.Name = *req.Name
-		node.RawConfig["name"] = node.Name
-		if node.Region == "" || node.Region == "OTHER" {
-			node.Region = parser.ParseRegion(node.Name)
+		if name != node.Name {
+			if exists, _ := s.st.NodeNameExists(name, node.ID); exists {
+				writeErr(w, http.StatusBadRequest, "节点名已存在")
+				return
+			}
+			node.Name = name
+			node.RawConfig["name"] = node.Name
+			if node.Region == "" || node.Region == "OTHER" {
+				node.Region = parser.ParseRegion(node.Name)
+			}
 		}
 	}
 	if req.Region != nil {
@@ -267,6 +275,17 @@ func (s *Server) handlePruneNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCheckNodes(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDs []int64 `json:"ids"`
+	}
+	var nodeIDs []int64
+	if r.ContentLength != 0 {
+		if err := readJSON(r, &req); err != nil {
+			writeErr(w, http.StatusBadRequest, "请求格式错误")
+			return
+		}
+		nodeIDs = req.IDs
+	}
 	if s.dirty.Load() {
 		if _, err := s.applyConfig(); err != nil {
 			writeErr(w, http.StatusBadGateway, "应用配置失败: "+err.Error())
@@ -274,7 +293,7 @@ func (s *Server) handleCheckNodes(w http.ResponseWriter, r *http.Request) {
 		}
 		s.dirty.Store(false)
 	}
-	n, err := service.CheckLatencies(s.st, s.client)
+	n, err := service.CheckLatencies(s.st, s.client, nodeIDs)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return

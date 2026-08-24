@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Gauge, Plus, Trash2, Zap, Eraser } from "lucide-react";
+import { Gauge, Plus, Trash2, Zap, Eraser, Pencil } from "lucide-react";
 import { api, ProxyNode, RegionInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,8 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [delayPending, setDelayPending] = useState<number | null>(null);
+  const [editingNode, setEditingNode] = useState<ProxyNode | null>(null);
+  const [editingName, setEditingName] = useState("");
 
   const params = new URLSearchParams();
   if (region) params.set("region", region);
@@ -51,12 +53,18 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
   });
 
   const check = useMutation({
-    mutationFn: () => api.post<{ tested: number }>("/api/nodes/check"),
+    mutationFn: () =>
+      api.post<{ tested: number }>("/api/nodes/check", {
+        ids: (nodes.data ?? []).filter((node) => node.enabled).map((node) => node.id),
+      }),
     onSuccess: (res) => {
-      toast.success(`测速完成，共 ${res.tested} 个节点`);
+      toast.success(`当前筛选结果测速完成，共 ${res.tested} 个节点`);
       qc.invalidateQueries({ queryKey: ["nodes"] });
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: any) => {
+      toast.error(e.message);
+      qc.invalidateQueries({ queryKey: ["nodes"] });
+    },
   });
   const toggle = useMutation({
     mutationFn: ({ id, value }: { id: number; value: boolean }) =>
@@ -69,7 +77,23 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
     onSuccess: () => {
       toast.success("已删除");
       qc.invalidateQueries({ queryKey: ["nodes"] });
+      qc.invalidateQueries({ queryKey: ["nodeRegions"] });
+      qc.invalidateQueries({ queryKey: ["ruleTargets"] });
+      qc.invalidateQueries({ queryKey: ["preview"] });
     },
+  });
+  const edit = useMutation({
+    mutationFn: () =>
+      api.patch(`/api/nodes/${editingNode!.id}`, { name: editingName.trim() }),
+    onSuccess: () => {
+      toast.success("节点名称已保存");
+      setEditingNode(null);
+      setEditingName("");
+      qc.invalidateQueries({ queryKey: ["nodes"] });
+      qc.invalidateQueries({ queryKey: ["ruleTargets"] });
+      qc.invalidateQueries({ queryKey: ["preview"] });
+    },
+    onError: (e: any) => toast.error(e.message),
   });
   const prune = useMutation({
     mutationFn: () => api.post<{ removed: number }>("/api/nodes/prune"),
@@ -109,6 +133,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
   if (sort === "latency") {
     list.sort((a, b) => (a.latency_at ? (b.latency_at ? a.latency - b.latency : -1) : 1));
   }
+  const testableCount = (nodes.data ?? []).filter((node) => node.enabled).length;
 
   const regionFlag = (code: string) => regions.data?.find((r) => r.code === code)?.flag ?? "🌐";
 
@@ -133,7 +158,12 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => check.mutate()} disabled={check.isPending}>
+          <Button
+            variant="outline"
+            onClick={() => check.mutate()}
+            disabled={check.isPending || nodes.isLoading || testableCount === 0}
+            title={`测速当前筛选结果中的 ${testableCount} 个启用节点`}
+          >
             <Gauge className={cn("h-4 w-4", check.isPending && "animate-pulse")} />
             {check.isPending ? "测速中…" : "整组测速"}
           </Button>
@@ -207,6 +237,17 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
                     onClick={() => testOne(n.id)} disabled={delayPending === n.id}>
                     <Zap className={cn("h-4 w-4 text-amber-500", delayPending === n.id && "animate-pulse")} />
                   </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    title="修改节点"
+                    onClick={() => {
+                      setEditingNode(n);
+                      setEditingName(n.name);
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
                   <Button size="icon" variant="ghost" title="删除"
                     onClick={() => { if (confirm(`删除节点 ${n.name}？`)) remove.mutate(n.id); }}>
                     <Trash2 className="h-4 w-4 text-destructive" />
@@ -227,6 +268,44 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
       {(nodes.data?.length ?? 0) > 500 && (
         <div className="text-center text-xs text-muted-foreground">仅显示前 500 条，请用筛选缩小范围</div>
       )}
+
+      <Dialog
+        open={!!editingNode}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingNode(null);
+            setEditingName("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>修改节点</DialogTitle>
+            <DialogDescription>
+              修改节点显示名称，不改变服务器和协议参数。订阅节点下次更新时可能恢复订阅中的名称。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label>节点名称</Label>
+            <Input
+              value={editingName}
+              onChange={(event) => setEditingName(event.target.value)}
+              placeholder="唯一节点名称"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingNode(null)}>
+              取消
+            </Button>
+            <Button
+              onClick={() => edit.mutate()}
+              disabled={edit.isPending || !editingName.trim()}
+            >
+              {edit.isPending ? "保存中…" : "保存"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
         <DialogContent className="max-w-2xl">

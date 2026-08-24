@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Cable,
+  Check,
   ChevronLeft,
   ChevronRight,
   Cpu,
@@ -10,6 +12,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Monitor,
   Moon,
   Network,
   RefreshCw,
@@ -24,6 +27,7 @@ import { toast } from "sonner";
 import { api, MetaInfo } from "@/lib/api";
 import {
   type MihomoMode,
+  type Theme,
   useMihomoRuntime,
   useTheme,
 } from "@/contexts/app-state";
@@ -50,6 +54,12 @@ const modes: { key: MihomoMode; label: string }[] = [
 ];
 
 const SIDEBAR_STORAGE_KEY = "easyproxy-sidebar-collapsed";
+
+const themes: { key: Theme; label: string; icon: typeof Sun }[] = [
+  { key: "light", label: "浅色", icon: Sun },
+  { key: "dark", label: "深色", icon: Moon },
+  { key: "system", label: "跟随系统", icon: Monitor },
+];
 
 interface SidebarProps {
   collapsed: boolean;
@@ -122,7 +132,7 @@ function Sidebar({ collapsed, coreState, onLogout, onNavigate }: SidebarProps) {
 export function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { theme, toggleTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const { hasUpdate, openDialog: openUpdateDialog } = useUpdate();
   const {
     traffic,
@@ -273,13 +283,42 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <button
-          onClick={toggleTheme}
-          className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          title={theme === "dark" ? "切换到浅色" : "切换到深色"}
-        >
-          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </button>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button
+              className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              title={`主题：${themes.find((item) => item.key === theme)?.label}`}
+              aria-label="切换主题"
+            >
+              {theme === "light" ? (
+                <Sun className="h-4 w-4" />
+              ) : theme === "dark" ? (
+                <Moon className="h-4 w-4" />
+              ) : (
+                <Monitor className="h-4 w-4" />
+              )}
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              align="end"
+              sideOffset={6}
+              className="z-50 min-w-36 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+            >
+              {themes.map((item) => (
+                <DropdownMenu.Item
+                  key={item.key}
+                  onSelect={() => setTheme(item.key)}
+                  className="flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent focus:bg-accent"
+                >
+                  <item.icon className="h-4 w-4" />
+                  <span>{item.label}</span>
+                  {theme === item.key && <Check className="ml-auto h-4 w-4 text-emerald-500" />}
+                </DropdownMenu.Item>
+              ))}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
       </header>
 
       <aside className="hidden min-h-0 flex-col border-r bg-card md:col-start-1 md:row-start-2 md:flex">

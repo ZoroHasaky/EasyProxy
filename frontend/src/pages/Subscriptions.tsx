@@ -130,9 +130,12 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
   const remove = useMutation({
     mutationFn: (id: number) => api.del(`/api/subscriptions/${id}`),
     onSuccess: () => {
-      toast.success("已删除");
+      toast.success("订阅及其节点已删除");
       qc.invalidateQueries({ queryKey: ["subs"] });
       qc.invalidateQueries({ queryKey: ["nodes"] });
+      qc.invalidateQueries({ queryKey: ["nodeRegions"] });
+      qc.invalidateQueries({ queryKey: ["ruleTargets"] });
+      qc.invalidateQueries({ queryKey: ["preview"] });
     },
   });
 

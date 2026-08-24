@@ -162,6 +162,11 @@ function providerStatusVariant(
   if (status === "not_loaded" || status === "core_stopped") return "secondary";
   return "outline";
 }
+function providerStatusDotClass(status?: string) {
+  if (status === "downloaded") return "bg-emerald-500";
+  if (status === "not_downloaded") return "bg-red-500";
+  return "bg-amber-400";
+}
 function optionLabel(option: RuleTargetOption) {
   const icon = option.icon ? `${option.icon} ` : "";
   if (option.kind === "node")
@@ -292,11 +297,21 @@ function RuleRow({
           <span className="text-muted-foreground">命中此前未匹配的所有流量</span>
         ) : rule.kind === "RULE-SET" ? (
           <div className="flex items-center gap-2">
-            <span className={cn("truncate", !provider && "text-destructive")}>
-              {provider
-                ? `${provider.name} · ${BEHAVIOR_LABELS[provider.behavior] ?? provider.behavior} · ${providerStatusLabel(provider.status)}`
-                : `${rule.value || "未选择"}（识别规则已失效）`}
-            </span>
+            <div className={cn("flex min-w-0 items-center gap-2", !provider && "text-destructive")}>
+              <span className="truncate">
+                {provider
+                  ? `${provider.name} · ${BEHAVIOR_LABELS[provider.behavior] ?? provider.behavior}`
+                  : `${rule.value || "未选择"}（识别规则已失效）`}
+              </span>
+              <span
+                className={cn(
+                  "h-2.5 w-2.5 shrink-0 rounded-full",
+                  provider ? providerStatusDotClass(provider.status) : "bg-red-500",
+                )}
+                title={provider ? providerStatusLabel(provider.status) : "识别规则已失效"}
+                aria-label={provider ? providerStatusLabel(provider.status) : "识别规则已失效"}
+              />
+            </div>
             {provider && (
               <Button
                 size="icon"
@@ -458,7 +473,7 @@ export default function RulesPage() {
       names.add(name);
     }
     for (const rule of nextRules) {
-      if (!rule.kind || !rule.target) return "存在缺少规则类型或处理方式的规则";
+      if (!rule.kind || !rule.target) return "存在缺少识别规则或处理方式的规则";
       if (rule.kind === "RULE-SET" && !names.has(rule.value))
         return `代理规则引用了不存在的识别规则：${rule.value || "未选择"}`;
     }
@@ -706,7 +721,7 @@ export default function RulesPage() {
       value: ruleDraft.kind === "MATCH" ? "" : ruleDraft.value.trim(),
     };
     if (!next.kind || !next.target) {
-      toast.error("规则类型和处理方式不能为空");
+      toast.error("识别规则和处理方式不能为空");
       return;
     }
     if (next.kind !== "MATCH" && !next.value) {
@@ -949,7 +964,7 @@ export default function RulesPage() {
               <div className="grid min-w-[980px] grid-cols-[24px_64px_190px_minmax(220px,1fr)_230px_110px_100px] gap-2 border-b bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
                 <span />
                 <span>启用</span>
-                <span>规则类型</span>
+                <span>识别规则</span>
                 <span>匹配内容</span>
                 <span>处理方式</span>
                 <span>域名解析</span>
@@ -1141,7 +1156,7 @@ export default function RulesPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>规则类型</Label>
+                <Label>识别规则</Label>
                 <Select
                   value={ruleDraft.kind}
                   onChange={(event) =>

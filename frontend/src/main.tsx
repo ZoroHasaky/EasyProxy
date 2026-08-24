@@ -14,8 +14,8 @@ const queryClient = new QueryClient({
 });
 
 function ThemedToaster() {
-  const { theme } = useTheme();
-  return <Toaster theme={theme} position="top-center" richColors />;
+  const { resolvedTheme } = useTheme();
+  return <Toaster theme={resolvedTheme} position="top-center" richColors />;
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

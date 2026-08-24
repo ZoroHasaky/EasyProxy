@@ -342,22 +342,50 @@ func ImportNodes(st *store.Store, content string) (added, duplicated int, err er
 	return added, duplicated, nil
 }
 
-// CheckLatencies 经 mihomo 对 AUTO 组整组测速并回写节点表
-func CheckLatencies(st *store.Store, client *core.Client) (int, error) {
-	res, err := client.DelayGroup(GroupAUTO, DefaultTestURL, 5000)
+// CheckLatencies 并发测速筛选后的节点并回写节点表。nodeIDs 为 nil 时兼容旧调用，测速全部有效节点。
+func CheckLatencies(st *store.Store, client *core.Client, nodeIDs []int64) (int, error) {
+	nodes, err := EffectiveNodes(st)
 	if err != nil {
-		return 0, fmt.Errorf("测速失败（需内核运行中且已有启用节点）: %w", err)
+		return 0, err
 	}
-	latencies := make(map[string]int, len(res))
-	for name, ms := range res {
-		latencies[name] = int(ms)
-	}
-	// 未出现在结果中的启用节点视为失活
-	nodes, _ := st.ListEnabledNodes()
-	for _, n := range nodes {
-		if _, ok := latencies[n.Name]; !ok {
-			latencies[n.Name] = 0
+	if nodeIDs != nil {
+		selected := make(map[int64]struct{}, len(nodeIDs))
+		for _, id := range nodeIDs {
+			selected[id] = struct{}{}
 		}
+		filtered := nodes[:0]
+		for _, node := range nodes {
+			if _, ok := selected[node.ID]; ok {
+				filtered = append(filtered, node)
+			}
+		}
+		nodes = filtered
 	}
+	if len(nodes) == 0 {
+		return 0, fmt.Errorf("当前筛选结果中没有可测速的启用节点")
+	}
+
+	latencies := make(map[string]int, len(nodes))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 16)
+	for _, node := range nodes {
+		node := node
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			ms, delayErr := client.Delay(node.Name, DefaultTestURL, 5000)
+			latency := 0
+			if delayErr == nil {
+				latency = int(ms)
+			}
+			mu.Lock()
+			latencies[node.Name] = latency
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
 	return st.UpdateNodeLatencies(latencies)
 }

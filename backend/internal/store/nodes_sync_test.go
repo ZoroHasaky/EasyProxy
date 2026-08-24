@@ -92,3 +92,52 @@ func TestSyncSubscriptionNodesReplacesWholeSource(t *testing.T) {
 		t.Fatalf("manual node was changed: %#v", manualNodes)
 	}
 }
+
+func TestDeleteSubscriptionRemovesItsNodesOnly(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	first := model.Subscription{Name: "订阅一", URL: "https://one.example.com", Enabled: true}
+	second := model.Subscription{Name: "订阅二", URL: "https://two.example.com", Enabled: true}
+	if err := st.CreateSubscription(&first); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSubscription(&second); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.SyncSubscriptionNodes(first.ID, []model.Node{
+		subscriptionNode("订阅一节点", "one-node.example.com", "hash-one"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.SyncSubscriptionNodes(second.ID, []model.Node{
+		subscriptionNode("订阅二节点", "two-node.example.com", "hash-two"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manual := subscriptionNode("手工节点", "manual.example.com", "hash-manual")
+	manual.SourceType = "manual"
+	manual.SourceID = 0
+	if err := st.CreateNode(&manual); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := st.DeleteSubscription(first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if nodes, err := st.ListNodes(model.NodeFilter{SourceID: first.ID}); err != nil || len(nodes) != 0 {
+		t.Fatalf("deleted subscription nodes=%#v err=%v, want none", nodes, err)
+	}
+	if nodes, err := st.ListNodes(model.NodeFilter{SourceID: second.ID}); err != nil || len(nodes) != 1 {
+		t.Fatalf("other subscription nodes=%#v err=%v, want one", nodes, err)
+	}
+	if nodes, err := st.ListNodes(model.NodeFilter{Source: "manual"}); err != nil || len(nodes) != 1 {
+		t.Fatalf("manual nodes=%#v err=%v, want one", nodes, err)
+	}
+	if _, err := st.GetSubscription(first.ID); err == nil {
+		t.Fatal("deleted subscription still exists")
+	}
+}
