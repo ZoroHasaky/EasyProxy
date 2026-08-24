@@ -43,7 +43,11 @@ func ParseTemplateContent(content string) (*ParsedTemplate, error) {
 	if len(doc.Rules) == 0 {
 		return nil, fmt.Errorf("模板中未找到 rules 字段")
 	}
-	out := &ParsedTemplate{}
+	out := &ParsedTemplate{
+		Rules:     []model.Rule{},
+		Providers: []model.RuleProvider{},
+		Targets:   []string{},
+	}
 	seenTarget := map[string]bool{}
 	for _, line := range doc.Rules {
 		line = strings.TrimSpace(line)

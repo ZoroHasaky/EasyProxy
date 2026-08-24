@@ -1,14 +1,17 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"easyproxy/internal/core"
@@ -89,6 +92,105 @@ func toIntAny(v any) int {
 		return n
 	}
 	return 0
+}
+
+var (
+	lookupIPAddr = net.DefaultResolver.LookupIPAddr
+	lookupTXT    = net.DefaultResolver.LookupTXT
+)
+
+// resolveRegionFromHost 解析节点服务器 IP，并通过 Team Cymru DNS 查询国家代码。
+// 查询失败或国家不在内置地区表时返回 OTHER，由调用方使用节点名称兜底。
+func resolveRegionFromHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return parser.RegionOther
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+
+	ips := []net.IP{}
+	if ip := net.ParseIP(host); ip != nil {
+		ips = append(ips, ip)
+	} else {
+		resolved, err := lookupIPAddr(ctx, host)
+		if err != nil {
+			return parser.RegionOther
+		}
+		for _, addr := range resolved {
+			ips = append(ips, addr.IP)
+		}
+	}
+	for _, ip := range ips {
+		if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+			continue
+		}
+		query := cymruOriginQuery(ip)
+		if query == "" {
+			continue
+		}
+		answers, err := lookupTXT(ctx, query)
+		if err != nil {
+			continue
+		}
+		for _, answer := range answers {
+			parts := strings.Split(answer, "|")
+			if len(parts) < 3 {
+				continue
+			}
+			code := strings.ToUpper(strings.TrimSpace(parts[2]))
+			for _, region := range parser.Regions {
+				if region.Code == code {
+					return code
+				}
+			}
+		}
+	}
+	return parser.RegionOther
+}
+
+func cymruOriginQuery(ip net.IP) string {
+	if v4 := ip.To4(); v4 != nil {
+		return fmt.Sprintf("%d.%d.%d.%d.origin.asn.cymru.com", v4[3], v4[2], v4[1], v4[0])
+	}
+	v6 := ip.To16()
+	if v6 == nil {
+		return ""
+	}
+	hex := fmt.Sprintf("%032x", v6)
+	parts := make([]string, 0, len(hex))
+	for i := len(hex) - 1; i >= 0; i-- {
+		parts = append(parts, string(hex[i]))
+	}
+	return strings.Join(parts, ".") + ".origin6.asn.cymru.com"
+}
+
+func resolveManualNodeRegions(nodes []model.Node) map[string]string {
+	hosts := map[string]bool{}
+	for _, node := range nodes {
+		if node.Server != "" {
+			hosts[node.Server] = true
+		}
+	}
+	regions := make(map[string]string, len(hosts))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for host := range hosts {
+		host := host
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			region := resolveRegionFromHost(host)
+			<-sem
+			mu.Lock()
+			regions[host] = region
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	return regions
 }
 
 // isSubscriptionInfoNode 识别机场订阅中伪装成代理节点的流量/到期提示。
@@ -206,10 +308,21 @@ func ImportNodes(st *store.Store, content string) (added, duplicated int, err er
 	if err != nil {
 		return 0, 0, err
 	}
+	nodes := make([]model.Node, 0, len(proxies))
 	for _, raw := range proxies {
 		n, nerr := NormalizeProxy(raw)
 		if nerr != nil {
 			continue
+		}
+		n.SourceType = "manual"
+		nodes = append(nodes, *n)
+	}
+	regions := resolveManualNodeRegions(nodes)
+	for i := range nodes {
+		n := &nodes[i]
+		n.Region = regions[n.Server]
+		if n.Region == "" || n.Region == parser.RegionOther {
+			n.Region = parser.ParseRegion(n.Name)
 		}
 		exists, _ := st.NodeHashExists(n.DedupHash)
 		if exists {
@@ -218,7 +331,6 @@ func ImportNodes(st *store.Store, content string) (added, duplicated int, err er
 		}
 		n.Name = st.UniqueNodeName(n.Name)
 		n.RawConfig["name"] = n.Name
-		n.SourceType = "manual"
 		if err := st.CreateNode(n); err != nil {
 			continue
 		}

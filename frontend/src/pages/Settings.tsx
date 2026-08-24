@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Download, Upload, Moon, Sun } from "lucide-react";
+import { Download } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,6 @@ export default function SettingsPage() {
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [restoring, setRestoring] = useState(false);
-  const [dark, setDark] = useState(document.documentElement.classList.contains("dark"));
 
   const changePw = useMutation({
     mutationFn: () => api.post("/api/password", { old_password: oldPw, new_password: newPw }),
@@ -36,13 +35,6 @@ export default function SettingsPage() {
     } finally {
       setRestoring(false);
     }
-  };
-
-  const toggleTheme = () => {
-    const next = !dark;
-    setDark(next);
-    document.documentElement.classList.toggle("dark", next);
-    localStorage.setItem("easyproxy-theme", next ? "dark" : "light");
   };
 
   return (
@@ -77,18 +69,6 @@ export default function SettingsPage() {
             disabled={changePw.isPending || !oldPw || !newPw}
           >
             {changePw.isPending ? "提交中…" : "修改密码"}
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">外观</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Button variant="outline" onClick={toggleTheme}>
-            {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            {dark ? "切换到浅色" : "切换到深色"}
           </Button>
         </CardContent>
       </Card>

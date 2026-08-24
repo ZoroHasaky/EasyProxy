@@ -121,7 +121,7 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
   const updateNow = useMutation({
     mutationFn: (id: number) => api.post(`/api/subscriptions/${id}/update`),
     onSuccess: (res: any) => {
-      toast.success(`更新完成：新增 ${res.added}，移除 ${res.removed}`);
+      toast.success(`更新完成：写入 ${res.added}，替换原有 ${res.removed} 个节点`);
       qc.invalidateQueries({ queryKey: ["subs"] });
       qc.invalidateQueries({ queryKey: ["nodes"] });
     },

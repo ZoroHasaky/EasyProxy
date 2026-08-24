@@ -5,10 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import { Toaster } from "sonner";
 import App from "./App";
 import "./index.css";
-
-if (localStorage.getItem("easyproxy-theme") === "light") {
-  document.documentElement.classList.remove("dark");
-}
+import { ThemeProvider, useTheme } from "@/contexts/app-state";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -16,13 +13,20 @@ const queryClient = new QueryClient({
   },
 });
 
+function ThemedToaster() {
+  const { theme } = useTheme();
+  return <Toaster theme={theme} position="top-center" richColors />;
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-        <Toaster theme="dark" position="top-center" richColors />
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <App />
+          <ThemedToaster />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ThemeProvider>
   </React.StrictMode>,
 );

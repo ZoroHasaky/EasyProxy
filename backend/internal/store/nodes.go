@@ -127,58 +127,84 @@ func (s *Store) NodeHashExists(hash string) (bool, error) {
 	return cnt > 0, err
 }
 
-// SyncSubscriptionNodes 增量同步某订阅的节点集：按 dedup_hash 匹配保留启停/测速状态
+// SyncSubscriptionNodes 原子替换某订阅的全部节点。下载和解析在调用前完成；
+// 写入失败时事务回滚，原节点保持不变。
 func (s *Store) SyncSubscriptionNodes(sourceID int64, incoming []model.Node) (added, removed int, err error) {
-	existing := map[string]model.Node{}
-	rows, err := s.db.Query(`SELECT `+nodeCols+` FROM nodes WHERE source_type='sub' AND source_id=?`, sourceID)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback()
+
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM nodes WHERE source_type='sub' AND source_id=?`, sourceID).Scan(&removed); err != nil {
+		return 0, 0, err
+	}
+	if _, err := tx.Exec(`DELETE FROM nodes WHERE source_type='sub' AND source_id=?`, sourceID); err != nil {
+		return 0, 0, err
+	}
+
+	// 节点名在全局唯一；删除旧订阅节点后，以剩余节点名为基准为新节点消歧。
+	names := map[string]bool{}
+	rows, err := tx.Query(`SELECT name FROM nodes`)
 	if err != nil {
 		return 0, 0, err
 	}
 	for rows.Next() {
-		n, err := scanNode(rows.Scan)
-		if err != nil {
+		var name string
+		if err := rows.Scan(&name); err != nil {
 			rows.Close()
 			return 0, 0, err
 		}
-		existing[n.DedupHash] = *n
+		names[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, 0, err
 	}
 	rows.Close()
 
-	seen := map[string]bool{}
+	now := time.Now()
+	createdAt := now.Format(time.RFC3339)
 	for i := range incoming {
 		in := &incoming[i]
-		seen[in.DedupHash] = true
-		if old, ok := existing[in.DedupHash]; ok {
-			// 保留用户设置，只更新内容与地区
-			in.ID = old.ID
-			in.Enabled = old.Enabled
-			in.Latency = old.Latency
-			in.LatencyAt = old.LatencyAt
-			in.Alive = old.Alive
-			raw, _ := json.Marshal(in.RawConfig)
-			_, err := s.db.Exec(`UPDATE nodes SET name=?,type=?,server=?,port=?,region=?,raw_config=?
-				WHERE id=?`, in.Name, in.Type, in.Server, in.Port, in.Region, string(raw), in.ID)
-			if err != nil {
-				return added, removed, err
-			}
-			continue
+		in.SourceType = "sub"
+		in.SourceID = sourceID
+		in.Enabled = true
+		in.Latency = 0
+		in.LatencyAt = time.Time{}
+		in.Alive = false
+		if in.RawConfig == nil {
+			in.RawConfig = map[string]any{}
 		}
-		if exists, _ := s.NodeNameExists(in.Name, 0); exists {
-			in.Name = s.UniqueNodeName(in.Name)
+		if names[in.Name] {
+			base := in.Name
+			for suffix := 2; ; suffix++ {
+				candidate := fmt.Sprintf("%s #%d", base, suffix)
+				if !names[candidate] {
+					in.Name = candidate
+					break
+				}
+			}
 			in.RawConfig["name"] = in.Name
 		}
-		if err := s.CreateNode(in); err != nil {
+		names[in.Name] = true
+		raw, err := json.Marshal(in.RawConfig)
+		if err != nil {
 			return added, removed, err
 		}
+		res, err := tx.Exec(`INSERT INTO nodes(name,type,server,port,region,source_type,source_id,
+			raw_config,dedup_hash,enabled,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+			in.Name, in.Type, in.Server, in.Port, in.Region, in.SourceType, in.SourceID,
+			string(raw), in.DedupHash, in.Enabled, createdAt)
+		if err != nil {
+			return added, removed, err
+		}
+		in.ID, _ = res.LastInsertId()
+		in.CreatedAt = now
 		added++
 	}
-	for hash, old := range existing {
-		if !seen[hash] {
-			if _, err := s.db.Exec(`DELETE FROM nodes WHERE id=?`, old.ID); err != nil {
-				return added, removed, err
-			}
-			removed++
-		}
+	if err := tx.Commit(); err != nil {
+		return added, removed, err
 	}
 	return added, removed, nil
 }

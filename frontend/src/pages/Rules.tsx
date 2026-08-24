@@ -451,6 +451,8 @@ export default function RulesPage() {
     for (const provider of nextProviders) {
       const name = provider.name.trim();
       if (!name || !provider.url.trim()) return "识别规则的名称和 URL 不能为空";
+      if (provider.format !== "mrs")
+        return `识别规则“${name}”使用旧格式 ${provider.format.toUpperCase()}，请修改为 MRS`;
       if (/[,\r\n]/.test(name))
         return `识别规则名称不能包含逗号或换行：${name}`;
       if (names.has(name)) return `识别规则名称重复：${name}`;
@@ -578,7 +580,7 @@ export default function RulesPage() {
       name: "",
       url: "",
       behavior: "domain",
-      format: "yaml",
+      format: "mrs",
       interval: 86400,
       status: "not_loaded",
     });
@@ -598,6 +600,10 @@ export default function RulesPage() {
     };
     if (!next.name || !next.url) {
       toast.error("识别规则的名称和 URL 不能为空");
+      return;
+    }
+    if (next.format !== "mrs") {
+      toast.error("识别规则仅支持 MRS 格式，请修改格式和下载地址");
       return;
     }
     if (/[,\r\n]/.test(next.name)) {
@@ -747,6 +753,9 @@ export default function RulesPage() {
   const ruleDraftMatchedTarget = ruleDraft
     ? findTargetOption(ruleDraft.target, targetOptions)
     : undefined;
+  const templateHasUnsupportedFormats =
+    templatePreview?.providers.some((provider) => provider.format !== "mrs") ??
+    false;
 
   return (
     <div className="space-y-4">
@@ -786,7 +795,8 @@ export default function RulesPage() {
                   识别规则（{localProviders.length}）
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  定义域名、IP 等流量的识别来源，供代理规则中的 RULE-SET 引用。
+                  仅支持远程 MRS 规则文件，必须填写可直接下载的 HTTP/HTTPS
+                  地址，供代理规则中的 RULE-SET 引用。
                 </div>
               </div>
               <div className="flex gap-2">
@@ -1019,8 +1029,11 @@ export default function RulesPage() {
                       })
                     }
                   >
-                    <option value="yaml">YAML</option>
-                    <option value="text">Text</option>
+                    {providerDraft.format !== "mrs" && (
+                      <option value={providerDraft.format} disabled>
+                        {providerDraft.format.toUpperCase()}（旧格式，需转换）
+                      </option>
+                    )}
                     <option value="mrs">MRS</option>
                   </Select>
                 </div>
@@ -1029,7 +1042,7 @@ export default function RulesPage() {
                 <Label>下载地址</Label>
                 <Input
                   value={providerDraft.url}
-                  placeholder="https://..."
+                  placeholder="https://example.com/ruleset.mrs"
                   onChange={(event) =>
                     setProviderDraft({
                       ...providerDraft,
@@ -1037,6 +1050,10 @@ export default function RulesPage() {
                     })
                   }
                 />
+                <p className="text-xs text-muted-foreground">
+                  识别规则仅支持 Mihomo MRS 远程文件；这里必须填写可直接下载的
+                  HTTP/HTTPS 地址，不支持粘贴 YAML 或 Text 内容。
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label>更新间隔（秒）</Label>
@@ -1271,7 +1288,9 @@ export default function RulesPage() {
                     {templatePreview.providers.map((provider, index) => (
                       <Badge
                         key={`${provider.name}-${index}`}
-                        variant="secondary"
+                        variant={
+                          provider.format === "mrs" ? "secondary" : "warning"
+                        }
                       >
                         {provider.name} ·{" "}
                         {BEHAVIOR_LABELS[provider.behavior] ??
@@ -1280,6 +1299,13 @@ export default function RulesPage() {
                       </Badge>
                     ))}
                   </div>
+                  {templateHasUnsupportedFormats && (
+                    <div className="mt-2 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      模板包含 YAML/Text 识别规则。当前仅支持 MRS，请先更换为
+                      MRS 地址后再加载。
+                    </div>
+                  )}
                 </div>
               )}
               {templatePreview.targets.length > 0 && (
@@ -1350,7 +1376,9 @@ export default function RulesPage() {
             ) : (
               <Button
                 onClick={() => loadTemplate.mutate()}
-                disabled={loadTemplate.isPending}
+                disabled={
+                  loadTemplate.isPending || templateHasUnsupportedFormats
+                }
               >
                 {loadTemplate.isPending ? "加载中…" : "确认覆盖当前规则"}
               </Button>

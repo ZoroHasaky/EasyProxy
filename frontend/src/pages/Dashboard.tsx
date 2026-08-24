@@ -1,16 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Area, AreaChart, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { api, MetaInfo, MihomoProxiesResp, mihomo } from "@/lib/api";
 import { openStream } from "@/lib/ws";
+import { type MihomoMode, useMihomoRuntime } from "@/contexts/app-state";
 import { formatSpeed, formatBytes } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const MODES = [
+const MODES: { key: MihomoMode; label: string }[] = [
   { key: "rule", label: "规则" },
   { key: "global", label: "全局" },
   { key: "direct", label: "直连" },
@@ -18,6 +19,7 @@ const MODES = [
 
 export default function DashboardPage() {
   const qc = useQueryClient();
+  const { traffic, trafficHistory: history, mode, modePending, switchMode } = useMihomoRuntime();
   const meta = useQuery({
     queryKey: ["meta"],
     queryFn: () => api.get<MetaInfo>("/api/meta"),
@@ -29,23 +31,8 @@ export default function DashboardPage() {
     refetchInterval: 15_000,
   });
 
-  const [traffic, setTraffic] = useState<{ up: number; down: number }>({ up: 0, down: 0 });
-  const [history, setHistory] = useState<{ t: string; up: number; down: number }[]>([]);
   const [connCount, setConnCount] = useState(0);
   const [totals, setTotals] = useState({ up: 0, down: 0 });
-  const [mode, setMode] = useState("rule");
-
-  useEffect(() => {
-    return openStream("/api/ws/traffic", (data) => {
-      try {
-        const p = JSON.parse(data);
-        setTraffic({ up: p.up, down: p.down });
-        setHistory((h) =>
-          [...h, { t: new Date().toLocaleTimeString("zh-CN", { hour12: false }), up: p.up, down: p.down }].slice(-60),
-        );
-      } catch { /* ignore */ }
-    });
-  }, []);
 
   useEffect(() => {
     return openStream("/api/ws/connections", (data) => {
@@ -57,24 +44,10 @@ export default function DashboardPage() {
     });
   }, []);
 
-  useEffect(() => {
-    api.get<{ mode: string }>("/api/mihomo/configs").then((c) => setMode(c.mode ?? "rule")).catch(() => {});
-  }, []);
-
   const proxyGroup = proxies.data?.proxies?.["PROXY"];
   const groups = Object.values(proxies.data?.proxies ?? {}).filter(
     (p) => p.all && p.all.length > 0 && p.name !== "PROXY",
   );
-
-  const switchMode = async (m: string) => {
-    setMode(m);
-    try {
-      await mihomo.patchMode(m);
-      toast.success(`已切换到${m === "rule" ? "规则" : m === "global" ? "全局" : "直连"}模式`);
-    } catch (e: any) {
-      toast.error(e.message);
-    }
-  };
 
   const selectProxy = async (name: string) => {
     try {
@@ -134,6 +107,7 @@ export default function DashboardPage() {
                 size="sm"
                 variant={mode === m.key ? "default" : "outline"}
                 onClick={() => switchMode(m.key)}
+                disabled={modePending}
               >
                 {m.label}
               </Button>
