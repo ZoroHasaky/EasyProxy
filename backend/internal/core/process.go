@@ -91,6 +91,22 @@ func (m *Manager) RecentLogs() []string {
 	return out
 }
 
+// SubscribeLogs 订阅后续内核 stdout/stderr；调用 cancel 后释放订阅者。
+func (m *Manager) SubscribeLogs() (<-chan string, func()) {
+	ch := make(chan string, 128)
+	m.logMu.Lock()
+	m.logSubs[ch] = struct{}{}
+	m.logMu.Unlock()
+	return ch, func() {
+		m.logMu.Lock()
+		if _, ok := m.logSubs[ch]; ok {
+			delete(m.logSubs, ch)
+			close(ch)
+		}
+		m.logMu.Unlock()
+	}
+}
+
 // Start 启动内核（若已在运行则跳过）
 func (m *Manager) Start() error {
 	m.mu.Lock()

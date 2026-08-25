@@ -115,6 +115,11 @@ func (c *Client) PatchConfigs(patch map[string]any) error {
 	return c.do(http.MethodPatch, "/configs", patch, nil)
 }
 
+// UpdateGeoDatabases 请求 mihomo 立即按当前生效配置刷新 GeoIP 与 GeoSite 数据库。
+func (c *Client) UpdateGeoDatabases() error {
+	return c.do(http.MethodPost, "/configs/geo", nil, nil)
+}
+
 // DelayGroup 整组并发测速，返回 节点名->延迟ms（超时/失败的节点不出现在结果里）
 func (c *Client) DelayGroup(group, testURL string, timeout int) (map[string]uint16, error) {
 	var out map[string]uint16

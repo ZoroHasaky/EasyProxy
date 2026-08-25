@@ -107,6 +107,9 @@ func (s *Server) EnsureCoreStarted() {
 	if _, err := os.Stat(core.CorePath(s.dataDir)); err == nil {
 		if err := s.mgr.Start(); err != nil {
 			log.Printf("[core] 启动失败: %v", err)
+			s.audit("core", "core.start", "error", "Mihomo 内核启动失败", map[string]any{"error": safeAuditError(err)})
+		} else {
+			s.audit("core", "core.start", "success", "Mihomo 内核已启动", nil)
 		}
 		return
 	}
@@ -117,15 +120,20 @@ func (s *Server) EnsureCoreStarted() {
 	go func() {
 		mirror := s.st.GetSetting("core_mirror", "")
 		log.Println("[core] 内核不存在，开始自动下载…")
+		s.audit("core", "core.auto_download", "info", "已开始自动下载 Mihomo 内核", nil)
 		if err := core.DownloadCore(s.dataDir, "latest", mirror); err != nil {
 			log.Printf("[core] 自动下载失败: %v（可在面板手动上传）", err)
+			s.audit("core", "core.auto_download", "error", "Mihomo 内核自动下载失败", map[string]any{"error": safeAuditError(err)})
 			return
 		}
 		log.Println("[core] 内核下载完成")
 		s.writeGeneratedConfig()
 		if err := s.mgr.Start(); err != nil {
 			log.Printf("[core] 启动失败: %v", err)
+			s.audit("core", "core.auto_download", "error", "Mihomo 内核自动下载完成，但启动失败", map[string]any{"error": safeAuditError(err)})
+			return
 		}
+		s.audit("core", "core.auto_download", "success", "Mihomo 内核自动下载并启动完成", nil)
 	}()
 }
 
@@ -168,13 +176,18 @@ func (s *Server) writeConfigYAML(yaml string) bool {
 // Run 启动 HTTP 服务，收到退出信号时停内核
 func (s *Server) Run(addr string) error {
 	srv := &http.Server{Addr: addr, Handler: s.Handler()}
-	go s.subscriptionLoop()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.audit("operation", "panel.started", "info", "EasyProxy 面板已启动", map[string]any{"version": s.version})
+	s.startAuditWatchers(ctx)
+	go s.subscriptionLoop(ctx)
 
 	done := make(chan struct{})
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigCh
+		cancel()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
@@ -191,9 +204,15 @@ func (s *Server) Run(addr string) error {
 }
 
 // subscriptionLoop 订阅定时更新
-func (s *Server) subscriptionLoop() {
+func (s *Server) subscriptionLoop(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
 	for {
-		time.Sleep(time.Minute)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		// 连接池饱和告警：帮助发现连接异常不归还类问题
 		if st := s.st.Stats(); st.MaxOpenConnections > 0 && st.InUse >= st.MaxOpenConnections && st.WaitCount > 0 {
 			log.Printf("[db] 连接池饱和: in_use=%d max=%d waits=%d wait_ms=%d",
@@ -213,16 +232,20 @@ func (s *Server) subscriptionLoop() {
 				continue
 			}
 			proxy := s.runningCoreProxyAddr()
-			if _, _, err := service.SyncSubscription(s.st, &sub, proxy); err != nil {
+			added, removed, err := service.SyncSubscription(s.st, &sub, proxy)
+			if err != nil {
 				log.Printf("[sub] %s 定时更新失败: %v", sub.Name, err)
+				s.audit("operation", "subscription.scheduled_refresh", "error", "订阅定时刷新失败", map[string]any{"subscription": sub.Name, "error": safeAuditError(err)})
 				continue
 			}
 			result, applyError := s.applyChangedConfig("subscriptions", []string{"订阅"})
 			if applyError != "" {
 				log.Printf("[sub] %s 定时更新完成，但自动应用失败，已加入待重试: %s", sub.Name, applyError)
+				s.audit("operation", "subscription.scheduled_refresh", "warning", "订阅定时刷新完成，但应用失败", map[string]any{"subscription": sub.Name, "added": added, "removed": removed})
 				continue
 			}
 			log.Printf("[sub] %s 定时更新并%s完成", sub.Name, result)
+			s.audit("operation", "subscription.scheduled_refresh", "success", "订阅定时刷新完成", map[string]any{"subscription": sub.Name, "added": added, "removed": removed, "apply_result": result})
 		}
 	}
 }
@@ -237,7 +260,7 @@ func (s *Server) Handler() http.Handler {
 
 	// 需登录
 	route := func(pattern string, h http.HandlerFunc) {
-		mux.Handle(pattern, s.auth(h))
+		mux.Handle(pattern, s.auth(s.auditHandler(pattern, h)))
 	}
 	route("GET /api/me", s.handleMe)
 	route("POST /api/logout", s.handleLogout)
@@ -285,11 +308,14 @@ func (s *Server) Handler() http.Handler {
 	route("GET /api/settings", s.handleGetSettings)
 	route("PUT /api/settings", s.handlePutSettings)
 	route("GET /api/geo/status", s.handleGeoDataStatus)
+	route("POST /api/geo/refresh", s.handleRefreshGeoData)
+	route("GET /api/logs", s.handleListAuditLogs)
+	route("GET /api/logs/export", s.handleExportAuditLogs)
 
 	route("GET /api/backup", s.handleBackupExport)
 	route("POST /api/backup/restore", s.handleBackupRestore)
 
-	mux.Handle("/api/mihomo/", s.auth(http.HandlerFunc(s.handleMihomoProxy)))
+	mux.Handle("/api/mihomo/", s.auth(http.HandlerFunc(s.auditMihomoProxy)))
 
 	// websocket（内部做 cookie 鉴权）
 	mux.HandleFunc("GET /api/ws/{stream}", s.handleWS)

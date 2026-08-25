@@ -543,8 +543,10 @@ func (s *Server) applyConfigWithSettings(includePending bool) (string, map[strin
 	if st.State != core.StateRunning {
 		if err := s.mgr.Start(); err != nil {
 			restoreAppliedConfig()
+			s.audit("core", "core.start", "error", "Mihomo 内核启动失败", map[string]any{"error": safeAuditError(err)})
 			return "", values, "", err
 		}
+		s.audit("core", "core.start", "success", "Mihomo 内核已启动", nil)
 		return "started", values, yaml, nil
 	}
 	needRestart := false
@@ -564,8 +566,10 @@ func (s *Server) applyConfigWithSettings(includePending bool) (string, map[strin
 	if needRestart {
 		if err := s.mgr.Restart(); err != nil {
 			restoreAppliedConfig()
+			s.audit("core", "core.restart", "error", "Mihomo 内核重启失败", map[string]any{"error": safeAuditError(err)})
 			return "", values, "", err
 		}
+		s.audit("core", "core.restart", "success", "Mihomo 内核已重启", nil)
 		return "restarted", values, yaml, nil
 	}
 	// 新版 mihomo 要求 PUT /configs 的 path 为绝对路径
@@ -573,8 +577,10 @@ func (s *Server) applyConfigWithSettings(includePending bool) (string, map[strin
 		// 热重载失败时退回重启内核，保证配置仍能生效
 		if rerr := s.mgr.Restart(); rerr != nil {
 			restoreAppliedConfig()
+			s.audit("core", "core.restart", "error", "Mihomo 热重载失败且重启失败", map[string]any{"error": safeAuditError(rerr)})
 			return "", values, "", fmt.Errorf("热重载失败: %v；重启内核也失败: %v", err, rerr)
 		}
+		s.audit("core", "core.restart", "success", "Mihomo 热重载失败，已通过重启恢复", nil)
 		return "restarted", values, yaml, nil
 	}
 	return "reloaded", values, yaml, nil

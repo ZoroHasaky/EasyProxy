@@ -55,3 +55,29 @@ func TestValidateGeoxURLs(t *testing.T) {
 		t.Fatal("expected invalid URL error")
 	}
 }
+
+func TestRefreshGeoDataRequiresEnabledRunningCore(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	srv := New(st, dir, "test")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/geo/refresh", nil)
+	rec := httptest.NewRecorder()
+	srv.handleRefreshGeoData(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("stopped core status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	if err := st.SetSetting("geo_enabled", "0"); err != nil {
+		t.Fatal(err)
+	}
+	rec = httptest.NewRecorder()
+	srv.handleRefreshGeoData(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("disabled geo status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}

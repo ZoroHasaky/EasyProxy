@@ -96,11 +96,13 @@ func (s *Server) handleCoreDownload(w http.ResponseWriter, r *http.Request) {
 	s.dlMu.Lock()
 	if s.dlRunning {
 		s.dlMu.Unlock()
+		s.audit("core", "core.download", "warning", "内核下载未启动：已有任务进行中", nil)
 		writeErr(w, http.StatusConflict, "已有下载任务进行中")
 		return
 	}
 	s.dlRunning, s.dlErr = true, ""
 	s.dlMu.Unlock()
+	s.audit("core", "core.download", "info", "已开始下载 Mihomo 内核", map[string]any{"version": strings.TrimSpace(req.Version)})
 
 	go func() {
 		defer func() {
@@ -116,45 +118,61 @@ func (s *Server) handleCoreDownload(w http.ResponseWriter, r *http.Request) {
 			s.dlErr = err.Error()
 			s.dlMu.Unlock()
 			log.Printf("[core] 内核下载失败: %v", err)
+			s.audit("core", "core.download", "error", "Mihomo 内核下载失败", map[string]any{"version": strings.TrimSpace(ver), "error": safeAuditError(err)})
 			return
 		}
 		log.Printf("[core] 内核下载完成，重启内核")
 		s.writeGeneratedConfig()
-		_ = s.mgr.Restart()
+		if err := s.mgr.Restart(); err != nil {
+			s.audit("core", "core.download", "warning", "Mihomo 内核下载完成，但重启失败", map[string]any{"version": strings.TrimSpace(ver), "error": safeAuditError(err)})
+			return
+		}
+		s.audit("core", "core.download", "success", "Mihomo 内核下载并启动完成", map[string]any{"version": strings.TrimSpace(ver)})
 	}()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "下载任务已开始"})
 }
 
 func (s *Server) handleCoreUpload(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(200 << 20); err != nil {
+		s.audit("core", "core.upload", "error", "内核文件上传失败", map[string]any{"error": safeAuditError(err)})
 		writeErr(w, http.StatusBadRequest, "上传失败: "+err.Error())
 		return
 	}
 	file, hdr, err := r.FormFile("file")
 	if err != nil {
+		s.audit("core", "core.upload", "error", "内核文件上传失败：缺少文件", nil)
 		writeErr(w, http.StatusBadRequest, "缺少文件字段 file")
 		return
 	}
 	defer file.Close()
 	if err := core.InstallCoreFromUpload(s.dataDir, hdr.Filename, file); err != nil {
+		s.audit("core", "core.upload", "error", "内核文件安装失败", map[string]any{"file": hdr.Filename, "error": safeAuditError(err)})
 		writeErr(w, http.StatusBadRequest, "安装失败: "+err.Error())
 		return
 	}
 	s.writeGeneratedConfig()
-	_ = s.mgr.Restart()
+	if err := s.mgr.Restart(); err != nil {
+		s.audit("core", "core.upload", "warning", "内核文件上传完成，但重启失败", map[string]any{"file": hdr.Filename, "error": safeAuditError(err)})
+		writeErr(w, http.StatusInternalServerError, "内核重启失败: "+err.Error())
+		return
+	}
+	s.audit("core", "core.upload", "success", "内核文件上传并启动完成", map[string]any{"file": hdr.Filename})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) handleCoreRestart(w http.ResponseWriter, r *http.Request) {
 	if !s.coreInstalled() {
+		s.audit("core", "core.restart", "warning", "内核重启失败：内核未安装", nil)
 		writeErr(w, http.StatusBadRequest, "内核未安装")
 		return
 	}
 	s.writeGeneratedConfig()
 	if err := s.mgr.Restart(); err != nil {
+		s.audit("core", "core.restart", "error", "内核重启失败", map[string]any{"error": safeAuditError(err)})
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.audit("core", "core.restart", "success", "Mihomo 内核已重启", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -225,12 +243,14 @@ func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 	proxy, err := s.updateProxyAddr()
 	if err != nil {
+		s.audit("operation", "panel.update", "error", "面板版本升级未启动", map[string]any{"error": safeAuditError(err)})
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	s.updateMu.Lock()
 	if s.updateTask.Running {
 		s.updateMu.Unlock()
+		s.audit("operation", "panel.update", "warning", "面板版本升级未启动：已有任务进行中", nil)
 		writeErr(w, http.StatusConflict, "更新任务正在进行中")
 		return
 	}
@@ -238,6 +258,7 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 	s.updateMu.Unlock()
 
 	repo := s.updateRepo()
+	s.audit("operation", "panel.update", "info", "已开始下载面板版本升级", nil)
 	go func() {
 		rel, err := update.Apply(repo, s.version, s.dataDir, proxy, s.setUpdateProgress)
 		if err != nil {
@@ -246,6 +267,7 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 			s.updateTask.Running = false
 			s.updateTask.Error = err.Error()
 			s.updateMu.Unlock()
+			s.audit("operation", "panel.update", "error", "面板版本升级下载失败", map[string]any{"error": safeAuditError(err)})
 			return
 		}
 		version := strings.TrimPrefix(rel.TagName, "v")
@@ -256,6 +278,7 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 		s.updateTask.Percent = 100
 		s.updateTask.Error = ""
 		s.updateMu.Unlock()
+		s.audit("operation", "panel.update", "success", "面板版本升级已下载完成，等待重启", map[string]any{"version": version})
 	}()
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "message": "更新任务已在后台启动"})
 }
@@ -264,6 +287,7 @@ func (s *Server) handleUpdateRestart(w http.ResponseWriter, r *http.Request) {
 	s.updateMu.Lock()
 	if s.updateTask.State != "ready" || s.updateTask.Version == "" {
 		s.updateMu.Unlock()
+		s.audit("operation", "panel.update_restart", "warning", "面板升级重启未执行：尚无已完成更新", nil)
 		writeErr(w, http.StatusConflict, "尚无已下载完成的更新")
 		return
 	}
@@ -271,6 +295,7 @@ func (s *Server) handleUpdateRestart(w http.ResponseWriter, r *http.Request) {
 	s.updateTask.Running = true
 	s.updateTask.Error = ""
 	s.updateMu.Unlock()
+	s.audit("operation", "panel.update_restart", "info", "面板升级重启已开始", nil)
 
 	go func() {
 		// 先让 HTTP 响应返回给前端，再切换当前进程。
@@ -284,6 +309,7 @@ func (s *Server) handleUpdateRestart(w http.ResponseWriter, r *http.Request) {
 		s.updateTask.Running = false
 		s.updateTask.Error = "自动重启失败，请手动重启应用完成更新"
 		s.updateMu.Unlock()
+		s.audit("operation", "panel.update_restart", "error", "面板升级自动重启失败", nil)
 	}()
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "message": "应用正在重启"})
 }
@@ -321,6 +347,28 @@ func (s *Server) handleGeoDataStatus(w http.ResponseWriter, r *http.Request) {
 			coreRunning,
 		),
 	})
+}
+
+// handleRefreshGeoData 只请求运行中的 mihomo 刷新当前已应用配置对应的 Geo 数据。
+// 未应用的 Geo 数据源仍保留在顶栏待应用清单中，不会被此次刷新提前使用。
+func (s *Server) handleRefreshGeoData(w http.ResponseWriter, r *http.Request) {
+	if !s.st.GetSettingBool("geo_enabled", true) {
+		s.audit("operation", "geo.refresh", "warning", "Geo 数据库刷新未执行：功能已禁用", nil)
+		writeErr(w, http.StatusBadRequest, "Geo 数据库已禁用，请先启用并应用配置")
+		return
+	}
+	if s.mgr.Status().State != core.StateRunning {
+		s.audit("operation", "geo.refresh", "warning", "Geo 数据库刷新未执行：内核未运行", nil)
+		writeErr(w, http.StatusConflict, "内核未运行，无法刷新 Geo 数据库")
+		return
+	}
+	if err := s.client.UpdateGeoDatabases(); err != nil {
+		s.audit("operation", "geo.refresh", "error", "Geo 数据库刷新失败", map[string]any{"error": safeAuditError(err)})
+		writeErr(w, http.StatusBadGateway, "刷新 Geo 数据库失败: "+err.Error())
+		return
+	}
+	s.audit("operation", "geo.refresh", "success", "Geo 数据库已刷新", nil)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Geo 数据库已按当前生效配置刷新"})
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {

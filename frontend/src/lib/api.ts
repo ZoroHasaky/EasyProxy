@@ -318,6 +318,24 @@ export interface GeoDataStatusResponse {
   items: GeoDataStatus[];
 }
 
+export type AuditLogCategory = "traffic" | "operation" | "core";
+export type AuditLogLevel = "info" | "success" | "warning" | "error";
+
+export interface AuditLog {
+  id: number;
+  created_at: string;
+  category: AuditLogCategory;
+  level: AuditLogLevel;
+  event: string;
+  summary: string;
+  details: Record<string, unknown>;
+}
+
+export interface AuditLogResponse {
+  items: AuditLog[];
+  next_before: number;
+}
+
 export interface UpdateCheck {
   current: string;
   latest: string;

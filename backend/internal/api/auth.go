@@ -83,6 +83,7 @@ func (s *Server) InitPassword() {
 	_ = s.st.SetSetting("password_hash", string(hash))
 	_ = s.st.SetSetting("must_change_password", "1")
 	s.mustChangePw.Store(true)
+	s.audit("operation", "security.initial_password", "info", "已生成首次管理员密码", nil)
 	fmt.Println()
 	fmt.Println("==========================================================")
 	fmt.Println("  首次启动：已生成初始管理员密码")
@@ -98,16 +99,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := readJSON(r, &req); err != nil {
+		s.audit("operation", "security.login", "warning", "管理员登录失败：请求格式错误", nil)
 		writeErr(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
 	hash := s.st.GetSetting("password_hash", "")
 	if hash == "" {
+		s.audit("operation", "security.login", "error", "管理员登录失败：密码未初始化", nil)
 		writeErr(w, http.StatusInternalServerError, "密码未初始化")
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)) != nil {
 		time.Sleep(500 * time.Millisecond)
+		s.audit("operation", "security.login", "warning", "管理员登录失败：密码错误", nil)
 		writeErr(w, http.StatusUnauthorized, "密码错误")
 		return
 	}
@@ -120,6 +124,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   7 * 24 * 3600,
 	})
+	s.audit("operation", "security.login", "success", "管理员登录成功", nil)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":                   true,
 		"must_change_password": s.st.GetSettingBool("must_change_password", false),

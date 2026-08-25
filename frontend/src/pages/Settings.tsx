@@ -104,7 +104,18 @@ export default function SettingsPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const refreshGeoMutation = useMutation({
+    mutationFn: () => api.post<{ message: string }>("/api/geo/refresh"),
+    onSuccess: (result) => {
+      toast.success(result.message);
+      qc.invalidateQueries({ queryKey: ["geo-status"] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   if (!form) return <div className="text-xs text-muted-foreground p-8 text-center">加载设置中…</div>;
+
+  const canRefreshGeo = form.geo_enabled && geoStatusQuery.data?.core_running !== false;
 
   const updateGeoSource = (key: "geoip" | "geosite", value: string) => {
     patch({
@@ -238,10 +249,27 @@ export default function SettingsPage() {
                   条目数直接从本地 Geo 数据库解析；状态每 30 秒刷新一次。
                 </p>
               </div>
-              <Button type="button" variant="ghost" size="sm" onClick={() => geoStatusQuery.refetch()} disabled={geoStatusQuery.isFetching}>
-                <RefreshCw className={`h-3.5 w-3.5 ${geoStatusQuery.isFetching ? "animate-spin" : ""}`} />
-                刷新
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refreshGeoMutation.mutate()}
+                  disabled={refreshGeoMutation.isPending || !canRefreshGeo}
+                  title={!form.geo_enabled
+                    ? "请先启用 Geo 数据库"
+                    : geoStatusQuery.data?.core_running === false
+                      ? "请先启动内核"
+                      : "按当前生效配置立即更新 GeoIP 与 GeoSite 数据库"}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${refreshGeoMutation.isPending ? "animate-spin" : ""}`} />
+                  {refreshGeoMutation.isPending ? "更新中…" : "手动更新"}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => geoStatusQuery.refetch()} disabled={geoStatusQuery.isFetching}>
+                  <RefreshCw className={`h-3.5 w-3.5 ${geoStatusQuery.isFetching ? "animate-spin" : ""}`} />
+                  刷新状态
+                </Button>
+              </div>
             </div>
             {geoStatusQuery.isLoading ? (
               <div className="py-4 text-center text-xs text-muted-foreground">正在读取本地数据库状态…</div>

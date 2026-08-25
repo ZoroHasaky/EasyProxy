@@ -156,6 +156,19 @@ func (s *Store) migrate() error {
 			id INTEGER PRIMARY KEY CHECK (id=1),
 			yaml TEXT NOT NULL DEFAULT ''
 		)`,
+		`CREATE TABLE IF NOT EXISTS audit_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			created_at TEXT NOT NULL,
+			category TEXT NOT NULL,
+			level TEXT NOT NULL DEFAULT 'info',
+			event TEXT NOT NULL DEFAULT '',
+			summary TEXT NOT NULL,
+			details TEXT NOT NULL DEFAULT '{}',
+			source_key TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC, id DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_logs_category ON audit_logs(category, created_at DESC, id DESC)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_logs_source ON audit_logs(source_key) WHERE source_key != ''`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -182,6 +195,9 @@ func (s *Store) migrate() error {
 	}
 	if err := s.initializeAppliedConfigSettings(); err != nil {
 		return fmt.Errorf("initialize applied config settings: %w", err)
+	}
+	if err := s.PruneAuditLogs(time.Now().Add(-AuditLogRetention)); err != nil {
+		return fmt.Errorf("prune audit logs: %w", err)
 	}
 	return nil
 }
