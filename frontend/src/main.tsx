@@ -24,7 +24,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <ThemeProvider>
           <BrowserRouter>
             <App />
-            <Toaster richColors position="top-right" />
+            <Toaster richColors position="bottom-right" />
           </BrowserRouter>
         </ThemeProvider>
       </QueryClientProvider>

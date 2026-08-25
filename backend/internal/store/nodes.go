@@ -111,8 +111,8 @@ func (s *Store) CreateNode(n *model.Node) error {
 
 func (s *Store) UpdateNode(n *model.Node) error {
 	raw, _ := json.Marshal(n.RawConfig)
-	_, err := s.db.Exec(`UPDATE nodes SET name=?,type=?,server=?,port=?,region=?,raw_config=?,enabled=?
-		WHERE id=?`, n.Name, n.Type, n.Server, n.Port, n.Region, string(raw), n.Enabled, n.ID)
+	_, err := s.db.Exec(`UPDATE nodes SET name=?,type=?,server=?,port=?,region=?,raw_config=?,dedup_hash=?,enabled=?
+		WHERE id=?`, n.Name, n.Type, n.Server, n.Port, n.Region, string(raw), n.DedupHash, n.Enabled, n.ID)
 	return err
 }
 

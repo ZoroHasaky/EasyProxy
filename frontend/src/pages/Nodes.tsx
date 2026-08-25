@@ -73,6 +73,8 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
   const [delayPending, setDelayPending] = useState<number | null>(null);
   const [editingNode, setEditingNode] = useState<ProxyNode | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [editingRawConfig, setEditingRawConfig] = useState("");
+  const [editingRegion, setEditingRegion] = useState("");
 
   const params = new URLSearchParams();
   if (region) params.set("region", region);
@@ -135,17 +137,49 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
   });
 
   const editMutation = useMutation({
-    mutationFn: () =>
-      api.patch<AutoApplyResponse>(`/api/nodes/${editingNode!.id}`, { name: editingName.trim() }),
+    mutationFn: ({ id, body }: { id: number; body: Record<string, unknown> }) =>
+      api.patch<AutoApplyResponse>(`/api/nodes/${id}`, body),
     onSuccess: (res) => {
-      reportAutoApply("节点名称已更新", res);
+      reportAutoApply(editingNode?.source_type === "manual" ? "节点参数已更新" : "节点名称已更新", res);
       setEditingNode(null);
       setEditingName("");
+      setEditingRawConfig("");
+      setEditingRegion("");
       qc.invalidateQueries({ queryKey: ["nodes"] });
       qc.invalidateQueries({ queryKey: ["ruleTargets"] });
     },
     onError: (e: any) => toast.error(e.message),
   });
+
+  const openNodeEditor = (node: ProxyNode) => {
+    setEditingNode(node);
+    setEditingName(node.name);
+    setEditingRawConfig(JSON.stringify(node.raw_config, null, 2));
+    setEditingRegion(node.region);
+  };
+
+  const saveNodeEdits = () => {
+    if (!editingNode) return;
+    if (editingNode.source_type !== "manual") {
+      editMutation.mutate({ id: editingNode.id, body: { name: editingName.trim() } });
+      return;
+    }
+    let rawConfig: unknown;
+    try {
+      rawConfig = JSON.parse(editingRawConfig);
+    } catch {
+      toast.error("节点参数必须是有效的 JSON 对象");
+      return;
+    }
+    if (!rawConfig || typeof rawConfig !== "object" || Array.isArray(rawConfig)) {
+      toast.error("节点参数必须是 JSON 对象");
+      return;
+    }
+    editMutation.mutate({
+      id: editingNode.id,
+      body: { raw_config: rawConfig, region: editingRegion.trim() },
+    });
+  };
 
   const pruneMutation = useMutation({
     mutationFn: () => api.post<{ removed: number } & AutoApplyResponse>("/api/nodes/prune"),
@@ -342,10 +376,9 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
                       variant="ghost"
                       size="iconSm"
                       onClick={() => {
-                        setEditingNode(node);
-                        setEditingName(node.name);
+                        openNodeEditor(node);
                       }}
-                      title="重命名节点"
+                      title={node.source_type === "manual" ? "编辑完整节点参数" : "重命名节点"}
                     >
                       <Pencil className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                     </Button>
@@ -411,22 +444,51 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
         </DialogContent>
       </Dialog>
 
-      {/* 编辑节点名称 Dialog */}
+      {/* 编辑节点 Dialog */}
       <Dialog open={!!editingNode} onOpenChange={(v) => !v && setEditingNode(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className={cn("sm:max-w-md", editingNode?.source_type === "manual" && "sm:max-w-2xl")}>
           <DialogHeader>
-            <DialogTitle>修改节点名称</DialogTitle>
+            <DialogTitle>{editingNode?.source_type === "manual" ? "编辑手动节点参数" : "修改节点名称"}</DialogTitle>
             <DialogDescription>
-              自定义该节点的展示名称（修改后自动同步到规则与出站规则）
+              {editingNode?.source_type === "manual"
+                ? "可修改完整 Mihomo 节点配置；保存后会自动重新加载当前有效配置。"
+                : "自定义该节点的展示名称（修改后自动同步到规则与出站规则）"}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-2 py-2">
-            <Input
-              value={editingName}
-              onChange={(e) => setEditingName(e.target.value)}
-              placeholder="输入新的节点名称"
-            />
+          <div className="space-y-4 py-2">
+            {editingNode?.source_type === "manual" ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="node-raw-config">完整节点参数（JSON）</Label>
+                  <Textarea
+                    id="node-raw-config"
+                    value={editingRawConfig}
+                    onChange={(e) => setEditingRawConfig(e.target.value)}
+                    spellCheck={false}
+                    className="min-h-[360px] font-mono text-xs leading-5"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    必填字段：name、type、server、port；其余协议参数会原样保存。
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="node-region">地区标签（可选）</Label>
+                  <Input
+                    id="node-region"
+                    value={editingRegion}
+                    onChange={(e) => setEditingRegion(e.target.value)}
+                    placeholder="例如 HK、US；留空则显示为未知地区"
+                  />
+                </div>
+              </>
+            ) : (
+              <Input
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                placeholder="输入新的节点名称"
+              />
+            )}
           </div>
 
           <DialogFooter>
@@ -435,10 +497,10 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
             </Button>
             <Button
               size="sm"
-              onClick={() => editMutation.mutate()}
-              disabled={editMutation.isPending || !editingName.trim()}
+              onClick={saveNodeEdits}
+              disabled={editMutation.isPending || (editingNode?.source_type !== "manual" && !editingName.trim())}
             >
-              保存修改
+              {editMutation.isPending ? "保存中…" : "保存修改"}
             </Button>
           </DialogFooter>
         </DialogContent>

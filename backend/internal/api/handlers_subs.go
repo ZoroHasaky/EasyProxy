@@ -182,9 +182,10 @@ func (s *Server) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name    *string `json:"name"`
-		Region  *string `json:"region"`
-		Enabled *bool   `json:"enabled"`
+		Name      *string         `json:"name"`
+		Region    *string         `json:"region"`
+		Enabled   *bool           `json:"enabled"`
+		RawConfig *map[string]any `json:"raw_config"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "请求格式错误")
@@ -208,8 +209,50 @@ func (s *Server) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if req.RawConfig != nil {
+		if node.SourceType != "manual" {
+			writeErr(w, http.StatusForbidden, "仅手动导入的节点支持编辑完整参数")
+			return
+		}
+		raw := make(map[string]any, len(*req.RawConfig))
+		for key, value := range *req.RawConfig {
+			raw[key] = value
+		}
+		for _, key := range []string{"name", "type", "server"} {
+			if value, ok := raw[key].(string); ok {
+				raw[key] = strings.TrimSpace(value)
+			}
+		}
+		updated, err := service.NormalizeProxy(raw)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "节点参数无效: "+err.Error())
+			return
+		}
+		if updated.Port < 1 || updated.Port > 65535 {
+			writeErr(w, http.StatusBadRequest, "节点端口必须在 1 到 65535 之间")
+			return
+		}
+		if exists, _ := s.st.NodeNameExists(updated.Name, node.ID); exists {
+			writeErr(w, http.StatusBadRequest, "节点名已存在")
+			return
+		}
+		// 规范化关键字段，确保节点列表、去重以及生成给 mihomo 的配置始终一致。
+		updated.RawConfig["name"] = updated.Name
+		updated.RawConfig["type"] = updated.Type
+		updated.RawConfig["server"] = updated.Server
+		updated.RawConfig["port"] = updated.Port
+		node.Name = updated.Name
+		node.Type = updated.Type
+		node.Server = updated.Server
+		node.Port = updated.Port
+		node.RawConfig = updated.RawConfig
+		node.DedupHash = service.HashProxy(updated.RawConfig)
+		if node.Region == "" || node.Region == parser.RegionOther {
+			node.Region = parser.ParseRegion(node.Name)
+		}
+	}
 	if req.Region != nil {
-		node.Region = *req.Region
+		node.Region = strings.TrimSpace(*req.Region)
 	}
 	if req.Enabled != nil {
 		node.Enabled = *req.Enabled

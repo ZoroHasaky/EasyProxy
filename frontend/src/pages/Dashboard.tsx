@@ -7,8 +7,9 @@ import {
   Radio,
   Search,
   Server,
+  Zap,
 } from "lucide-react";
-import { api, mihomo, ProxyGroup } from "@/lib/api";
+import { api, mihomo, MihomoProxy, ProxyGroup } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   Card,
@@ -27,6 +28,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
+function activeLeafNode(proxies: Record<string, MihomoProxy>, name?: string): string {
+  const visited = new Set<string>();
+  let current = name ?? "";
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    const proxy = proxies[current];
+    if (!proxy?.now || proxy.now === current) return current;
+    current = proxy.now;
+  }
+  return current;
+}
+
+function latestDelay(proxy?: MihomoProxy): number | null {
+  const history = proxy?.history;
+  if (!history?.length) return null;
+  const delay = history[history.length - 1]?.delay;
+  return typeof delay === "number" && delay > 0 ? delay : null;
+}
 
 export default function DashboardPage() {
   const qc = useQueryClient();
@@ -59,6 +79,8 @@ export default function DashboardPage() {
   );
   const selectedNode =
     proxyGroup?.now && nodeOptions.includes(proxyGroup.now) ? proxyGroup.now : "";
+  const currentNode = activeLeafNode(proxies.data?.proxies ?? {}, proxyGroup?.now);
+  const currentNodeDelay = latestDelay(proxies.data?.proxies?.[currentNode]);
 
   const visibleNodes = useMemo(() => {
     const keyword = nodeSearch.trim().toLocaleLowerCase();
@@ -104,6 +126,12 @@ export default function DashboardPage() {
                   <Badge variant="purple" className="text-xs">
                     当前使用: {proxyGroup.now ?? "-"}
                   </Badge>
+                  {currentNode && (
+                    <Badge variant="outline" className="gap-1 text-xs font-mono">
+                      <Zap className="h-3 w-3 text-primary" />
+                      当前节点: {currentNode} · {currentNodeDelay === null ? "未测速" : `${currentNodeDelay} ms`}
+                    </Badge>
+                  )}
                 </div>
                 <CardDescription className="mt-1">
                   控制默认分流出口。支持快速切换到地区出站规则或单个指定节点。

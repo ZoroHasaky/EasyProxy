@@ -7,68 +7,83 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"easyproxy/internal/model"
 	"easyproxy/internal/store"
 )
 
-func TestCreateSubscriptionKeepsRequestedEnabledState(t *testing.T) {
-	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`proxies:
-  - name: audit-node
-    type: ss
-    server: 127.0.0.1
-    port: 8388
-    cipher: aes-128-gcm
-    password: audit-password
-`))
-	}))
-	defer source.Close()
-
+func TestPatchManualNodeUpdatesFullProxyConfig(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
+
+	node := model.Node{
+		Name: "旧节点", Type: "vmess", Server: "old.example.com", Port: 443,
+		SourceType: "manual", Enabled: true, DedupHash: "old-hash",
+		RawConfig: map[string]any{
+			"name": "旧节点", "type": "vmess", "server": "old.example.com", "port": 443,
+			"uuid": "old-uuid", "tls": false,
+		},
+	}
+	if err := st.CreateNode(&node); err != nil {
+		t.Fatal(err)
+	}
 	srv := New(st, dir, "test")
 
-	body, _ := json.Marshal(map[string]any{
-		"name":            "audit-subscription",
-		"url":             source.URL,
-		"update_interval": 0,
-		"enabled":         false,
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/subscriptions", bytes.NewReader(body))
+	body := []byte(`{"raw_config":{"name":"新节点","type":"vless","server":"new.example.com","port":8443,"uuid":"new-uuid","tls":true,"flow":"xtls-rprx-vision"},"region":"US"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/api/nodes/1", bytes.NewReader(body))
+	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
-	srv.handleCreateSub(rec, req)
+	srv.handlePatchNode(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("PATCH status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Node model.Node `json:"node"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Node.Name != "新节点" || response.Node.Type != "vless" || response.Node.Server != "new.example.com" || response.Node.Port != 8443 || response.Node.Region != "US" {
+		t.Fatalf("unexpected response node: %#v", response.Node)
+	}
+	if response.Node.RawConfig["uuid"] != "new-uuid" || response.Node.RawConfig["flow"] != "xtls-rprx-vision" || response.Node.RawConfig["tls"] != true {
+		t.Fatalf("full proxy config not preserved: %#v", response.Node.RawConfig)
 	}
 
-	subs, err := st.ListSubscriptions()
+	saved, err := st.GetNode(node.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(subs) != 1 || subs[0].Enabled {
-		t.Fatalf("created subscription enabled=%v, want false: %#v", len(subs) == 1 && subs[0].Enabled, subs)
+	if saved.DedupHash == "old-hash" || saved.RawConfig["port"] != float64(8443) {
+		t.Fatalf("updated node was not persisted: %#v", saved)
 	}
 }
 
-func TestUpdateProxyAddrHonorsSetting(t *testing.T) {
+func TestPatchSubscriptionNodeRejectsFullProxyConfig(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	srv := New(st, dir, "test")
-
-	if addr, err := srv.updateProxyAddr(); err != nil || addr != "" {
-		t.Fatalf("disabled proxy addr=%q err=%v", addr, err)
+	node := model.Node{
+		Name: "订阅节点", Type: "ss", Server: "sub.example.com", Port: 443,
+		SourceType: "sub", SourceID: 1, Enabled: true, DedupHash: "sub-hash",
+		RawConfig: map[string]any{"name": "订阅节点", "type": "ss", "server": "sub.example.com", "port": 443},
 	}
-	if err := st.SetSetting("update_via_proxy", "1"); err != nil {
+	if err := st.CreateNode(&node); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := srv.updateProxyAddr(); err == nil {
-		t.Fatal("enabled proxy without a running core should return an actionable error")
+	srv := New(st, dir, "test")
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/nodes/1", bytes.NewBufferString(`{"raw_config":{"name":"改名","type":"ss","server":"changed.example.com","port":443}}`))
+	req.SetPathValue("id", "1")
+	rec := httptest.NewRecorder()
+	srv.handlePatchNode(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("PATCH status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
