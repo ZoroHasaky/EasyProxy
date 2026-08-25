@@ -143,7 +143,7 @@ func TestGenerateConfigWritesYAMLRuleProvidersBeforeRuleSets(t *testing.T) {
 		t.Fatal(err)
 	}
 	created, err := st.CreateRecognitionRules([]model.RecognitionRule{
-		{Name: "apple", SourceURL: "https://example.com/apple.yaml", SourceBehavior: "domain", SourceInterval: 7200, Priority: 20, Enabled: true},
+		{Name: "apple", SourceURL: "https://github.com/MetaCubeX/meta-rules-dat/blob/meta/geo/geosite/apple.yaml", SourceBehavior: "domain", SourceInterval: 7200, Priority: 20, Enabled: true},
 		{Name: "private-ip", SourceURL: "https://example.com/private.yaml", SourceBehavior: "ipcidr", SourceInterval: 86400, Priority: 10, Enabled: true},
 		{Name: "classical", SourceURL: "https://example.com/classical.yaml", SourceBehavior: "classical", SourceInterval: 86400, Priority: 5, Enabled: true},
 	})
@@ -172,7 +172,7 @@ func TestGenerateConfigWritesYAMLRuleProvidersBeforeRuleSets(t *testing.T) {
 		t.Fatalf("rule providers=%#v\n%s", parsed["rule-providers"], gen.YAML)
 	}
 	apple, ok := providers["apple"].(map[string]any)
-	if !ok || apple["format"] != "yaml" || apple["interval"] != 7200 {
+	if !ok || apple["format"] != "yaml" || apple["interval"] != 7200 || apple["url"] != "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/apple.yaml" {
 		t.Fatalf("apple provider=%#v", apple)
 	}
 	if !strings.Contains(gen.YAML, "RULE-SET,private-ip,规则组,no-resolve") || !strings.Contains(gen.YAML, "RULE-SET,classical,规则组") {

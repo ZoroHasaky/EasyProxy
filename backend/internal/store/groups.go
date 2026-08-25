@@ -96,7 +96,7 @@ func (s *Store) ReplaceGroups(groups []model.Group) error {
 				return err
 			}
 			if references > 0 {
-				return fmt.Errorf("策略组仍被 %d 条出站规则引用，无法删除", references)
+				return fmt.Errorf("节点组合仍被 %d 条出站映射引用，无法删除", references)
 			}
 			deleteIDs = append(deleteIDs, "?")
 			args = append(args, id)

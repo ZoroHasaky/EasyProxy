@@ -11,7 +11,7 @@ import {
   Check,
   RotateCcw,
 } from "lucide-react";
-import { api, autoApplyResultMessage, AutoApplyResponse, ProxyGroup, ProxyNode, RegionInfo } from "@/lib/api";
+import { api, autoApplyResultMessage, AutoApplyResponse, proxyGroupTypeLabel, ProxyGroup, ProxyNode, RegionInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,7 +37,7 @@ import { cn } from "@/lib/utils";
 
 const GROUP_TYPES = [
   { value: "select", label: "手动选择 (select)", desc: "由用户在面板手动选择节点" },
-  { value: "url-test", label: "自动测速 (url-test)", desc: "定时测速自动挑选延迟最低节点" },
+  { value: "url-test", label: "自动测速", desc: "定时测速自动挑选延迟最低节点" },
   { value: "fallback", label: "故障回退 (fallback)", desc: "主节点故障时自动顺序切换可用节点" },
   { value: "load-balance", label: "负载均衡 (load-balance)", desc: "在可用节点间均衡分散请求" },
 ];
@@ -148,7 +148,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
       return api.put<AutoApplyResponse>("/api/groups", nextGroups);
     },
     onSuccess: (res) => {
-      reportAutoApply(editingGroup ? "出站规则已更新" : "出站规则已创建", res);
+      reportAutoApply(editingGroup ? "节点组合已更新" : "节点组合已创建", res);
       setModalOpen(false);
       qc.invalidateQueries({ queryKey: ["groups"] });
       qc.invalidateQueries({ queryKey: ["ruleTargets"] });
@@ -163,7 +163,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
         (groups.data ?? []).filter((group) => group.id !== id),
       ),
     onSuccess: (res) => {
-      reportAutoApply("出站规则已删除", res);
+      reportAutoApply("节点组合已删除", res);
       qc.invalidateQueries({ queryKey: ["groups"] });
       qc.invalidateQueries({ queryKey: ["ruleTargets"] });
     },
@@ -173,7 +173,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
   const generateRegionGroups = useMutation({
     mutationFn: () => api.post<{ created: number } & AutoApplyResponse>("/api/groups/generate-regions"),
     onSuccess: (res) => {
-      reportAutoApply(`已根据现有节点地区自动生成 ${res.created} 个测速出站规则`, res);
+      reportAutoApply(`已根据现有节点地区自动生成 ${res.created} 个自动测速节点组合`, res);
       qc.invalidateQueries({ queryKey: ["groups"] });
       qc.invalidateQueries({ queryKey: ["ruleTargets"] });
     },
@@ -198,10 +198,10 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
         <div>
           <h3 className="text-base font-bold tracking-tight text-foreground flex items-center gap-2">
             <Layers className="h-4.5 w-4.5 text-primary" />
-            出站规则管理 (Outbound Rules)
+            节点组合管理
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            配置按地区、正则或自定义组合的出站规则，支持 url-test 速度优先与故障自动回退
+            配置按地区、正则或自定义组合的节点组合，支持自动测速与故障自动回退
           </p>
         </div>
 
@@ -217,7 +217,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
           </Button>
           <Button size="sm" onClick={openAdd}>
             <Plus className="h-4 w-4" />
-            新建出站规则
+            新建节点组合
           </Button>
         </div>
       </div>
@@ -245,7 +245,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                     </CardDescription>
                   </div>
                   <Badge variant="purple" className="font-mono text-xs uppercase">
-                    {g.type}
+                    {proxyGroupTypeLabel(g.type)}
                   </Badge>
                 </div>
               </CardHeader>
@@ -270,7 +270,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                     variant="ghost"
                     size="iconSm"
                     onClick={() => openEdit(g)}
-                    title="编辑出站规则"
+                    title="编辑节点组合"
                   >
                     <Edit className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                   </Button>
@@ -278,11 +278,11 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                     variant="ghost"
                     size="iconSm"
                     onClick={() => {
-                      if (confirm(`确定删除出站规则「${g.name}」吗？`)) {
+                      if (confirm(`确定删除节点组合「${g.name}」吗？`)) {
                         deleteMutation.mutate(g.id);
                       }
                     }}
-                    title="删除出站规则"
+                    title="删除节点组合"
                   >
                     <Trash2 className="h-3.5 w-3.5 text-rose-500 hover:text-rose-600" />
                   </Button>
@@ -297,15 +297,15 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingGroup ? "编辑出站规则" : "新建出站规则"}</DialogTitle>
+            <DialogTitle>{editingGroup ? "编辑节点组合" : "新建节点组合"}</DialogTitle>
             <DialogDescription>
-              设置出站规则类型、节点包含规则以及自动化测速参数
+              设置节点组合类型、节点包含规则以及自动测速参数
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>出站规则名称</Label>
+              <Label>节点组合名称</Label>
               <Input
                 placeholder="例如: 🇭🇰 香港自动测速 或 节点选择"
                 value={name}
@@ -314,7 +314,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
             </div>
 
             <div className="space-y-1.5">
-              <Label>出站规则类型</Label>
+              <Label>节点组合类型</Label>
               <Select value={type} onChange={(e) => setType(e.target.value as any)}>
                 {GROUP_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>
@@ -421,7 +421,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
 
             <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/60">
               <div className="space-y-0.5">
-                <div className="text-xs font-semibold">启用此出站规则</div>
+                <div className="text-xs font-semibold">启用此节点组合</div>
                 <div className="text-[11px] text-muted-foreground">
                   禁用后生成配置时将被忽略
                 </div>
@@ -439,7 +439,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
               onClick={() => saveMutation.mutate()}
               disabled={saveMutation.isPending || !name.trim()}
             >
-              {saveMutation.isPending ? "保存中…" : "保存出站规则"}
+              {saveMutation.isPending ? "保存中…" : "保存节点组合"}
             </Button>
           </DialogFooter>
         </DialogContent>

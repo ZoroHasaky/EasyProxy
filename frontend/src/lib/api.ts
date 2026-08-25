@@ -209,6 +209,11 @@ export interface ProxyGroup {
   enabled: boolean;
 }
 
+// 仅用于界面展示；内核配置和 API 仍使用 Mihomo 原始类型值。
+export function proxyGroupTypeLabel(type: string) {
+  return type === "url-test" ? "自动测速" : type;
+}
+
 export interface RulesPayload {
   rules: Rule[];
   providers: RuleProvider[];

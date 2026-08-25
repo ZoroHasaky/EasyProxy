@@ -9,7 +9,7 @@ import {
   Server,
   Zap,
 } from "lucide-react";
-import { api, mihomo, MihomoProxy, ProxyGroup } from "@/lib/api";
+import { api, mihomo, MihomoProxy, proxyGroupTypeLabel, ProxyGroup } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   Card,
@@ -134,7 +134,7 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <CardDescription className="mt-1">
-                  控制默认分流出口。支持快速切换到地区出站规则或单个指定节点。
+                  控制默认分流出口。支持快速切换到地区节点组合或单个指定节点。
                 </CardDescription>
               </div>
 
@@ -200,7 +200,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold tracking-tight text-foreground/90 flex items-center gap-2">
             <Radio className="h-4.5 w-4.5 text-primary" />
-            所有出站规则状态
+            所有节点组合状态
           </h2>
           <span className="text-xs text-muted-foreground">
             共 {groups.length} 个活跃分组
@@ -217,7 +217,7 @@ export default function DashboardPage() {
                       {group.name}
                     </CardTitle>
                     <Badge variant="outline" className="text-[10px] uppercase font-mono">
-                      {group.type}
+                      {proxyGroupTypeLabel(group.type)}
                     </Badge>
                   </div>
                   <CardDescription className="truncate font-mono text-primary font-medium text-xs">

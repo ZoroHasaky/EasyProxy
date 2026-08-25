@@ -377,7 +377,7 @@ func (s *Server) handlePutGroups(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	result, applyError := s.applyChangedConfig("groups", []string{"出站规则"})
+	result, applyError := s.applyChangedConfig("groups", []string{"节点组合"})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(groups), "apply_result": result, "apply_error": applyError})
 }
 
@@ -387,7 +387,7 @@ func (s *Server) handleGenerateRegionGroups(w http.ResponseWriter, r *http.Reque
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	result, applyError := s.applyChangedConfig("groups", []string{"出站规则"})
+	result, applyError := s.applyChangedConfig("groups", []string{"节点组合"})
 	writeJSON(w, http.StatusOK, map[string]any{"created": created, "apply_result": result, "apply_error": applyError})
 }
 

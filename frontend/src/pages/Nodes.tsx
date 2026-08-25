@@ -452,7 +452,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
             <DialogDescription>
               {editingNode?.source_type === "manual"
                 ? "可修改完整 Mihomo 节点配置；保存后会自动重新加载当前有效配置。"
-                : "自定义该节点的展示名称（修改后自动同步到规则与出站规则）"}
+                : "自定义该节点的展示名称（修改后自动同步到规则与节点组合）"}
             </DialogDescription>
           </DialogHeader>
 

@@ -33,6 +33,10 @@ type importedYAMLProvider struct {
 	Interval int    `yaml:"interval"`
 }
 
+type standaloneYAMLRuleFile struct {
+	Payload yaml.Node `yaml:"payload"`
+}
+
 func sourceRuleNameFromURL(rawURL string) string {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
@@ -60,7 +64,7 @@ func importedRecognitionRule(name string, provider importedYAMLProvider, priorit
 	if format != "" && format != "yaml" {
 		return model.RecognitionRule{}, fmt.Errorf("识别规则「%s」仅支持 YAML 格式，不支持 %s", name, format)
 	}
-	sourceURL := strings.TrimSpace(provider.URL)
+	sourceURL := model.NormalizeGitHubContentURL(provider.URL)
 	parsedURL, err := url.Parse(sourceURL)
 	if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
 		return model.RecognitionRule{}, fmt.Errorf("识别规则「%s」的 YAML 来源 URL 无效", name)
@@ -111,12 +115,43 @@ func (s *Server) handleImportRecognitionRules(w http.ResponseWriter, r *http.Req
 			writeErr(w, http.StatusBadRequest, "YAML 配置解析失败: "+err.Error())
 			return
 		}
-		if len(config.RuleProviders) == 0 {
-			writeErr(w, http.StatusBadRequest, "未找到 rule-providers 配置")
-			return
-		}
-		for name, provider := range config.RuleProviders {
-			rule, err := importedRecognitionRule(name, provider, req.Priority, enabled)
+		if len(config.RuleProviders) > 0 {
+			for name, provider := range config.RuleProviders {
+				rule, err := importedRecognitionRule(name, provider, req.Priority, enabled)
+				if err != nil {
+					writeErr(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				candidates = append(candidates, rule)
+			}
+		} else {
+			// MetaCubeX 的 geo/geosite/*.yaml 等文件是单个 Rule Provider 的内容，
+			// 只有 payload，不带 rule-providers 外层配置。其来源 URL 仍需保存，
+			// 以便 Mihomo 后续按周期拉取更新。
+			var ruleFile standaloneYAMLRuleFile
+			if err := yaml.Unmarshal([]byte(content), &ruleFile); err != nil {
+				writeErr(w, http.StatusBadRequest, "YAML 规则文件解析失败: "+err.Error())
+				return
+			}
+			if ruleFile.Payload.Kind != yaml.SequenceNode {
+				writeErr(w, http.StatusBadRequest, "未找到 rule-providers 配置，也不是包含 payload 的 YAML 规则文件")
+				return
+			}
+			behavior := strings.TrimSpace(req.Behavior)
+			if behavior == "" {
+				behavior = "domain"
+			}
+			name := strings.TrimSpace(req.Name)
+			if name == "" {
+				name = sourceRuleNameFromURL(req.URL)
+			}
+			rule, err := importedRecognitionRule(name, importedYAMLProvider{
+				Type:     "http",
+				Behavior: behavior,
+				URL:      req.URL,
+				Format:   "yaml",
+				Interval: req.Interval,
+			}, req.Priority, enabled)
 			if err != nil {
 				writeErr(w, http.StatusBadRequest, err.Error())
 				return

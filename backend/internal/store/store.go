@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"easyproxy/internal/model"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -205,6 +207,9 @@ func (s *Store) migrate() error {
 	if err := s.removeMRSRuleProviders(); err != nil {
 		return fmt.Errorf("remove MRS rule providers: %w", err)
 	}
+	if err := s.normalizeGitHubRuleProviderURLs(); err != nil {
+		return fmt.Errorf("normalize GitHub rule provider URLs: %w", err)
+	}
 	if err := s.initializeAppliedConfigSettings(); err != nil {
 		return fmt.Errorf("initialize applied config settings: %w", err)
 	}
@@ -212,6 +217,52 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("prune audit logs: %w", err)
 	}
 	return nil
+}
+
+// normalizeGitHubRuleProviderURLs 修复历史记录中误填的 GitHub blob 浏览地址。
+// Mihomo 需要下载原始 YAML；地址变更后清空已应用 YAML，确保下次启动重新生成配置。
+func (s *Store) normalizeGitHubRuleProviderURLs() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`SELECT id,source_url FROM recognition_rules WHERE trim(source_url) != ''`)
+	if err != nil {
+		return err
+	}
+	type sourceRef struct {
+		id  int64
+		url string
+	}
+	var changed []sourceRef
+	for rows.Next() {
+		var item sourceRef
+		if err := rows.Scan(&item.id, &item.url); err != nil {
+			rows.Close()
+			return err
+		}
+		normalized := model.NormalizeGitHubContentURL(item.url)
+		if normalized != item.url {
+			changed = append(changed, sourceRef{id: item.id, url: normalized})
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if len(changed) == 0 {
+		return tx.Commit()
+	}
+	for _, item := range changed {
+		if _, err := tx.Exec(`UPDATE recognition_rules SET source_url=? WHERE id=?`, item.url, item.id); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM applied_config_state WHERE id=1`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // removeMRSRuleProviders 是一次幂等清理：MRS 已不再受支持，删除旧来源及其 RULE-SET 引用。

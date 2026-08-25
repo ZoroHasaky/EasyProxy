@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -29,8 +30,8 @@ type geoDataDefinition struct {
 }
 
 var geoDataDefinitions = []geoDataDefinition{
-	{key: "geoip", name: "GeoIP", file: "geoip.dat"},
-	{key: "geosite", name: "GeoSite", file: "geosite.dat"},
+	{key: "geoip", name: "GeoIP", file: "GeoIP.dat"},
+	{key: "geosite", name: "GeoSite", file: "GeoSite.dat"},
 }
 
 // GeoDataStatuses 返回当前落盘的 GeoIP/GeoSite 状态。Mihomo 运行时只会从
@@ -43,7 +44,8 @@ func GeoDataStatuses(dataDir string, sources map[string][]string, enabled, coreR
 			status.Source = values[0]
 		}
 
-		path := filepath.Join(dataDir, def.file)
+		path, file := geoDataPath(dataDir, def.file)
+		status.File = file
 		info, err := os.Stat(path)
 		if err != nil {
 			if !os.IsNotExist(err) {
@@ -86,6 +88,21 @@ func GeoDataStatuses(dataDir string, sources map[string][]string, enabled, coreR
 		items = append(items, status)
 	}
 	return items
+}
+
+// geoDataPath 与 Mihomo 的路径选择保持一致：它会以不区分大小写的方式在数据目录
+// 查找 GeoIP.dat/GeoSite.dat。这样既能识别 Linux 上新下载的标准文件名，也兼容旧版
+// 面板曾使用的小写文件名。
+func geoDataPath(dataDir, expectedName string) (string, string) {
+	entries, err := os.ReadDir(dataDir)
+	if err == nil {
+		for _, entry := range entries {
+			if strings.EqualFold(entry.Name(), expectedName) {
+				return filepath.Join(dataDir, entry.Name()), entry.Name()
+			}
+		}
+	}
+	return filepath.Join(dataDir, expectedName), expectedName
 }
 
 // geoDataFileCounts 统计 v2ray/MetaCubeX .dat 文件的顶层分类和分类内条目。

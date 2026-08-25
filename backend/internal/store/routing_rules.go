@@ -55,7 +55,7 @@ func cleanRecognitionRule(rule *model.RecognitionRule) error {
 	if rule.Name == "" {
 		return fmt.Errorf("识别规则名称不能为空")
 	}
-	rule.SourceURL = strings.TrimSpace(rule.SourceURL)
+	rule.SourceURL = model.NormalizeGitHubContentURL(rule.SourceURL)
 	rule.SourceBehavior = strings.ToLower(strings.TrimSpace(rule.SourceBehavior))
 	if rule.SourceURL != "" {
 		if strings.ContainsAny(rule.Name, ",\r\n") {
@@ -176,7 +176,7 @@ func (s *Store) CreateRecognitionRules(rules []model.RecognitionRule) ([]model.R
 	return cleaned, nil
 }
 
-// ReplaceRecognitionRules 原子保存识别规则；被出站规则引用的规则需先解除映射后才能删除。
+// ReplaceRecognitionRules 原子保存识别规则；被出站映射引用的规则需先解除映射后才能删除。
 func (s *Store) ReplaceRecognitionRules(rules []model.RecognitionRule) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -243,7 +243,7 @@ func (s *Store) ReplaceRecognitionRules(rules []model.RecognitionRule) error {
 			return err
 		}
 		if references > 0 {
-			return fmt.Errorf("识别规则仍被 %d 条出站规则引用，无法删除", references)
+			return fmt.Errorf("识别规则仍被 %d 条出站映射引用，无法删除", references)
 		}
 		if _, err := tx.Exec(`DELETE FROM recognition_rules WHERE id=?`, id); err != nil {
 			return err
@@ -252,7 +252,7 @@ func (s *Store) ReplaceRecognitionRules(rules []model.RecognitionRule) error {
 	return tx.Commit()
 }
 
-// ReplaceOutboundRules 保存识别规则到策略组的唯一映射。
+// ReplaceOutboundRules 保存识别规则到节点组合的唯一映射。
 func (s *Store) ReplaceOutboundRules(rules []model.OutboundRule) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -280,10 +280,10 @@ func (s *Store) ReplaceOutboundRules(rules []model.OutboundRule) error {
 	recognitions := map[int64]bool{}
 	for _, rule := range rules {
 		if rule.RecognitionID <= 0 || rule.GroupID <= 0 {
-			return fmt.Errorf("出站规则必须选择识别规则和策略组")
+			return fmt.Errorf("出站映射必须选择识别规则和节点组合")
 		}
 		if recognitions[rule.RecognitionID] {
-			return fmt.Errorf("同一识别规则只能映射到一个策略组")
+			return fmt.Errorf("同一识别规则只能映射到一个节点组合")
 		}
 		recognitions[rule.RecognitionID] = true
 		var recognitionExists, groupExists bool
@@ -291,11 +291,11 @@ func (s *Store) ReplaceOutboundRules(rules []model.OutboundRule) error {
 			return fmt.Errorf("识别规则不存在")
 		}
 		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM proxy_groups WHERE id=?)`, rule.GroupID).Scan(&groupExists); err != nil || !groupExists {
-			return fmt.Errorf("策略组不存在")
+			return fmt.Errorf("节点组合不存在")
 		}
 		if rule.ID > 0 {
 			if !existing[rule.ID] {
-				return fmt.Errorf("出站规则 ID %d 不存在", rule.ID)
+				return fmt.Errorf("出站映射 ID %d 不存在", rule.ID)
 			}
 			if _, err := tx.Exec(`UPDATE outbound_rules SET recognition_id=?,group_id=?,enabled=? WHERE id=?`, rule.RecognitionID, rule.GroupID, rule.Enabled, rule.ID); err != nil {
 				return err

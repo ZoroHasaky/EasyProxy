@@ -106,9 +106,9 @@ func auditRoute(pattern, method string) (category, event, summary string, ok boo
 	case "/api/outbound-rules":
 		return "operation", "routing.outbound", "出站映射已更新", true
 	case "/api/groups":
-		return "operation", "routing.group", "出站规则已更新", true
+		return "operation", "routing.group", "节点组合已更新", true
 	case "/api/groups/generate-regions":
-		return "operation", "routing.region_groups", "地区出站规则已生成", true
+		return "operation", "routing.region_groups", "地区节点组合已生成", true
 	case "/api/config/apply":
 		return "operation", "config.apply", "待应用配置已执行", true
 	case "/api/settings":

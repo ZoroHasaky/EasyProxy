@@ -43,3 +43,35 @@ func TestOpenRemovesLegacyMRSProvidersAndRuleSetReferences(t *testing.T) {
 		t.Fatalf("MRS applied snapshot was not cleared: %q err=%v", applied, err)
 	}
 }
+
+func TestOpenNormalizesGitHubBlobRecognitionRuleURL(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(`INSERT INTO recognition_rules(name,kind,conditions,source_url,source_behavior,source_interval,priority,enabled)
+		VALUES('GitHub','RULE-SET','[]','https://github.com/MetaCubeX/meta-rules-dat/blob/meta/geo/geosite/github.yaml','domain',86400,1,1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveAppliedConfigYAML("rule-providers:\n  GitHub:\n    url: https://github.com/MetaCubeX/meta-rules-dat/blob/meta/geo/geosite/github.yaml\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	rules, err := st.ListRecognitionRules()
+	if err != nil || len(rules) != 1 || rules[0].SourceURL != "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/github.yaml" {
+		t.Fatalf("recognition rules after migration=%#v err=%v", rules, err)
+	}
+	applied, err := st.AppliedConfigYAML()
+	if err != nil || applied != "" {
+		t.Fatalf("normalized URL should regenerate applied snapshot: %q err=%v", applied, err)
+	}
+}

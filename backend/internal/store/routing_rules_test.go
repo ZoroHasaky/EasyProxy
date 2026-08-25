@@ -32,10 +32,10 @@ func TestRecognitionAndOutboundRulesPersistWithReferences(t *testing.T) {
 	if err := st.ReplaceOutboundRules([]model.OutboundRule{{RecognitionID: recognitions[0].ID, GroupID: groups[0].ID, Enabled: true}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.ReplaceRecognitionRules(nil); err == nil || !strings.Contains(err.Error(), "仍被 1 条出站规则引用") {
+	if err := st.ReplaceRecognitionRules(nil); err == nil || !strings.Contains(err.Error(), "仍被 1 条出站映射引用") {
 		t.Fatalf("deleting referenced recognition rule should fail, got %v", err)
 	}
-	if err := st.ReplaceGroups(nil); err == nil || !strings.Contains(err.Error(), "仍被 1 条出站规则引用") {
+	if err := st.ReplaceGroups(nil); err == nil || !strings.Contains(err.Error(), "仍被 1 条出站映射引用") {
 		t.Fatalf("deleting referenced group should fail, got %v", err)
 	}
 	if err := st.ReplaceOutboundRules(nil); err != nil {

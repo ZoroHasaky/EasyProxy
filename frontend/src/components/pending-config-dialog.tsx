@@ -17,7 +17,7 @@ const SCOPE_LABELS: Record<string, string> = {
   geo: "Geo 数据",
   nodes: "节点池",
   subscriptions: "订阅",
-  groups: "出站规则",
+  groups: "节点组合",
   recognition_rules: "识别规则",
   outbound_rules: "出站映射",
 };

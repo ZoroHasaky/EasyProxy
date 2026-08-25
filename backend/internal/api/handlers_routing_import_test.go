@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"easyproxy/internal/model"
 	"easyproxy/internal/store"
 )
 
@@ -52,19 +53,38 @@ func TestImportRecognitionRulesFromURLAndYAML(t *testing.T) {
 		behavior string
 		interval int
 		priority int
+		url      string
 	}{}
 	for _, rule := range rules {
 		byName[rule.Name] = struct {
 			behavior string
 			interval int
 			priority int
-		}{rule.SourceBehavior, rule.SourceInterval, rule.Priority}
+			url      string
+		}{rule.SourceBehavior, rule.SourceInterval, rule.Priority, rule.SourceURL}
 	}
-	if apple := byName["apple"]; apple.behavior != "domain" || apple.priority != 7 {
+	if apple := byName["apple"]; apple.behavior != "domain" || apple.priority != 7 || apple.url != "https://example.com/rules/apple.yaml" {
 		t.Fatalf("URL rule=%#v", apple)
 	}
 	if private := byName["private-ip"]; private.behavior != "ipcidr" || private.interval != 3600 {
 		t.Fatalf("YAML rule=%#v", private)
+	}
+
+	standaloneImport := callRecognitionImport(t, srv, map[string]any{
+		"content":  "payload:\n  - +.github.com\n  - api.github.com\n",
+		"url":      "https://github.com/MetaCubeX/meta-rules-dat/blob/meta/geo/geosite/github.yaml",
+		"priority": 9,
+	})
+	if standaloneImport.Code != http.StatusOK {
+		t.Fatalf("standalone YAML import status=%d body=%s", standaloneImport.Code, standaloneImport.Body.String())
+	}
+	rules, err = st.ListRecognitionRules()
+	if err != nil || len(rules) != 4 {
+		t.Fatalf("rules after standalone import=%#v err=%v", rules, err)
+	}
+	github := nextRecognitionRuleByName(rules, "github")
+	if github == nil || github.Priority != 9 || github.SourceURL != "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/github.yaml" {
+		t.Fatalf("standalone YAML rule=%#v", github)
 	}
 
 	preview := callRecognitionImport(t, srv, map[string]any{
@@ -75,18 +95,18 @@ func TestImportRecognitionRulesFromURLAndYAML(t *testing.T) {
 		t.Fatalf("preview status=%d body=%s", preview.Code, preview.Body.String())
 	}
 	rules, _ = st.ListRecognitionRules()
-	if len(rules) != 3 {
+	if len(rules) != 4 {
 		t.Fatalf("preview persisted rules=%#v", rules)
 	}
 
 	duplicate := callRecognitionImport(t, srv, map[string]any{
-		"content": "rule-providers:\n  apple:\n    type: http\n    behavior: domain\n    url: https://example.com/duplicate.yaml\n    format: yaml\n  should-not-save:\n    type: http\n    behavior: domain\n    url: https://example.com/new.yaml\n    format: yaml\n",
+		"content": "rule-providers:\n  github:\n    type: http\n    behavior: domain\n    url: https://example.com/duplicate.yaml\n    format: yaml\n  should-not-save:\n    type: http\n    behavior: domain\n    url: https://example.com/new.yaml\n    format: yaml\n",
 	})
 	if duplicate.Code != http.StatusBadRequest {
 		t.Fatalf("duplicate status=%d body=%s", duplicate.Code, duplicate.Body.String())
 	}
 	rules, _ = st.ListRecognitionRules()
-	if len(rules) != 3 {
+	if len(rules) != 4 {
 		t.Fatalf("duplicate batch was partially saved: %#v", rules)
 	}
 
@@ -100,6 +120,15 @@ func TestImportRecognitionRulesFromURLAndYAML(t *testing.T) {
 			t.Fatalf("invalid import status=%d body=%s", rec.Code, rec.Body.String())
 		}
 	}
+}
+
+func nextRecognitionRuleByName(rules []model.RecognitionRule, name string) *model.RecognitionRule {
+	for i := range rules {
+		if rules[i].Name == name {
+			return &rules[i]
+		}
+	}
+	return nil
 }
 
 func TestRecognitionImportEndpointRequiresLogin(t *testing.T) {

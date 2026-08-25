@@ -16,7 +16,7 @@ import {
   ScrollText,
   Trash2,
 } from "lucide-react";
-import { api, autoApplyResultMessage, AutoApplyResponse, GenResult, OutboundRule, ProxyGroup, RecognitionRule, RecognitionRuleImportResponse } from "@/lib/api";
+import { api, autoApplyResultMessage, AutoApplyResponse, GenResult, OutboundRule, proxyGroupTypeLabel, ProxyGroup, RecognitionRule, RecognitionRuleImportResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -211,7 +211,7 @@ function OutboundRulesPanel({
             出站映射
           </h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            只负责绑定“识别规则 → 出站规则”；实际节点选择完全由出站规则决定。
+            只负责绑定“识别规则 → 节点组合”；实际节点选择完全由节点组合决定。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -242,11 +242,11 @@ function OutboundRulesPanel({
                   <div className="mt-1 truncate text-sm font-semibold">{recognition?.name ?? "已删除的识别规则"}</div>
                   {recognition && <div className="mt-1 text-[11px] text-muted-foreground">{kindLabel(recognition.kind)} · 优先级 {recognition.priority}</div>}
                 </div>
-                <div className="flex items-center gap-2 text-primary"><ArrowRight className="h-4 w-4" /><span className="text-xs">交由出站规则处理</span></div>
+                <div className="flex items-center gap-2 text-primary"><ArrowRight className="h-4 w-4" /><span className="text-xs">交由节点组合处理</span></div>
                 <div>
-                  <div className="text-[11px] text-muted-foreground">出站规则</div>
-                  <div className="mt-1 truncate text-sm font-semibold text-primary">{group?.name ?? "已删除的出站规则"}</div>
-                  {group && <div className="mt-1 text-[11px] text-muted-foreground">{group.type} · {group.member_mode === "manual" ? `手选 ${group.node_ids.length} 节点` : "按组策略选择"}</div>}
+                  <div className="text-[11px] text-muted-foreground">节点组合</div>
+                  <div className="mt-1 truncate text-sm font-semibold text-primary">{group?.name ?? "已删除的节点组合"}</div>
+                  {group && <div className="mt-1 text-[11px] text-muted-foreground">{proxyGroupTypeLabel(group.type)} · {group.member_mode === "manual" ? `手选 ${group.node_ids.length} 节点` : "按组合策略选择"}</div>}
                 </div>
               </div>
               <div className="mt-4 flex justify-end gap-1 border-t border-border/40 pt-3">
@@ -262,7 +262,7 @@ function OutboundRulesPanel({
         <div className="rounded-2xl border border-dashed border-border/70 bg-card/30 py-12 text-center">
           <Radio className="mx-auto mb-2 h-10 w-10 text-muted-foreground/40" />
           <h4 className="text-sm font-semibold">暂无出站映射</h4>
-          <p className="mt-1 text-xs text-muted-foreground">先创建识别规则和出站规则，再把它们绑定在这里。</p>
+          <p className="mt-1 text-xs text-muted-foreground">先创建识别规则和节点组合，再把它们绑定在这里。</p>
         </div>
       )}
     </div>
@@ -326,6 +326,7 @@ export default function RulesPage() {
   const recognitionRules = recognitionQuery.data ?? [];
   const outboundRules = outboundQuery.data ?? [];
   const groups = groupsQuery.data ?? [];
+  const importYAMLIsRuleFile = Boolean(importYAML.trim()) && !/^\s*rule-providers\s*:/m.test(importYAML);
 
   const reportAutoApply = (savedMessage: string, result: AutoApplyResponse) => {
     if (result.apply_error) {
@@ -355,6 +356,10 @@ export default function RulesPage() {
   const previewRecognitionImport = useMutation({
     mutationFn: () => api.post<RecognitionRuleImportResponse>("/api/recognition-rules/import", {
       content: importYAML,
+      url: importURL,
+      name: importName,
+      behavior: importBehavior,
+      interval: Number(importInterval) || 0,
       priority: Number(importPriority) || 0,
       enabled: importEnabled,
       preview: true,
@@ -373,6 +378,10 @@ export default function RulesPage() {
         }
       : {
           content: importYAML,
+          url: importURL,
+          name: importName,
+          behavior: importBehavior,
+          interval: Number(importInterval) || 0,
           priority: Number(importPriority) || 0,
           enabled: importEnabled,
         }),
@@ -492,7 +501,7 @@ export default function RulesPage() {
 
   const persistOutbound = async () => {
     if (!outboundRecognitionID || !outboundGroupID) {
-      toast.error("请选择识别规则和出站规则");
+      toast.error("请选择识别规则和节点组合");
       return;
     }
     const next: OutboundRule = {
@@ -528,13 +537,13 @@ export default function RulesPage() {
           <ScrollText className="h-5 w-5 text-primary" />
           规则体系
         </h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">识别流量，再交由出站规则决定实际使用的节点。</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">识别流量，再交由节点组合决定实际使用的节点。</p>
       </div>
 
       <Tabs value={activeTab} onValueChange={(tab) => setSearchParams({ tab }, { replace: true })}>
         <TabsList className="grid h-auto w-full grid-cols-3 p-1">
           <TabsTrigger value="recognition" className="gap-2"><ScrollText className="h-4 w-4" />识别规则（{recognitionRules.length}）</TabsTrigger>
-          <TabsTrigger value="groups" className="gap-2"><Layers className="h-4 w-4" />出站规则（{groups.length}）</TabsTrigger>
+          <TabsTrigger value="groups" className="gap-2"><Layers className="h-4 w-4" />节点组合（{groups.length}）</TabsTrigger>
           <TabsTrigger value="outbound" className="gap-2"><Radio className="h-4 w-4" />出站映射（{outboundRules.length}）</TabsTrigger>
         </TabsList>
 
@@ -606,7 +615,7 @@ export default function RulesPage() {
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>导入 YAML 识别规则源</DialogTitle>
-            <DialogDescription>每个 Rule Provider 会创建为一条独立识别规则；请再在“出站映射”中决定实际出站规则。</DialogDescription>
+            <DialogDescription>支持单个 YAML 地址、包含 rule-providers 的配置，以及 MetaCubeX 等来源的 payload 规则文件；请再在“出站映射”中决定实际节点组合。</DialogDescription>
           </DialogHeader>
           <Tabs value={importMode} onValueChange={(value) => { setImportMode(value as "url" | "yaml"); previewRecognitionImport.reset(); }}>
             <TabsList className="grid w-full grid-cols-2">
@@ -622,10 +631,19 @@ export default function RulesPage() {
               </div>
             </TabsContent>
             <TabsContent value="yaml" className="space-y-3 py-3">
-              <div className="space-y-1.5"><Label>rule-providers YAML 配置</Label><Textarea value={importYAML} onChange={(event) => { setImportYAML(event.target.value); previewRecognitionImport.reset(); }} className="min-h-52 font-mono text-xs" placeholder={'rule-providers:\n  apple:\n    type: http\n    behavior: domain\n    url: https://example.com/apple.yaml\n    format: yaml\n    interval: 86400'} /></div>
+              <div className="space-y-1.5"><Label>YAML 配置或规则文件</Label><Textarea value={importYAML} onChange={(event) => { setImportYAML(event.target.value); previewRecognitionImport.reset(); }} className="min-h-52 font-mono text-xs" placeholder={'批量配置：\nrule-providers:\n  apple:\n    type: http\n    behavior: domain\n    url: https://example.com/apple.yaml\n    format: yaml\n\n或粘贴单个规则文件：\npayload:\n  - +.github.com'} /></div>
+              {importYAMLIsRuleFile && <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
+                <p className="text-xs text-muted-foreground">检测到单个 <code className="font-mono">payload</code> 规则文件。请填写它的远程来源，Mihomo 会从该地址自动更新规则。</p>
+                <div className="space-y-1.5"><Label>规则文件 URL</Label><Input value={importURL} onChange={(event) => { setImportURL(event.target.value); previewRecognitionImport.reset(); }} placeholder="https://github.com/.../blob/.../github.yaml" /></div>
+                <div className="space-y-1.5"><Label>名称（可选）</Label><Input value={importName} onChange={(event) => { setImportName(event.target.value); previewRecognitionImport.reset(); }} placeholder="留空时从 YAML 文件名推导" /></div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5"><Label>匹配类型</Label><Select value={importBehavior} onChange={(event) => { setImportBehavior(event.target.value); previewRecognitionImport.reset(); }}><option value="domain">域名（domain）</option><option value="ipcidr">IP 网段（ipcidr）</option><option value="classical">传统规则（classical）</option></Select></div>
+                  <div className="space-y-1.5"><Label>更新周期（秒）</Label><Input type="number" min="1" value={importInterval} onChange={(event) => { setImportInterval(Number(event.target.value)); previewRecognitionImport.reset(); }} /></div>
+                </div>
+              </div>}
               <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/35 p-3">
-                <div className="text-xs text-muted-foreground">仅读取名称、HTTP URL、匹配类型和更新周期；下载路径由 EasyProxy 自动生成。</div>
-                <Button type="button" variant="outline" size="sm" onClick={() => previewRecognitionImport.mutate()} disabled={!importYAML.trim() || previewRecognitionImport.isPending}><Eye className="h-3.5 w-3.5" />{previewRecognitionImport.isPending ? "解析中…" : "解析配置"}</Button>
+                <div className="text-xs text-muted-foreground">批量配置会读取其中的来源信息；单个规则文件会校验 payload，并使用上方填写的来源。下载路径由 EasyProxy 自动生成。</div>
+                <Button type="button" variant="outline" size="sm" onClick={() => previewRecognitionImport.mutate()} disabled={!importYAML.trim() || (importYAMLIsRuleFile && !importURL.trim()) || previewRecognitionImport.isPending}><Eye className="h-3.5 w-3.5" />{previewRecognitionImport.isPending ? "解析中…" : "解析配置"}</Button>
               </div>
               {previewRecognitionImport.data && <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 p-3 text-xs text-emerald-700 dark:text-emerald-300">已解析 {previewRecognitionImport.data.count} 个规则源：{previewRecognitionImport.data.rules.map((rule) => rule.name).join("、")}</div>}
             </TabsContent>
@@ -640,10 +658,10 @@ export default function RulesPage() {
 
       <Dialog open={outboundDialogOpen} onOpenChange={setOutboundDialogOpen}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>{editingOutbound ? "编辑出站映射" : "新建出站映射"}</DialogTitle><DialogDescription>将一条识别规则交给一个出站规则，由它决定最终出站节点。</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingOutbound ? "编辑出站映射" : "新建出站映射"}</DialogTitle><DialogDescription>将一条识别规则交给一个节点组合，由它决定最终出站节点。</DialogDescription></DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5"><Label>识别规则</Label><Select value={String(outboundRecognitionID)} onChange={(event) => setOutboundRecognitionID(Number(event.target.value))}><option value="0">请选择识别规则</option>{availableRecognitionRules.map((rule) => <option key={rule.id} value={rule.id}>{rule.name}（{rule.kind}，优先级 {rule.priority}）</option>)}</Select></div>
-            <div className="space-y-1.5"><Label>出站规则</Label><Select value={String(outboundGroupID)} onChange={(event) => setOutboundGroupID(Number(event.target.value))}><option value="0">请选择出站规则</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}（{group.type}{group.enabled ? "" : "，已禁用"}）</option>)}</Select></div>
+            <div className="space-y-1.5"><Label>节点组合</Label><Select value={String(outboundGroupID)} onChange={(event) => setOutboundGroupID(Number(event.target.value))}><option value="0">请选择节点组合</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}（{proxyGroupTypeLabel(group.type)}{group.enabled ? "" : "，已禁用"}）</option>)}</Select></div>
             <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/40 p-3"><div><div className="text-xs font-semibold">启用此出站映射</div><div className="text-[11px] text-muted-foreground">关闭后该识别规则不参与路由。</div></div><Switch checked={outboundEnabled} onCheckedChange={setOutboundEnabled} /></div>
           </div>
           <DialogFooter><Button variant="outline" size="sm" onClick={() => setOutboundDialogOpen(false)}>取消</Button><Button size="sm" onClick={persistOutbound} disabled={saveOutbound.isPending}>{saveOutbound.isPending ? "保存中…" : "保存出站映射"}</Button></DialogFooter>
@@ -651,7 +669,7 @@ export default function RulesPage() {
       </Dialog>
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-3xl"><DialogHeader><DialogTitle>预览生成配置</DialogTitle><DialogDescription>识别规则会按照优先级从大到小展开，然后映射到相应出站规则。</DialogDescription></DialogHeader><div className="my-2 flex-1 overflow-hidden rounded-xl border border-border/80">{previewQuery.data ? <CodeMirror value={previewQuery.data.yaml} height="450px" extensions={[yaml()]} theme={oneDark} readOnly /> : <div className="flex h-64 items-center justify-center text-xs text-muted-foreground">正在生成配置…</div>}</div></DialogContent>
+        <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-3xl"><DialogHeader><DialogTitle>预览生成配置</DialogTitle><DialogDescription>识别规则会按照优先级从大到小展开，然后映射到相应节点组合。</DialogDescription></DialogHeader><div className="my-2 flex-1 overflow-hidden rounded-xl border border-border/80">{previewQuery.data ? <CodeMirror value={previewQuery.data.yaml} height="450px" extensions={[yaml()]} theme={oneDark} readOnly /> : <div className="flex h-64 items-center justify-center text-xs text-muted-foreground">正在生成配置…</div>}</div></DialogContent>
       </Dialog>
     </div>
   );

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -102,6 +103,27 @@ type RecognitionRule struct {
 	SourceInterval int      `json:"source_interval,omitempty"`
 	Priority       int      `json:"priority"`
 	Enabled        bool     `json:"enabled"`
+}
+
+// NormalizeGitHubContentURL 将 GitHub 文件浏览地址转换为可被 Mihomo 下载的原始内容地址。
+// 仅处理 github.com/{owner}/{repo}/blob/{ref}/{path}，其他来源保持原样。
+func NormalizeGitHubContentURL(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || !strings.EqualFold(parsed.Host, "github.com") {
+		return strings.TrimSpace(rawURL)
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) < 5 || parts[2] != "blob" {
+		return strings.TrimSpace(rawURL)
+	}
+	contentPath := append([]string{parts[0], parts[1]}, parts[3:]...)
+	parsed.Scheme = "https"
+	parsed.Host = "raw.githubusercontent.com"
+	parsed.Path = "/" + strings.Join(contentPath, "/")
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }
 
 // OutboundRule 将一条识别规则映射到一个策略组。

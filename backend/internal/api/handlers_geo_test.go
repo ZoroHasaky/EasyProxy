@@ -19,7 +19,7 @@ func TestGeoDataStatusHandlerReportsLocalDatabase(t *testing.T) {
 	}
 	defer st.Close()
 	// 一条 GeoIP 分类，其中包含一条 CIDR 记录。
-	if err := os.WriteFile(filepath.Join(dir, "geoip.dat"), []byte{0x0a, 0x02, 0x12, 0x00}, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "GeoIP.dat"), []byte{0x0a, 0x02, 0x12, 0x00}, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -33,6 +33,7 @@ func TestGeoDataStatusHandlerReportsLocalDatabase(t *testing.T) {
 	var result struct {
 		Items []struct {
 			Key        string `json:"key"`
+			File       string `json:"file"`
 			State      string `json:"state"`
 			GroupCount int    `json:"group_count"`
 			EntryCount int    `json:"entry_count"`
@@ -41,7 +42,7 @@ func TestGeoDataStatusHandlerReportsLocalDatabase(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Items) != 2 || result.Items[0].Key != "geoip" || result.Items[0].State != "ready" || result.Items[0].GroupCount != 1 || result.Items[0].EntryCount != 1 {
+	if len(result.Items) != 2 || result.Items[0].Key != "geoip" || result.Items[0].File != "GeoIP.dat" || result.Items[0].State != "ready" || result.Items[0].GroupCount != 1 || result.Items[0].EntryCount != 1 {
 		t.Fatalf("unexpected status: %#v", result.Items)
 	}
 }
