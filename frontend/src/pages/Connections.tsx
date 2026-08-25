@@ -81,10 +81,11 @@ export default function ConnectionsPage() {
       const kw = search.toLowerCase();
       const host = (c.metadata?.host || "").toLowerCase();
       const dip = (c.metadata?.destinationIP || "").toLowerCase();
+      const sip = (c.metadata?.sourceIP || "").toLowerCase();
       const proc = (c.metadata?.process || "").toLowerCase();
       const rule = (c.rule || "").toLowerCase();
       const chain = (c.chains || []).join(" ").toLowerCase();
-      return host.includes(kw) || dip.includes(kw) || proc.includes(kw) || rule.includes(kw) || chain.includes(kw);
+      return host.includes(kw) || dip.includes(kw) || sip.includes(kw) || proc.includes(kw) || rule.includes(kw) || chain.includes(kw);
     });
 
     list.sort((a, b) => {
@@ -136,7 +137,7 @@ export default function ConnectionsPage() {
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="搜索目标 Host / IP / 进程名 / 命中规则…"
+            placeholder="搜索目标/来源地址、进程名或命中规则…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 h-9 text-xs"
@@ -160,6 +161,7 @@ export default function ConnectionsPage() {
         <TableHeader>
           <TableRow>
             <TableHead>目标地址 / 端口</TableHead>
+            <TableHead className="w-36">来源地址</TableHead>
             <TableHead className="w-24">协议/网络</TableHead>
             <TableHead className="w-36">分流规则</TableHead>
             <TableHead>代理链路 (Chains)</TableHead>
@@ -171,6 +173,7 @@ export default function ConnectionsPage() {
         <TableBody>
           {filtered.map((conn) => {
             const host = conn.metadata?.host || conn.metadata?.destinationIP;
+            const sourceIP = conn.metadata?.sourceIP || "未知";
             return (
               <TableRow key={conn.id}>
                 <TableCell>
@@ -181,6 +184,14 @@ export default function ConnectionsPage() {
                     <div className="text-[10px] text-muted-foreground truncate">
                       进程: {conn.metadata.process}
                     </div>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div className="max-w-[150px] truncate font-mono text-xs text-foreground/90" title={sourceIP}>
+                    {sourceIP}
+                  </div>
+                  {conn.metadata?.sourcePort && (
+                    <div className="text-[10px] text-muted-foreground">端口: {conn.metadata.sourcePort}</div>
                   )}
                 </TableCell>
                 <TableCell>

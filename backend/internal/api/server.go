@@ -277,7 +277,6 @@ func (s *Server) Handler() http.Handler {
 	route("GET /api/nodes", s.handleListNodes)
 	route("POST /api/nodes/import", s.handleImportNodes)
 	route("POST /api/nodes/check", s.handleCheckNodes)
-	route("POST /api/nodes/prune", s.handlePruneNodes)
 	route("GET /api/nodes/{id}/delay", s.handleNodeDelay)
 	route("GET /api/nodes/regions", s.handleNodeRegions)
 	route("PATCH /api/nodes/{id}", s.handlePatchNode)

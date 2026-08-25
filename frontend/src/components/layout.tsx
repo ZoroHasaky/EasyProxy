@@ -6,7 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Cpu,
-  Info,
+  Globe2,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -50,8 +50,8 @@ const nav = [
   { to: "/kernel", label: "内核管理", icon: Cpu, desc: "Mihomo 内核" },
   { to: "/tun", label: "透明代理", icon: Network, desc: "TUN 软路由" },
   { to: "/logs", label: "实时日志", icon: Terminal, desc: "系统输出" },
+  { to: "/geo", label: "Geo 数据", icon: Globe2, desc: "规则数据库" },
   { to: "/settings", label: "系统设置", icon: Settings, desc: "基础配置" },
-  { to: "/about", label: "关于系统", icon: Info, desc: "版本与更新" },
 ];
 
 const modes: { key: MihomoMode; label: string; desc: string }[] = [

@@ -227,15 +227,6 @@ func (s *Store) SyncSubscriptionNodes(sourceID int64, incoming []model.Node) (ad
 	return added, removed, nil
 }
 
-// PruneDeadNodes 删除已测速且失活（超时/不可达）的节点
-func (s *Store) PruneDeadNodes() (int64, error) {
-	res, err := s.db.Exec(`DELETE FROM nodes WHERE latency_at != '' AND alive=0`)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
-}
-
 func (s *Store) UpdateNodeLatencies(nameToLatency map[string]int) (int, error) {
 	tx, err := s.db.Begin()
 	if err != nil {

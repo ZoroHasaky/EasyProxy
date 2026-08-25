@@ -13,7 +13,7 @@ import KernelPage from "@/pages/Kernel";
 import TransparentProxyPage from "@/pages/TransparentProxy";
 import LogsPage from "@/pages/Logs";
 import SettingsPage from "@/pages/Settings";
-import AboutPage from "@/pages/About";
+import GeoDataPage from "@/pages/GeoData";
 import { MihomoRuntimeProvider } from "@/contexts/app-state";
 import { UpdateProvider } from "@/contexts/update-state";
 import { ConfigApplyProvider } from "@/contexts/config-apply-state";
@@ -66,8 +66,8 @@ function Me() {
             <Route path="/kernel" element={<KernelPage />} />
             <Route path="/tun" element={<TransparentProxyPage />} />
             <Route path="/logs" element={<LogsPage />} />
+            <Route path="/geo" element={<GeoDataPage />} />
             <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/about" element={<AboutPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Layout>

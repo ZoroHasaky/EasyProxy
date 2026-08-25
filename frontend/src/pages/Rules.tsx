@@ -75,7 +75,7 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 function kindLabel(kind: string) {
-  return `${kind}（${KIND_LABELS[kind] ?? kind}）`;
+  return `${KIND_LABELS[kind] ?? kind}（${kind}）`;
 }
 
 function RecognitionRulesPanel({

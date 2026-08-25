@@ -291,20 +291,6 @@ func (s *Server) handleNodeDelay(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"delay": ms})
 }
 
-// handlePruneNodes 清理已测速且失活（超时）的节点
-func (s *Server) handlePruneNodes(w http.ResponseWriter, r *http.Request) {
-	n, err := s.st.PruneDeadNodes()
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if n == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"removed": n, "apply_result": "", "apply_error": ""})
-		return
-	}
-	s.writeAutoApplyResult(w, map[string]any{"removed": n}, "nodes", []string{"节点池"})
-}
-
 func (s *Server) handleCheckNodes(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		IDs []int64 `json:"ids"`

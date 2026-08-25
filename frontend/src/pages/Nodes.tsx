@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Clock,
   Download,
-  Eraser,
   Filter,
   Gauge,
   Layers,
@@ -181,16 +180,6 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
     });
   };
 
-  const pruneMutation = useMutation({
-    mutationFn: () => api.post<{ removed: number } & AutoApplyResponse>("/api/nodes/prune"),
-    onSuccess: (res) => {
-      reportAutoApply(`已清理 ${res.removed} 个失效不可用节点`, res);
-      qc.invalidateQueries({ queryKey: ["nodes"] });
-      qc.invalidateQueries({ queryKey: ["nodeRegions"] });
-    },
-    onError: (e: any) => toast.error(e.message),
-  });
-
   const testOne = async (id: number) => {
     setDelayPending(id);
     try {
@@ -250,17 +239,6 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
             >
               <Gauge className={cn("h-3.5 w-3.5", checkMutation.isPending && "animate-spin")} />
               并发测速
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (confirm("确定要清理所有未连通/超时的失效节点吗？")) pruneMutation.mutate();
-              }}
-              disabled={pruneMutation.isPending}
-            >
-              <Eraser className="h-3.5 w-3.5" />
-              清理失效
             </Button>
             <Button size="sm" onClick={() => setImportOpen(true)}>
               <Plus className="h-4 w-4" />

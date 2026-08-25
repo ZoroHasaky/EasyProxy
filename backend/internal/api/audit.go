@@ -93,8 +93,6 @@ func auditRoute(pattern, method string) (category, event, summary string, ok boo
 		return "operation", "node.import", "节点已导入", true
 	case "/api/nodes/check":
 		return "operation", "node.batch_delay", "节点批量测速已执行", true
-	case "/api/nodes/prune":
-		return "operation", "node.prune", "失效节点清理已执行", true
 	case "/api/nodes/{id}/delay":
 		return "operation", "node.delay", "节点测速已执行", true
 	case "/api/nodes/{id}":
