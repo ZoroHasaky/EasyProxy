@@ -102,6 +102,11 @@ func (c *Client) GetRuleProviders() (map[string]RuleProviderRuntime, error) {
 	return out.Providers, nil
 }
 
+// UpdateRuleProvider 请求 Mihomo 立即下载并加载指定的远程规则源。
+func (c *Client) UpdateRuleProvider(name string) error {
+	return c.do(http.MethodPut, "/providers/rules/"+url.PathEscape(name), nil, nil)
+}
+
 // ReloadConfig 热重载指定路径的配置
 func (c *Client) ReloadConfig(path string) error {
 	return c.do(http.MethodPut, "/configs?force=true", map[string]any{"path": path}, nil)

@@ -453,11 +453,6 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 		if len(deduped) == 0 {
 			finalTarget = model.BuiltinDirect
 		}
-		// 兜底前先放行国内直连：无模板时全走代理会让国内站点（bilibili 等）异常
-		if len(deduped) > 0 {
-			sb.WriteString("  - " + quote("GEOIP,CN,DIRECT") + "\n")
-			ruleCount++
-		}
 		sb.WriteString("  - " + quote("MATCH,"+finalTarget) + "\n")
 		ruleCount++
 	}

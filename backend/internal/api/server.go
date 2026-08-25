@@ -110,6 +110,7 @@ func (s *Server) EnsureCoreStarted() {
 			s.audit("core", "core.start", "error", "Mihomo 内核启动失败", map[string]any{"error": safeAuditError(err)})
 		} else {
 			s.audit("core", "core.start", "success", "Mihomo 内核已启动", nil)
+			s.refreshRecognitionRuleProvidersAfterCoreStart()
 		}
 		return
 	}
@@ -134,6 +135,7 @@ func (s *Server) EnsureCoreStarted() {
 			return
 		}
 		s.audit("core", "core.auto_download", "success", "Mihomo 内核自动下载并启动完成", nil)
+		s.refreshRecognitionRuleProvidersAfterCoreStart()
 	}()
 }
 

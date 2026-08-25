@@ -470,6 +470,10 @@ func (s *Server) applyConfig() (string, error) {
 	if err := s.st.CommitAppliedConfig(settings, yaml); err != nil {
 		return "", fmt.Errorf("更新已应用配置快照失败: %w", err)
 	}
+	if err := s.refreshActiveRecognitionRuleProviders(); err != nil {
+		s.audit("core", "core.rule_provider_refresh", "error", "识别规则源刷新失败", map[string]any{"error": safeAuditError(err)})
+		return "", err
+	}
 	changes, err := s.st.ListPendingConfigChanges()
 	if err != nil {
 		return "", fmt.Errorf("读取待应用配置失败: %w", err)
@@ -485,7 +489,7 @@ func (s *Server) applyConfig() (string, error) {
 }
 
 // applyAppliedConfig 只应用最后一次成功应用的设置快照，用于节点/规则的即时生效。
-func (s *Server) applyAppliedConfig() (string, error) {
+func (s *Server) applyAppliedConfig(refreshRuleProviders bool) (string, error) {
 	s.configApplyMu.Lock()
 	defer s.configApplyMu.Unlock()
 
@@ -495,6 +499,12 @@ func (s *Server) applyAppliedConfig() (string, error) {
 	}
 	if err := s.st.SaveAppliedConfigYAML(yaml); err != nil {
 		return "", fmt.Errorf("保存已应用配置快照失败: %w", err)
+	}
+	if refreshRuleProviders {
+		if err := s.refreshActiveRecognitionRuleProviders(); err != nil {
+			s.audit("core", "core.rule_provider_refresh", "error", "识别规则源刷新失败", map[string]any{"error": safeAuditError(err)})
+			return result, err
+		}
 	}
 	return result, err
 }
@@ -582,7 +592,8 @@ func (s *Server) applyConfigWithSettings(includePending bool) (string, map[strin
 // applyChangedConfig 将节点、订阅或规则的保存立即同步至内核。失败时保留编辑，
 // 并在顶栏待应用清单中提供稍后重试入口。
 func (s *Server) applyChangedConfig(scope string, fields []string) (string, string) {
-	result, err := s.applyAppliedConfig()
+	refreshRuleProviders := scope == "recognition_rules" || scope == "outbound_rules"
+	result, err := s.applyAppliedConfig(refreshRuleProviders)
 	if err == nil {
 		_ = s.st.DeletePendingConfigChange(scope)
 		return result, ""

@@ -75,3 +75,27 @@ func TestOpenNormalizesGitHubBlobRecognitionRuleURL(t *testing.T) {
 		t.Fatalf("normalized URL should regenerate applied snapshot: %q err=%v", applied, err)
 	}
 }
+
+func TestOpenClearsLegacyImplicitGeoIPRuleFromAppliedConfig(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveAppliedConfigYAML("rules:\n  - GEOIP,CN,DIRECT\n  - MATCH,PROXY\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	applied, err := st.AppliedConfigYAML()
+	if err != nil || applied != "" {
+		t.Fatalf("legacy GeoIP snapshot was not cleared: %q err=%v", applied, err)
+	}
+}

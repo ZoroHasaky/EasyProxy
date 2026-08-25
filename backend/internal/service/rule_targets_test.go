@@ -146,16 +146,17 @@ func TestGenerateConfigWritesYAMLRuleProvidersBeforeRuleSets(t *testing.T) {
 		{Name: "apple", SourceURL: "https://github.com/MetaCubeX/meta-rules-dat/blob/meta/geo/geosite/apple.yaml", SourceBehavior: "domain", SourceInterval: 7200, Priority: 20, Enabled: true},
 		{Name: "private-ip", SourceURL: "https://example.com/private.yaml", SourceBehavior: "ipcidr", SourceInterval: 86400, Priority: 10, Enabled: true},
 		{Name: "classical", SourceURL: "https://example.com/classical.yaml", SourceBehavior: "classical", SourceInterval: 86400, Priority: 5, Enabled: true},
+		{Name: "match", Kind: "MATCH", Priority: 0, Enabled: true},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	groups, _ := st.ListGroups()
-	if err := st.ReplaceOutboundRules([]model.OutboundRule{
-		{RecognitionID: created[0].ID, GroupID: groups[0].ID, Enabled: true},
-		{RecognitionID: created[1].ID, GroupID: groups[0].ID, Enabled: true},
-		{RecognitionID: created[2].ID, GroupID: groups[0].ID, Enabled: true},
-	}); err != nil {
+	outbounds := make([]model.OutboundRule, 0, len(created))
+	for _, recognition := range created {
+		outbounds = append(outbounds, model.OutboundRule{RecognitionID: recognition.ID, GroupID: groups[0].ID, Enabled: true})
+	}
+	if err := st.ReplaceOutboundRules(outbounds); err != nil {
 		t.Fatal(err)
 	}
 
@@ -178,8 +179,27 @@ func TestGenerateConfigWritesYAMLRuleProvidersBeforeRuleSets(t *testing.T) {
 	if !strings.Contains(gen.YAML, "RULE-SET,private-ip,规则组,no-resolve") || !strings.Contains(gen.YAML, "RULE-SET,classical,规则组") {
 		t.Fatalf("RULE-SET routes missing:\n%s", gen.YAML)
 	}
-	if strings.Index(gen.YAML, "RULE-SET,apple") > strings.Index(gen.YAML, "RULE-SET,private-ip") {
+	if strings.Index(gen.YAML, "RULE-SET,apple") > strings.Index(gen.YAML, "RULE-SET,private-ip") || strings.Index(gen.YAML, "RULE-SET,apple") > strings.Index(gen.YAML, "MATCH,规则组") {
 		t.Fatalf("remote rules were not ordered by priority:\n%s", gen.YAML)
+	}
+}
+
+func TestGenerateConfigDoesNotInjectGeoIPRule(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	node := testNode(0, "测试节点", "hash-no-geoip", "HK", true)
+	if err := st.CreateNode(&node); err != nil {
+		t.Fatal(err)
+	}
+	gen, err := GenerateConfig(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(gen.YAML, "GEOIP,CN,DIRECT") {
+		t.Fatalf("unexpected implicit GeoIP rule:\n%s", gen.YAML)
 	}
 }
 

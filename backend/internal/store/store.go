@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"easyproxy/internal/model"
@@ -210,6 +211,9 @@ func (s *Store) migrate() error {
 	if err := s.normalizeGitHubRuleProviderURLs(); err != nil {
 		return fmt.Errorf("normalize GitHub rule provider URLs: %w", err)
 	}
+	if err := s.removeImplicitGeoIPRuleFromAppliedConfig(); err != nil {
+		return fmt.Errorf("remove implicit GeoIP rule from applied config: %w", err)
+	}
 	if err := s.initializeAppliedConfigSettings(); err != nil {
 		return fmt.Errorf("initialize applied config settings: %w", err)
 	}
@@ -217,6 +221,25 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("prune audit logs: %w", err)
 	}
 	return nil
+}
+
+// removeImplicitGeoIPRuleFromAppliedConfig 清理旧版本在无显式规则时插入的
+// GEOIP,CN,DIRECT。规则快照清空后会按当前规则表重新生成，手动配置的 GeoIP
+// 识别规则不会丢失。
+func (s *Store) removeImplicitGeoIPRuleFromAppliedConfig() error {
+	var yaml string
+	err := s.db.QueryRow(`SELECT yaml FROM applied_config_state WHERE id=1`).Scan(&yaml)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(yaml, "GEOIP,CN,DIRECT") {
+		return nil
+	}
+	_, err = s.db.Exec(`DELETE FROM applied_config_state WHERE id=1`)
+	return err
 }
 
 // normalizeGitHubRuleProviderURLs 修复历史记录中误填的 GitHub blob 浏览地址。

@@ -6,7 +6,9 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
+	"easyproxy/internal/core"
 	"easyproxy/internal/model"
 
 	"gopkg.in/yaml.v3"
@@ -242,4 +244,57 @@ func (s *Server) handlePutOutboundRules(w http.ResponseWriter, r *http.Request) 
 	}
 	result, applyError := s.applyChangedConfig("outbound_rules", []string{"出站映射"})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(rules), "apply_result": result, "apply_error": applyError})
+}
+
+// refreshActiveRecognitionRuleProviders 强制更新所有已启用且已映射的远程规则源。
+// Mihomo 在 Provider 尚未下载完成时会跳过 RULE-SET 并继续匹配后续 MATCH，因此保存
+// 识别规则后必须主动触发更新，不能只等待最长 24 小时的更新周期。
+func (s *Server) refreshActiveRecognitionRuleProviders() error {
+	if s.mgr.Status().State != core.StateRunning {
+		return nil
+	}
+	recognitions, err := s.st.ListRecognitionRules()
+	if err != nil {
+		return err
+	}
+	outbounds, err := s.st.ListOutboundRules()
+	if err != nil {
+		return err
+	}
+	mapped := make(map[int64]bool, len(outbounds))
+	for _, outbound := range outbounds {
+		if outbound.Enabled {
+			mapped[outbound.RecognitionID] = true
+		}
+	}
+	for _, recognition := range recognitions {
+		if !recognition.Enabled || recognition.SourceURL == "" || !mapped[recognition.ID] {
+			continue
+		}
+		var lastErr error
+		for attempt := 0; attempt < 5; attempt++ {
+			if err := s.client.UpdateRuleProvider(recognition.Name); err == nil {
+				lastErr = nil
+				break
+			} else {
+				lastErr = err
+			}
+			if attempt < 4 {
+				time.Sleep(250 * time.Millisecond)
+			}
+		}
+		if lastErr != nil {
+			return fmt.Errorf("更新识别规则源「%s」失败: %w", recognition.Name, lastErr)
+		}
+	}
+	return nil
+}
+
+// refreshRecognitionRuleProvidersAfterCoreStart 等待控制器就绪后刷新规则源。
+func (s *Server) refreshRecognitionRuleProvidersAfterCoreStart() {
+	go func() {
+		if err := s.refreshActiveRecognitionRuleProviders(); err != nil {
+			s.audit("core", "core.rule_provider_refresh", "error", "识别规则源刷新失败", map[string]any{"error": safeAuditError(err)})
+		}
+	}()
 }

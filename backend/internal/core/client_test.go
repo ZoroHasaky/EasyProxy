@@ -38,3 +38,35 @@ func TestUpdateGeoDatabasesCallsMihomoEndpoint(t *testing.T) {
 		t.Fatal("mihomo geo refresh endpoint was not called")
 	}
 }
+
+func TestUpdateRuleProviderCallsMihomoEndpoint(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	requests := make(chan struct{}, 1)
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/providers/rules/github" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-secret" {
+			t.Errorf("authorization=%q", got)
+		}
+		requests <- struct{}{}
+		w.WriteHeader(http.StatusNoContent)
+	})}
+	defer server.Close()
+	go server.Serve(listener)
+
+	client := NewClient(listener.Addr().(*net.TCPAddr).Port, "test-secret")
+	if err := client.UpdateRuleProvider("github"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-requests:
+	default:
+		t.Fatal("mihomo rule provider refresh endpoint was not called")
+	}
+}

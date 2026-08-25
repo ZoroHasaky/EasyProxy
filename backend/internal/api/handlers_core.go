@@ -128,6 +128,7 @@ func (s *Server) handleCoreDownload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit("core", "core.download", "success", "Mihomo 内核下载并启动完成", map[string]any{"version": strings.TrimSpace(ver)})
+		s.refreshRecognitionRuleProvidersAfterCoreStart()
 	}()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "下载任务已开始"})
 }
@@ -157,6 +158,7 @@ func (s *Server) handleCoreUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit("core", "core.upload", "success", "内核文件上传并启动完成", map[string]any{"file": hdr.Filename})
+	s.refreshRecognitionRuleProvidersAfterCoreStart()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -173,6 +175,7 @@ func (s *Server) handleCoreRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit("core", "core.restart", "success", "Mihomo 内核已重启", nil)
+	s.refreshRecognitionRuleProvidersAfterCoreStart()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
