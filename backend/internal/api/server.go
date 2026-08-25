@@ -234,19 +234,10 @@ func (s *Server) Handler() http.Handler {
 	route("PATCH /api/nodes/{id}", s.handlePatchNode)
 	route("DELETE /api/nodes/{id}", s.handleDeleteNode)
 
-	route("GET /api/templates", s.handleListTemplates)
-	route("POST /api/templates", s.handleCreateTemplate)
-	route("POST /api/templates/{id}/refresh", s.handleRefreshTemplate)
-	route("PUT /api/templates/{id}/mapping", s.handleTemplateMapping)
-	route("POST /api/templates/{id}/activate", s.handleActivateTemplate)
-	route("DELETE /api/templates/{id}", s.handleDeleteTemplate)
-
-	route("GET /api/rules", s.handleGetRules)
-	route("PUT /api/rules", s.handlePutRules)
-	route("POST /api/rules/template-preview", s.handlePreviewRuleTemplate)
-	route("GET /api/rule-targets", s.handleGetRuleTargets)
-	route("GET /api/rule-providers/status", s.handleRuleProviderStatuses)
-	route("GET /api/rule-providers/{id}/content", s.handleRuleProviderContent)
+	route("GET /api/recognition-rules", s.handleGetRecognitionRules)
+	route("PUT /api/recognition-rules", s.handlePutRecognitionRules)
+	route("GET /api/outbound-rules", s.handleGetOutboundRules)
+	route("PUT /api/outbound-rules", s.handlePutOutboundRules)
 	route("GET /api/groups", s.handleGetGroups)
 	route("PUT /api/groups", s.handlePutGroups)
 	route("POST /api/groups/generate-regions", s.handleGenerateRegionGroups)
@@ -268,6 +259,7 @@ func (s *Server) Handler() http.Handler {
 
 	route("GET /api/settings", s.handleGetSettings)
 	route("PUT /api/settings", s.handlePutSettings)
+	route("GET /api/geo/status", s.handleGeoDataStatus)
 
 	route("GET /api/backup", s.handleBackupExport)
 	route("POST /api/backup/restore", s.handleBackupRestore)

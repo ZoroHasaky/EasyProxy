@@ -86,7 +86,7 @@ func TestApplyTemplateRulesPreservesTargetOverride(t *testing.T) {
 	}
 }
 
-func TestGenerateConfigResolvesNodeTarget(t *testing.T) {
+func TestGenerateConfigRoutesRecognitionRuleToSelectedGroup(t *testing.T) {
 	st, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -96,19 +96,32 @@ func TestGenerateConfigResolvesNodeTarget(t *testing.T) {
 	if err := st.CreateNode(&node); err != nil {
 		t.Fatal(err)
 	}
-	rules := []model.Rule{{Kind: "DOMAIN-SUFFIX", Value: "example.com", Target: model.NodeTargetRef(node.ID), BaseTarget: "PROXY", TargetOverride: true, Enabled: true}, {Kind: "MATCH", Target: "PROXY", BaseTarget: "PROXY", Enabled: true}}
-	if err := st.ReplaceCurrentRules(rules, nil); err != nil {
+	if err := st.ReplaceGroups([]model.Group{{
+		Name: "指定策略组", Type: "select", MemberMode: "manual", NodeIDs: []int64{node.ID}, Enabled: true,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	groups, _ := st.ListGroups()
+	if err := st.ReplaceRecognitionRules([]model.RecognitionRule{{
+		Name: "示例站点", Kind: "DOMAIN-SUFFIX", Conditions: []string{"example.com"}, Enabled: true,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	recognitions, _ := st.ListRecognitionRules()
+	if err := st.ReplaceOutboundRules([]model.OutboundRule{{
+		RecognitionID: recognitions[0].ID, GroupID: groups[0].ID, Enabled: true,
+	}}); err != nil {
 		t.Fatal(err)
 	}
 	gen, err := GenerateConfig(st)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(gen.YAML, `DOMAIN-SUFFIX,example.com,指定节点`) {
-		t.Fatalf("node target was not resolved:\n%s", gen.YAML)
+	if !strings.Contains(gen.YAML, `DOMAIN-SUFFIX,example.com,指定策略组`) {
+		t.Fatalf("recognition rule was not mapped to its group:\n%s", gen.YAML)
 	}
-	if strings.Contains(gen.YAML, "@easyproxy/node/") {
-		t.Fatalf("internal target reference leaked into YAML:\n%s", gen.YAML)
+	if !strings.Contains(gen.YAML, "- 指定节点") {
+		t.Fatalf("manual node selection was not written to the group:\n%s", gen.YAML)
 	}
 }
 

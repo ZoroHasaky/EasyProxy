@@ -1,17 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  Info,
-  Github,
   Sparkles,
-  Heart,
-  Cpu,
   Layers,
-  ShieldCheck,
   Zap,
 } from "lucide-react";
 import { api, MetaInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -58,60 +52,33 @@ export default function AboutPage() {
         </div>
       </div>
 
-      {/* 系统组件与环境信息 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Cpu className="h-5 w-5 text-primary" />
-              <CardTitle className="text-base font-bold">Mihomo 代理内核</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2 text-xs">
-            <div className="flex justify-between py-1.5 border-b border-border/50">
-              <span className="text-muted-foreground">内核版本:</span>
-              <span className="font-mono font-semibold">{meta.data?.core?.version || "未知"}</span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-border/50">
-              <span className="text-muted-foreground">运行状态:</span>
-              <Badge variant={meta.data?.core?.state === "running" ? "success" : "destructive"}>
-                {meta.data?.core?.state === "running" ? "运行正常" : "异常"}
-              </Badge>
-            </div>
-            <div className="flex justify-between py-1.5">
-              <span className="text-muted-foreground">进程 PID:</span>
-              <span className="font-mono">{meta.data?.core?.pid || "-"}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Layers className="h-5 w-5 text-indigo-500" />
-              <CardTitle className="text-base font-bold">前端与系统面板</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2 text-xs">
-            <div className="flex justify-between py-1.5 border-b border-border/50">
-              <span className="text-muted-foreground">面板版本:</span>
-              <span className="font-mono font-semibold">
-                {meta.data?.version ? (meta.data.version.startsWith("v") ? meta.data.version : `v${meta.data.version}`) : "—"}
-              </span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-border/50">
-              <span className="text-muted-foreground">架构风格:</span>
-              <span className="font-medium">React 18 + Vite + Tailwind + GlassUI</span>
-            </div>
-            <div className="flex justify-between py-1.5">
-              <span className="text-muted-foreground">最新可用版:</span>
-              <span className="font-mono text-primary font-semibold">
-                {checkData?.latest || "最新"}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* 前端与系统面板信息 */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Layers className="h-5 w-5 text-indigo-500" />
+            <CardTitle className="text-base font-bold">前端与系统面板</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2 text-xs">
+          <div className="flex justify-between py-1.5 border-b border-border/50">
+            <span className="text-muted-foreground">面板版本:</span>
+            <span className="font-mono font-semibold">
+              {meta.data?.version ? (meta.data.version.startsWith("v") ? meta.data.version : `v${meta.data.version}`) : "—"}
+            </span>
+          </div>
+          <div className="flex justify-between py-1.5 border-b border-border/50">
+            <span className="text-muted-foreground">架构风格:</span>
+            <span className="font-medium">React 18 + Vite + Tailwind + GlassUI</span>
+          </div>
+          <div className="flex justify-between py-1.5">
+            <span className="text-muted-foreground">最新可用版:</span>
+            <span className="font-mono text-primary font-semibold">
+              {checkData?.latest || "最新"}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* 项目开源信息与致谢 */}
       <Card>

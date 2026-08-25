@@ -89,18 +89,39 @@ type RuleProvider struct {
 	RuleCount  int    `json:"rule_count,omitempty"`
 }
 
+// RecognitionRule 定义一组可复用的流量识别条件。
+// Conditions 中每一项都会展开为一条 Mihomo 规则，Priority 越大越先匹配。
+type RecognitionRule struct {
+	ID         int64    `json:"id"`
+	Name       string   `json:"name"`
+	Kind       string   `json:"kind"`
+	Conditions []string `json:"conditions"`
+	Priority   int      `json:"priority"`
+	Enabled    bool     `json:"enabled"`
+}
+
+// OutboundRule 将一条识别规则映射到一个策略组。
+type OutboundRule struct {
+	ID            int64 `json:"id"`
+	RecognitionID int64 `json:"recognition_id"`
+	GroupID       int64 `json:"group_id"`
+	Enabled       bool  `json:"enabled"`
+}
+
 type Group struct {
-	ID           int64  `json:"id"`
-	Name         string `json:"name"`
-	Type         string `json:"type"` // select | url-test | fallback | load-balance
-	Region       string `json:"region"`
-	IncludeRegex string `json:"include_regex"`
-	TestURL      string `json:"test_url"`
-	Interval     int    `json:"interval"`
-	Tolerance    int    `json:"tolerance"`
-	Icon         string `json:"icon"`
-	Position     int    `json:"position"`
-	Enabled      bool   `json:"enabled"`
+	ID           int64   `json:"id"`
+	Name         string  `json:"name"`
+	Type         string  `json:"type"`        // select | url-test | fallback | load-balance
+	MemberMode   string  `json:"member_mode"` // all | region | manual | regex
+	NodeIDs      []int64 `json:"node_ids"`
+	Region       string  `json:"region"`
+	IncludeRegex string  `json:"include_regex"`
+	TestURL      string  `json:"test_url"`
+	Interval     int     `json:"interval"`
+	Tolerance    int     `json:"tolerance"`
+	Icon         string  `json:"icon"`
+	Position     int     `json:"position"`
+	Enabled      bool    `json:"enabled"`
 }
 
 type NodeFilter struct {

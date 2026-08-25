@@ -168,10 +168,28 @@ export interface RuleProviderContent {
   size: number;
 }
 
+export interface RecognitionRule {
+  id: number;
+  name: string;
+  kind: string;
+  conditions: string[];
+  priority: number;
+  enabled: boolean;
+}
+
+export interface OutboundRule {
+  id: number;
+  recognition_id: number;
+  group_id: number;
+  enabled: boolean;
+}
+
 export interface ProxyGroup {
   id: number;
   name: string;
   type: "select" | "url-test" | "fallback" | "load-balance";
+  member_mode: "all" | "region" | "manual" | "regex";
+  node_ids: number[];
   region: string;
   include_regex: string;
   test_url: string;
@@ -211,6 +229,7 @@ export interface CoreStatus {
   installed_version: string;
   state: string;
   pid: number;
+  memory_bytes: number;
   restarts: number;
   last_error: string;
   downloading: boolean;
@@ -232,9 +251,29 @@ export interface Settings {
   geo_auto_update: boolean;
   geo_update_interval: number;
   geox_urls: Record<string, string[]>;
+  default_geox_urls: Record<string, string[]>;
   update_repo: string;
   update_via_proxy: boolean;
   core_mirror: string;
+}
+
+export interface GeoDataStatus {
+  key: "geoip" | "geosite";
+  name: string;
+  file: string;
+  source: string;
+  state: "not_downloaded" | "ready" | "loaded" | "disabled" | "error";
+  message: string;
+  size_bytes: number;
+  updated_at?: string;
+  group_count: number;
+  entry_count: number;
+}
+
+export interface GeoDataStatusResponse {
+  enabled: boolean;
+  core_running: boolean;
+  items: GeoDataStatus[];
 }
 
 export interface UpdateCheck {

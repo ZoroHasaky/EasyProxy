@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -9,7 +10,7 @@ import (
 )
 
 func (s *Store) ListGroups() ([]model.Group, error) {
-	rows, err := s.db.Query(`SELECT id,name,type,region,include_regex,test_url,interval,tolerance,icon,position,enabled
+	rows, err := s.db.Query(`SELECT id,name,type,member_mode,node_ids,region,include_regex,test_url,interval,tolerance,icon,position,enabled
 		FROM proxy_groups ORDER BY position,id`)
 	if err != nil {
 		return nil, err
@@ -18,9 +19,14 @@ func (s *Store) ListGroups() ([]model.Group, error) {
 	out := []model.Group{}
 	for rows.Next() {
 		var g model.Group
-		if err := rows.Scan(&g.ID, &g.Name, &g.Type, &g.Region, &g.IncludeRegex, &g.TestURL,
+		var nodeIDs string
+		if err := rows.Scan(&g.ID, &g.Name, &g.Type, &g.MemberMode, &nodeIDs, &g.Region, &g.IncludeRegex, &g.TestURL,
 			&g.Interval, &g.Tolerance, &g.Icon, &g.Position, &g.Enabled); err != nil {
 			return nil, err
+		}
+		_ = json.Unmarshal([]byte(nodeIDs), &g.NodeIDs)
+		if g.NodeIDs == nil {
+			g.NodeIDs = []int64{}
 		}
 		out = append(out, g)
 	}
@@ -60,16 +66,20 @@ func (s *Store) ReplaceGroups(groups []model.Group) error {
 	kept := map[int64]bool{}
 	for i := range groups {
 		g := groups[i]
+		nodeIDs, err := json.Marshal(uniqueNodeIDs(g.NodeIDs))
+		if err != nil {
+			return err
+		}
 		if existing[g.ID] {
-			if _, err := tx.Exec(`UPDATE proxy_groups SET name=?,type=?,region=?,include_regex=?,test_url=?,interval=?,tolerance=?,icon=?,position=?,enabled=? WHERE id=?`,
-				g.Name, g.Type, g.Region, g.IncludeRegex, g.TestURL, g.Interval, g.Tolerance, g.Icon, i, g.Enabled, g.ID); err != nil {
+			if _, err := tx.Exec(`UPDATE proxy_groups SET name=?,type=?,member_mode=?,node_ids=?,region=?,include_regex=?,test_url=?,interval=?,tolerance=?,icon=?,position=?,enabled=? WHERE id=?`,
+				g.Name, g.Type, g.MemberMode, string(nodeIDs), g.Region, g.IncludeRegex, g.TestURL, g.Interval, g.Tolerance, g.Icon, i, g.Enabled, g.ID); err != nil {
 				return err
 			}
 			kept[g.ID] = true
 			continue
 		}
-		res, err := tx.Exec(`INSERT INTO proxy_groups(name,type,region,include_regex,test_url,interval,tolerance,icon,position,enabled)
-			VALUES(?,?,?,?,?,?,?,?,?,?)`, g.Name, g.Type, g.Region, g.IncludeRegex, g.TestURL,
+		res, err := tx.Exec(`INSERT INTO proxy_groups(name,type,member_mode,node_ids,region,include_regex,test_url,interval,tolerance,icon,position,enabled)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, g.Name, g.Type, g.MemberMode, string(nodeIDs), g.Region, g.IncludeRegex, g.TestURL,
 			g.Interval, g.Tolerance, g.Icon, i, g.Enabled)
 		if err != nil {
 			return err
@@ -81,6 +91,13 @@ func (s *Store) ReplaceGroups(groups []model.Group) error {
 	args := make([]any, 0)
 	for id := range existing {
 		if !kept[id] {
+			var references int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM outbound_rules WHERE group_id=?`, id).Scan(&references); err != nil {
+				return err
+			}
+			if references > 0 {
+				return fmt.Errorf("策略组仍被 %d 条出站规则引用，无法删除", references)
+			}
 			deleteIDs = append(deleteIDs, "?")
 			args = append(args, id)
 		}
@@ -91,4 +108,17 @@ func (s *Store) ReplaceGroups(groups []model.Group) error {
 		}
 	}
 	return tx.Commit()
+}
+
+func uniqueNodeIDs(ids []int64) []int64 {
+	seen := make(map[int64]bool, len(ids))
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
 }

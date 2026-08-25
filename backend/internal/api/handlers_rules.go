@@ -351,6 +351,14 @@ func validGroupType(t string) bool {
 	return false
 }
 
+func validGroupMemberMode(mode string) bool {
+	switch mode {
+	case "", "all", "region", "manual", "regex":
+		return true
+	}
+	return false
+}
+
 func (s *Server) handlePutGroups(w http.ResponseWriter, r *http.Request) {
 	var groups []model.Group
 	if err := readJSON(r, &groups); err != nil {
@@ -366,6 +374,18 @@ func (s *Server) handlePutGroups(w http.ResponseWriter, r *http.Request) {
 		seen[g.Name] = true
 		if !validGroupType(g.Type) {
 			g.Type = "select"
+		}
+		if !validGroupMemberMode(g.MemberMode) {
+			writeErr(w, http.StatusBadRequest, "策略组节点范围无效")
+			return
+		}
+		if g.MemberMode == "region" && g.Region == "" {
+			writeErr(w, http.StatusBadRequest, "按地区筛选时必须选择地区")
+			return
+		}
+		if g.MemberMode == "regex" && strings.TrimSpace(g.IncludeRegex) == "" {
+			writeErr(w, http.StatusBadRequest, "按名称正则筛选时必须填写正则")
+			return
 		}
 	}
 	if err := s.st.ReplaceGroups(groups); err != nil {

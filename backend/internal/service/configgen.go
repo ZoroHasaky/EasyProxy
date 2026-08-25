@@ -59,7 +59,7 @@ func DefaultGeoxSources() map[string][]string {
 	for key, file := range files {
 		out[key] = []string{
 			"https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/" + file,
-			"https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/" + file,
+			"https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/" + file,
 			"https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/release/" + file,
 		}
 	}
@@ -89,7 +89,13 @@ func GeoxSources(st *store.Store) map[string][]string {
 }
 
 func normalizeGeoxSources(sources map[string][]string) map[string][]string {
-	out := make(map[string][]string, len(sources))
+	// 始终保留未显式覆盖类型的推荐源。这样旧版本只保存 geoip 一项时，
+	// geosite、MMDB 等数据不会因升级后缺失配置而停止更新。
+	defaults := DefaultGeoxSources()
+	out := make(map[string][]string, len(defaults))
+	for key, values := range defaults {
+		out[key] = append([]string(nil), values...)
+	}
 	for key, values := range sources {
 		clean := make([]string, 0, len(values))
 		for _, value := range values {
@@ -97,7 +103,9 @@ func normalizeGeoxSources(sources map[string][]string) map[string][]string {
 				clean = append(clean, value)
 			}
 		}
-		out[key] = clean
+		if len(clean) > 0 {
+			out[key] = clean
+		}
 	}
 	return out
 }
@@ -280,38 +288,21 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 		sb.WriteString("\n")
 	}
 
-	rules, err := st.ListCurrentRules()
+	recognitionRules, err := st.ListRecognitionRules()
 	if err != nil {
 		return nil, err
 	}
-	providers, err := st.ListCurrentRuleProviders()
+	outboundRules, err := st.ListOutboundRules()
 	if err != nil {
 		return nil, err
-	}
-	providerNames := map[string]bool{}
-	for _, p := range providers {
-		providerNames[p.Name] = true
-	}
-	for _, r := range rules {
-		if r.Enabled && strings.EqualFold(r.Kind, "RULE-SET") && !providerNames[r.Value] {
-			return nil, fmt.Errorf("规则集规则引用了不存在的来源：%s", r.Value)
-		}
-	}
-
-	if len(providers) > 0 {
-		sb.WriteString("rule-providers:\n")
-		for _, p := range providers {
-			if p.URL == "" {
-				continue
-			}
-			fmt.Fprintf(&sb, "  %s:\n    type: http\n    behavior: %s\n    format: %s\n    url: %s\n    interval: %d\n    path: %s\n",
-				quote(p.Name), p.Behavior, p.Format, quote(p.URL), p.Interval, quote(ruleProviderPath(p)))
-		}
-		sb.WriteString("\n")
 	}
 
 	sb.WriteString("rules:\n")
 	targetResolver := newRuleTargetResolver(deduped, groups)
+	outboundByRecognition := make(map[int64]model.OutboundRule, len(outboundRules))
+	for _, outbound := range outboundRules {
+		outboundByRecognition[outbound.RecognitionID] = outbound
+	}
 	ruleCount := 0
 	hasMatch := false
 	// TUN 模式下必须保证局域网/本机回环直连，否则 MATCH 兜底会把 SSH/面板等
@@ -331,29 +322,32 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 			ruleCount++
 		}
 	}
-	for _, r := range rules {
-		if !r.Enabled || r.Kind == "" {
+	for _, recognition := range recognitionRules {
+		if !recognition.Enabled || recognition.Kind == "" {
 			continue
 		}
-		kind := strings.ToUpper(r.Kind)
-		target := r.Target
+		outbound, exists := outboundByRecognition[recognition.ID]
+		if !exists || !outbound.Enabled {
+			continue
+		}
+		kind := strings.ToUpper(recognition.Kind)
+		target := targetResolver.resolve(model.GroupTargetRef(outbound.GroupID))
 		if len(deduped) == 0 {
 			target = model.BuiltinDirect
-		} else {
-			target = targetResolver.resolve(target)
 		}
-		parts := []string{kind}
-		if kind != "MATCH" && r.Value != "" {
-			parts = append(parts, r.Value)
-		}
-		parts = append(parts, target)
-		if r.NoResolve {
-			parts = append(parts, "no-resolve")
-		}
-		sb.WriteString("  - " + quote(strings.Join(parts, ",")) + "\n")
-		ruleCount++
 		if kind == "MATCH" {
+			sb.WriteString("  - " + quote(strings.Join([]string{kind, target}, ",")) + "\n")
+			ruleCount++
 			hasMatch = true
+			continue
+		}
+		for _, condition := range recognition.Conditions {
+			condition = strings.TrimSpace(condition)
+			if condition == "" {
+				continue
+			}
+			sb.WriteString("  - " + quote(strings.Join([]string{kind, condition, target}, ",")) + "\n")
+			ruleCount++
 		}
 	}
 	if !hasMatch {
@@ -424,14 +418,25 @@ func buildGroupMap(g model.Group, members []string) map[string]any {
 
 func groupMembers(g model.Group, nodes []model.Node) []string {
 	var out []string
-	switch {
-	case g.Region != "":
+	mode := groupMemberMode(g)
+	switch mode {
+	case "manual":
+		selected := make(map[int64]bool, len(g.NodeIDs))
+		for _, id := range g.NodeIDs {
+			selected[id] = true
+		}
+		for _, n := range nodes {
+			if selected[n.ID] {
+				out = append(out, n.Name)
+			}
+		}
+	case "region":
 		for _, n := range nodes {
 			if n.Region == g.Region {
 				out = append(out, n.Name)
 			}
 		}
-	case g.IncludeRegex != "":
+	case "regex":
 		re, err := regexp.Compile(g.IncludeRegex)
 		if err != nil {
 			return nil
@@ -447,6 +452,24 @@ func groupMembers(g model.Group, nodes []model.Node) []string {
 		}
 	}
 	return out
+}
+
+func groupMemberMode(g model.Group) string {
+	switch g.MemberMode {
+	case "all", "region", "manual", "regex":
+		return g.MemberMode
+	}
+	// 兼容旧数据：旧版以 region / include_regex 是否为空推断成员范围。
+	if len(g.NodeIDs) > 0 {
+		return "manual"
+	}
+	if g.Region != "" {
+		return "region"
+	}
+	if g.IncludeRegex != "" {
+		return "regex"
+	}
+	return "all"
 }
 
 type ruleTargetResolver struct {
@@ -523,15 +546,4 @@ func sanitizeFilename(s string) string {
 		s = "ruleset"
 	}
 	return s
-}
-
-func ruleProviderPath(provider model.RuleProvider) string {
-	ext := ".yaml"
-	switch strings.ToLower(provider.Format) {
-	case "mrs":
-		ext = ".mrs"
-	case "text":
-		ext = ".txt"
-	}
-	return "./ruleset/" + sanitizeFilename(provider.Name) + ext
 }

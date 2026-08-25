@@ -46,19 +46,23 @@ func NewManager(binPath, dataDir string) *Manager {
 }
 
 type Status struct {
-	State     string    `json:"state"`
-	PID       int       `json:"pid"`
-	Restarts  int       `json:"restarts"`
-	StartedAt time.Time `json:"started_at"`
-	LastError string    `json:"last_error"`
+	State       string    `json:"state"`
+	PID         int       `json:"pid"`
+	MemoryBytes uint64    `json:"memory_bytes"`
+	Restarts    int       `json:"restarts"`
+	StartedAt   time.Time `json:"started_at"`
+	LastError   string    `json:"last_error"`
 }
 
 func (m *Manager) Status() Status {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	st := Status{State: m.state, Restarts: m.restarts, StartedAt: m.startedAt, LastError: m.lastErr}
 	if m.cmd != nil && m.cmd.Process != nil {
 		st.PID = m.cmd.Process.Pid
+	}
+	m.mu.Unlock()
+	if st.PID > 0 {
+		st.MemoryBytes = processMemoryBytes(st.PID)
 	}
 	return st
 }

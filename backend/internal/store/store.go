@@ -114,6 +114,8 @@ func (s *Store) migrate() error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL UNIQUE,
 			type TEXT NOT NULL DEFAULT 'select',
+			member_mode TEXT NOT NULL DEFAULT '',
+			node_ids TEXT NOT NULL DEFAULT '[]',
 			region TEXT NOT NULL DEFAULT '',
 			include_regex TEXT NOT NULL DEFAULT '',
 			test_url TEXT NOT NULL DEFAULT '',
@@ -122,6 +124,22 @@ func (s *Store) migrate() error {
 			icon TEXT NOT NULL DEFAULT '',
 			position INTEGER NOT NULL DEFAULT 0,
 			enabled INTEGER NOT NULL DEFAULT 1
+		)`,
+		`CREATE TABLE IF NOT EXISTS recognition_rules (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			kind TEXT NOT NULL,
+			conditions TEXT NOT NULL DEFAULT '[]',
+			priority INTEGER NOT NULL DEFAULT 0,
+			enabled INTEGER NOT NULL DEFAULT 1
+		)`,
+		`CREATE TABLE IF NOT EXISTS outbound_rules (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			recognition_id INTEGER NOT NULL UNIQUE,
+			group_id INTEGER NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			FOREIGN KEY(recognition_id) REFERENCES recognition_rules(id),
+			FOREIGN KEY(group_id) REFERENCES proxy_groups(id)
 		)`,
 	}
 	for _, q := range stmts {
@@ -133,6 +151,12 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("migrate: %w", err)
 	}
 	if err := s.ensureColumn("rules", "target_override", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+	if err := s.ensureColumn("proxy_groups", "member_mode", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+	if err := s.ensureColumn("proxy_groups", "node_ids", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
 	if err := s.migrateRuleTargetRefs(); err != nil {
@@ -286,7 +310,7 @@ func (s *Store) ExportAll() (map[string]any, error) {
 	setRows.Close()
 	out["settings"] = settings
 
-	for _, table := range []string{"subscriptions", "nodes", "templates", "rules", "rule_providers", "proxy_groups"} {
+	for _, table := range []string{"subscriptions", "nodes", "templates", "rules", "rule_providers", "proxy_groups", "recognition_rules", "outbound_rules"} {
 		rows, err := s.db.Query(`SELECT * FROM ` + table)
 		if err != nil {
 			return nil, err
@@ -332,7 +356,7 @@ func (s *Store) ImportAll(data map[string]any, keepAuth bool) error {
 		return err
 	}
 	defer tx.Rollback()
-	for _, t := range []string{"rules", "rule_providers", "proxy_groups", "nodes", "subscriptions", "templates", "settings"} {
+	for _, t := range []string{"outbound_rules", "recognition_rules", "rules", "rule_providers", "proxy_groups", "nodes", "subscriptions", "templates", "settings"} {
 		if _, err := tx.Exec(`DELETE FROM ` + t); err != nil {
 			return err
 		}
@@ -362,7 +386,7 @@ func (s *Store) ImportAll(data map[string]any, keepAuth bool) error {
 		}
 		return nil
 	}
-	for _, t := range []string{"settings", "subscriptions", "nodes", "templates", "rules", "rule_providers", "proxy_groups"} {
+	for _, t := range []string{"settings", "subscriptions", "nodes", "templates", "rules", "rule_providers", "proxy_groups", "recognition_rules", "outbound_rules"} {
 		raw, ok := data[t].([]any)
 		if !ok {
 			continue

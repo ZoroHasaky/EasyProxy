@@ -300,7 +300,7 @@ func GenerateRegionGroups(st *store.Store) ([]string, error) {
 		}
 		usedNames[name] = true
 		newGroups = append(newGroups, model.Group{
-			Name: name, Type: "url-test", Region: code,
+			Name: name, Type: "url-test", MemberMode: "region", Region: code,
 			Interval: 300, Tolerance: 50, Icon: parser.RegionFlag(code), Enabled: true,
 		})
 		created = append(created, name)

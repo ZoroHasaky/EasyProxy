@@ -405,7 +405,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
           <DialogHeader>
             <DialogTitle>修改节点名称</DialogTitle>
             <DialogDescription>
-              自定义该节点的展示名称（修改后自动同步到规则与策略组）
+              自定义该节点的展示名称（修改后自动同步到规则与出站规则）
             </DialogDescription>
           </DialogHeader>
 

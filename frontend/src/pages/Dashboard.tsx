@@ -2,24 +2,14 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Cable,
   Check,
-  CheckCircle2,
-  ChevronRight,
-  Cpu,
-  Globe2,
   Layers,
-  Network,
   Radio,
-  RefreshCw,
   Search,
   Server,
-  ShieldCheck,
-  Zap,
 } from "lucide-react";
-import { api, MetaInfo, mihomo, ProxyGroup } from "@/lib/api";
-import { useMihomoRuntime } from "@/contexts/app-state";
-import { cn, formatCoreVersion } from "@/lib/utils";
+import { api, mihomo, ProxyGroup } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import {
   Card,
   CardContent,
@@ -40,16 +30,9 @@ import {
 
 export default function DashboardPage() {
   const qc = useQueryClient();
-  const { mode, switchMode, connectionCount } = useMihomoRuntime();
   const [nodeDialogOpen, setNodeDialogOpen] = useState(false);
   const [nodeSearch, setNodeSearch] = useState("");
   const [selecting, setSelecting] = useState<string | null>(null);
-
-  const meta = useQuery({
-    queryKey: ["meta"],
-    queryFn: () => api.get<MetaInfo>("/api/meta"),
-    refetchInterval: 10_000,
-  });
 
   const proxies = useQuery({
     queryKey: ["proxies"],
@@ -108,56 +91,8 @@ export default function DashboardPage() {
     }
   };
 
-  const running = meta.data?.core?.state === "running";
-
   return (
     <div className="space-y-6">
-      {/* 顶部指标看板 */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {/* 内核状态 */}
-        <Card className="relative overflow-hidden border-border/70 hover:border-primary/40">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardDescription className="font-semibold">内核运行状态</CardDescription>
-              <div className={cn("p-2 rounded-xl", running ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500")}>
-                <Cpu className="h-4 w-4" />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold tracking-tight">
-                {running ? "运行正常" : meta.data?.core?.state ?? "未运行"}
-              </span>
-              <span className={cn("inline-block h-2 w-2 rounded-full", running ? "bg-emerald-500 animate-ping" : "bg-rose-500")} />
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground font-mono">
-              {meta.data?.core?.version ? `Mihomo ${formatCoreVersion(meta.data.core.version)}` : "未安装内核"}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* 活动连接 */}
-        <Card className="relative overflow-hidden border-border/70 hover:border-primary/40">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardDescription className="font-semibold">活动连接会话</CardDescription>
-              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-500">
-                <Cable className="h-4 w-4" />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono">
-              {connectionCount}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              当前活跃 TCP/UDP 会话数
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
       {/* 主出口 PROXY 切换面板 */}
       {proxyGroup && (
         <Card className="border-primary/20 bg-gradient-to-b from-primary/5 via-card/80 to-card">
@@ -171,7 +106,7 @@ export default function DashboardPage() {
                   </Badge>
                 </div>
                 <CardDescription className="mt-1">
-                  控制默认分流出口。支持快速切换到地区策略组或单个指定节点。
+                  控制默认分流出口。支持快速切换到地区出站规则或单个指定节点。
                 </CardDescription>
               </div>
 
@@ -237,7 +172,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold tracking-tight text-foreground/90 flex items-center gap-2">
             <Radio className="h-4.5 w-4.5 text-primary" />
-            所有策略组状态
+            所有出站规则状态
           </h2>
           <span className="text-xs text-muted-foreground">
             共 {groups.length} 个活跃分组

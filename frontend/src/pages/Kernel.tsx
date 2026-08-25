@@ -36,7 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn, formatCoreVersion } from "@/lib/utils";
+import { cn, formatBytes, formatCoreVersion } from "@/lib/utils";
 
 const LOG_LEVELS = [
   { value: "silent", label: "静默 (silent)" },
@@ -223,9 +223,9 @@ export default function KernelPage() {
                 </div>
               </div>
               <div>
-                <div className="text-muted-foreground">异常重启次数</div>
+                <div className="text-muted-foreground">当前内存占用</div>
                 <div className="font-mono font-semibold mt-0.5">
-                  {core.data?.restarts ?? 0}
+                  {core.data?.memory_bytes ? formatBytes(core.data.memory_bytes) : "不可用"}
                 </div>
               </div>
               <div>

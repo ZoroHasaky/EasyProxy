@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -24,12 +25,13 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version": s.version,
 		"core": map[string]any{
-			"installed":  s.coreInstalled(),
-			"version":    core.InstalledCoreVersion(s.dataDir),
-			"state":      st.State,
-			"pid":        st.PID,
-			"restarts":   st.Restarts,
-			"last_error": st.LastError,
+			"installed":    s.coreInstalled(),
+			"version":      core.InstalledCoreVersion(s.dataDir),
+			"state":        st.State,
+			"pid":          st.PID,
+			"memory_bytes": st.MemoryBytes,
+			"restarts":     st.Restarts,
+			"last_error":   st.LastError,
 		},
 	})
 }
@@ -72,6 +74,7 @@ func (s *Server) handleCoreStatus(w http.ResponseWriter, r *http.Request) {
 		"installed_version": core.InstalledCoreVersion(s.dataDir),
 		"state":             st.State,
 		"pid":               st.PID,
+		"memory_bytes":      st.MemoryBytes,
 		"restarts":          st.Restarts,
 		"last_error":        st.LastError,
 		"downloading":       dlRunning,
@@ -305,6 +308,20 @@ type settingsPayload struct {
 	CoreMirror        *string             `json:"core_mirror"`
 }
 
+func (s *Server) handleGeoDataStatus(w http.ResponseWriter, r *http.Request) {
+	coreRunning := s.mgr.Status().State == core.StateRunning
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled":      s.st.GetSettingBool("geo_enabled", true),
+		"core_running": coreRunning,
+		"items": service.GeoDataStatuses(
+			s.dataDir,
+			service.GeoxSources(s.st),
+			s.st.GetSettingBool("geo_enabled", true),
+			coreRunning,
+		),
+	})
+}
+
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	ns := []string{}
 	if !s.st.GetSettingJSON("dns_nameserver", &ns) || len(ns) == 0 {
@@ -329,6 +346,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"geo_auto_update":     s.st.GetSettingBool("geo_auto_update", false),
 		"geo_update_interval": s.st.GetSettingInt("geo_update_interval", 24),
 		"geox_urls":           geox,
+		"default_geox_urls":   service.DefaultGeoxSources(),
 		"update_repo":         s.updateRepo(),
 		"update_via_proxy":    s.st.GetSettingBool("update_via_proxy", false),
 		"core_mirror":         s.st.GetSetting("core_mirror", ""),
@@ -396,7 +414,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		set("geo_update_interval", strconv.Itoa(*p.GeoUpdateInterval))
 	}
 	if p.GeoxUrls != nil {
-		b, _ := json.Marshal(p.GeoxUrls)
+		geoxURLs, err := validateGeoxURLs(p.GeoxUrls)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		b, _ := json.Marshal(geoxURLs)
 		set("geox_urls", string(b))
 	}
 	if p.UpdateRepo != nil {
@@ -410,6 +433,31 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	s.dirty.Store(true)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+var supportedGeoxURLKeys = map[string]bool{
+	"geoip": true, "geoip.metadb": true, "geosite": true, "mmdb": true, "asn": true,
+}
+
+func validateGeoxURLs(values map[string][]string) (map[string][]string, error) {
+	cleaned := make(map[string][]string, len(values))
+	for key, urls := range values {
+		if !supportedGeoxURLKeys[key] {
+			return nil, fmt.Errorf("不支持的 Geo 数据类型：%s", key)
+		}
+		for _, raw := range urls {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				continue
+			}
+			parsed, err := url.ParseRequestURI(raw)
+			if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+				return nil, fmt.Errorf("%s 数据源 URL 无效：%s", key, raw)
+			}
+			cleaned[key] = append(cleaned[key], raw)
+		}
+	}
+	return cleaned, nil
 }
 
 // ---------- 备份 ----------

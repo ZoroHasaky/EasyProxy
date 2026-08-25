@@ -22,6 +22,20 @@ func TestGeoxSourcesLegacyCompatibility(t *testing.T) {
 	}
 }
 
+func TestDefaultGeoxSourcesProvideThreeMirrors(t *testing.T) {
+	sources := DefaultGeoxSources()
+	for _, key := range []string{"geoip", "geosite"} {
+		if len(sources[key]) != 3 {
+			t.Fatalf("%s default mirror count = %d, want 3", key, len(sources[key]))
+		}
+		for _, source := range sources[key] {
+			if !strings.HasPrefix(source, "https://") {
+				t.Fatalf("%s has invalid mirror %q", key, source)
+			}
+		}
+	}
+}
+
 func TestGenerateConfigGeoSettings(t *testing.T) {
 	st, err := store.Open(t.TempDir())
 	if err != nil {

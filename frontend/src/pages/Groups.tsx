@@ -11,7 +11,7 @@ import {
   Check,
   RotateCcw,
 } from "lucide-react";
-import { api, ProxyGroup, RegionInfo } from "@/lib/api";
+import { api, ProxyGroup, ProxyNode, RegionInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,6 +49,9 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
 
   const [name, setName] = useState("");
   const [type, setType] = useState<ProxyGroup["type"]>("url-test");
+  const [memberMode, setMemberMode] = useState<ProxyGroup["member_mode"]>("all");
+  const [nodeIDs, setNodeIDs] = useState<number[]>([]);
+  const [nodeSearch, setNodeSearch] = useState("");
   const [region, setRegion] = useState("");
   const [includeRegex, setIncludeRegex] = useState("");
   const [testUrl, setTestUrl] = useState("https://www.gstatic.com/generate_204");
@@ -66,10 +69,18 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
     queryFn: () => api.get<RegionInfo[]>("/api/nodes/regions"),
   });
 
+  const nodes = useQuery({
+    queryKey: ["nodes", "enabled"],
+    queryFn: () => api.get<ProxyNode[]>("/api/nodes?enabled=true"),
+  });
+
   const openAdd = () => {
     setEditingGroup(null);
     setName("");
     setType("url-test");
+    setMemberMode("all");
+    setNodeIDs([]);
+    setNodeSearch("");
     setRegion("");
     setIncludeRegex("");
     setTestUrl("https://www.gstatic.com/generate_204");
@@ -83,6 +94,11 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
     setEditingGroup(g);
     setName(g.name);
     setType(g.type);
+    setMemberMode(
+      g.member_mode || (g.node_ids?.length ? "manual" : g.region ? "region" : g.include_regex ? "regex" : "all"),
+    );
+    setNodeIDs(g.node_ids ?? []);
+    setNodeSearch("");
     setRegion(g.region);
     setIncludeRegex(g.include_regex);
     setTestUrl(g.test_url);
@@ -97,8 +113,10 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
       const payload = {
         name: name.trim(),
         type,
-        region,
-        include_regex: includeRegex.trim(),
+        member_mode: memberMode,
+        node_ids: memberMode === "manual" ? nodeIDs : [],
+        region: memberMode === "region" ? region : "",
+        include_regex: memberMode === "regex" ? includeRegex.trim() : "",
         test_url: testUrl.trim(),
         interval: Number(interval) || 300,
         tolerance: Number(tolerance) || 50,
@@ -121,7 +139,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
       return api.put("/api/groups", nextGroups);
     },
     onSuccess: () => {
-      toast.success(editingGroup ? "策略组已更新" : "策略组已创建");
+      toast.success(editingGroup ? "出站规则已更新" : "出站规则已创建");
       setModalOpen(false);
       qc.invalidateQueries({ queryKey: ["groups"] });
       qc.invalidateQueries({ queryKey: ["ruleTargets"] });
@@ -136,7 +154,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
         (groups.data ?? []).filter((group) => group.id !== id),
       ),
     onSuccess: () => {
-      toast.success("策略组已删除");
+      toast.success("出站规则已删除");
       qc.invalidateQueries({ queryKey: ["groups"] });
       qc.invalidateQueries({ queryKey: ["ruleTargets"] });
     },
@@ -146,11 +164,22 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
   const generateRegionGroups = useMutation({
     mutationFn: () => api.post<{ created: number }>("/api/groups/generate-regions"),
     onSuccess: (res) => {
-      toast.success(`已根据现有节点地区自动生成 ${res.created} 个测速策略组`);
+      toast.success(`已根据现有节点地区自动生成 ${res.created} 个测速出站规则`);
       qc.invalidateQueries({ queryKey: ["groups"] });
       qc.invalidateQueries({ queryKey: ["ruleTargets"] });
     },
     onError: (e: any) => toast.error(e.message),
+  });
+
+  const toggleNode = (id: number) => {
+    setNodeIDs((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
+  };
+
+  const visibleNodes = (nodes.data ?? []).filter((node) => {
+    const keyword = nodeSearch.trim().toLocaleLowerCase();
+    return !keyword || node.name.toLocaleLowerCase().includes(keyword) || node.region.toLocaleLowerCase().includes(keyword);
   });
 
   return (
@@ -160,10 +189,10 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
         <div>
           <h3 className="text-base font-bold tracking-tight text-foreground flex items-center gap-2">
             <Layers className="h-4.5 w-4.5 text-primary" />
-            策略组管理 (Proxy Groups)
+            出站规则管理 (Outbound Rules)
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            配置按地区、正则或自定义组合的分流策略组，支持 url-test 速度优先与故障自动回退
+            配置按地区、正则或自定义组合的出站规则，支持 url-test 速度优先与故障自动回退
           </p>
         </div>
 
@@ -179,7 +208,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
           </Button>
           <Button size="sm" onClick={openAdd}>
             <Plus className="h-4 w-4" />
-            新建策略组
+            新建出站规则
           </Button>
         </div>
       </div>
@@ -197,7 +226,13 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                       {!g.enabled && <Badge variant="secondary" className="text-[10px]">已禁用</Badge>}
                     </CardTitle>
                     <CardDescription className="text-xs">
-                      {g.region ? `地区匹配: ${g.region}` : g.include_regex ? `正则: ${g.include_regex}` : "全量节点组合"}
+                      {g.member_mode === "manual"
+                        ? `手选节点: ${g.node_ids.length} 个`
+                        : g.member_mode === "region" || (!g.member_mode && g.region)
+                        ? `地区匹配: ${g.region}`
+                        : g.member_mode === "regex" || (!g.member_mode && g.include_regex)
+                        ? `名称正则: ${g.include_regex}`
+                        : "全量节点组合"}
                     </CardDescription>
                   </div>
                   <Badge variant="purple" className="font-mono text-xs uppercase">
@@ -226,7 +261,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                     variant="ghost"
                     size="iconSm"
                     onClick={() => openEdit(g)}
-                    title="编辑策略组"
+                    title="编辑出站规则"
                   >
                     <Edit className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                   </Button>
@@ -234,11 +269,11 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                     variant="ghost"
                     size="iconSm"
                     onClick={() => {
-                      if (confirm(`确定删除策略组「${g.name}」吗？`)) {
+                      if (confirm(`确定删除出站规则「${g.name}」吗？`)) {
                         deleteMutation.mutate(g.id);
                       }
                     }}
-                    title="删除策略组"
+                    title="删除出站规则"
                   >
                     <Trash2 className="h-3.5 w-3.5 text-rose-500 hover:text-rose-600" />
                   </Button>
@@ -253,15 +288,15 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingGroup ? "编辑策略组" : "新建分流策略组"}</DialogTitle>
+            <DialogTitle>{editingGroup ? "编辑出站规则" : "新建出站规则"}</DialogTitle>
             <DialogDescription>
-              设置策略组类型、节点包含规则以及自动化测速参数
+              设置出站规则类型、节点包含规则以及自动化测速参数
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>策略组名称</Label>
+              <Label>出站规则名称</Label>
               <Input
                 placeholder="例如: 🇭🇰 香港自动测速 或 节点选择"
                 value={name}
@@ -270,7 +305,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
             </div>
 
             <div className="space-y-1.5">
-              <Label>策略组类型</Label>
+              <Label>出站规则类型</Label>
               <Select value={type} onChange={(e) => setType(e.target.value as any)}>
                 {GROUP_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>
@@ -280,11 +315,21 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>节点范围</Label>
+              <Select value={memberMode} onChange={(e) => setMemberMode(e.target.value as ProxyGroup["member_mode"])}>
+                <option value="all">全部启用节点</option>
+                <option value="region">按地区筛选</option>
+                <option value="manual">手动勾选节点组合</option>
+                <option value="regex">按节点名称正则</option>
+              </Select>
+            </div>
+
+            {memberMode === "region" && (
               <div className="space-y-1.5">
-                <Label>绑定地理区域 (可选)</Label>
+                <Label>绑定地理区域</Label>
                 <Select value={region} onChange={(e) => setRegion(e.target.value)}>
-                  <option value="">全部/无限定</option>
+                  <option value="">请选择地区</option>
                   {regions.data?.map((r) => (
                     <option key={r.code} value={r.code}>
                       {r.flag} {r.cn} ({r.code})
@@ -292,16 +337,46 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                   ))}
                 </Select>
               </div>
+            )}
 
+            {memberMode === "regex" && (
               <div className="space-y-1.5">
-                <Label>名称包含正则 (可选)</Label>
+                <Label>名称匹配正则</Label>
                 <Input
                   placeholder="例如 (HK|HongKong)"
                   value={includeRegex}
                   onChange={(e) => setIncludeRegex(e.target.value)}
                 />
               </div>
-            </div>
+            )}
+
+            {memberMode === "manual" && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>勾选节点组合</Label>
+                  <span className="text-[11px] text-muted-foreground">已选 {nodeIDs.length} 个</span>
+                </div>
+                <Input
+                  value={nodeSearch}
+                  onChange={(e) => setNodeSearch(e.target.value)}
+                  placeholder="搜索节点名称或地区…"
+                  className="h-9 text-xs"
+                />
+                <div className="max-h-52 space-y-1 overflow-y-auto rounded-xl border border-border/60 p-2">
+                  {visibleNodes.map((node) => {
+                    const selected = nodeIDs.includes(node.id);
+                    return (
+                      <label key={node.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-accent/60">
+                        <input type="checkbox" checked={selected} onChange={() => toggleNode(node.id)} />
+                        <span className="min-w-0 flex-1 truncate">{node.name}</span>
+                        <span className="shrink-0 text-muted-foreground">{node.region}</span>
+                      </label>
+                    );
+                  })}
+                  {visibleNodes.length === 0 && <div className="py-4 text-center text-xs text-muted-foreground">未找到启用节点</div>}
+                </div>
+              </div>
+            )}
 
             {type !== "select" && (
               <>
@@ -337,7 +412,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
 
             <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/60">
               <div className="space-y-0.5">
-                <div className="text-xs font-semibold">启用此策略组</div>
+                <div className="text-xs font-semibold">启用此出站规则</div>
                 <div className="text-[11px] text-muted-foreground">
                   禁用后生成配置时将被忽略
                 </div>
@@ -355,7 +430,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
               onClick={() => saveMutation.mutate()}
               disabled={saveMutation.isPending || !name.trim()}
             >
-              {saveMutation.isPending ? "保存中…" : "保存策略组"}
+              {saveMutation.isPending ? "保存中…" : "保存出站规则"}
             </Button>
           </DialogFooter>
         </DialogContent>
