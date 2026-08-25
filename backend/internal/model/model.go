@@ -138,13 +138,14 @@ type NodeFilter struct {
 
 // AuditLog 是面板可查询的持久化日志。Details 只保存脱敏后的结构化信息。
 type AuditLog struct {
-	ID        int64          `json:"id"`
-	CreatedAt time.Time      `json:"created_at"`
-	Category  string         `json:"category"` // traffic | operation | core
-	Level     string         `json:"level"`    // info | success | warning | error
-	Event     string         `json:"event"`
-	Summary   string         `json:"summary"`
-	Details   map[string]any `json:"details,omitempty"`
+	ID        int64     `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	Category  string    `json:"category"` // traffic | operation | core
+	Level     string    `json:"level"`    // info | success | warning | error
+	Event     string    `json:"event"`
+	Summary   string    `json:"summary"`
+	// Details 始终序列化为对象，便于前端安全读取可选的错误与匹配链路字段。
+	Details map[string]any `json:"details"`
 }
 
 type AuditLogFilter struct {

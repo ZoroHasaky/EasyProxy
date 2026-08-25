@@ -24,7 +24,7 @@ func TestAuditLogHandlersFilterAndExport(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/logs?category=core", nil)
 	rec := httptest.NewRecorder()
 	srv.handleListAuditLogs(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Mihomo 内核已重启") || strings.Contains(rec.Body.String(), "节点已导入") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Mihomo 内核已重启") || strings.Contains(rec.Body.String(), "节点已导入") || !strings.Contains(rec.Body.String(), `"details":{}`) {
 		t.Fatalf("list status=%d body=%s", rec.Code, rec.Body.String())
 	}
 

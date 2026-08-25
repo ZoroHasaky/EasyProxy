@@ -63,9 +63,11 @@ function asStringList(value: unknown) {
 }
 
 function AuditLogDetails({ entry }: { entry: AuditLog }) {
+  // 兼容旧版服务端曾省略 details 字段的历史日志，避免单条日志导致整页渲染失败。
+  const details = entry.details ?? {};
   if (entry.category === "traffic") {
-    const rule = [asString(entry.details.rule), asString(entry.details.rule_payload)].filter(Boolean).join(", ");
-    const chains = asStringList(entry.details.chains);
+    const rule = [asString(details.rule), asString(details.rule_payload)].filter(Boolean).join(", ");
+    const chains = asStringList(details.chains);
     return (
       <div className="mt-2 space-y-1 text-[11px] text-muted-foreground">
         {rule && <div>命中规则：<span className="font-mono text-foreground/80">{rule}</span></div>}
@@ -73,7 +75,7 @@ function AuditLogDetails({ entry }: { entry: AuditLog }) {
       </div>
     );
   }
-  const error = asString(entry.details.error);
+  const error = asString(details.error);
   if (error) return <div className="mt-2 text-[11px] text-destructive/90">原因：{error}</div>;
   return null;
 }
