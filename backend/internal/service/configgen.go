@@ -361,12 +361,37 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 		return nil, err
 	}
 
-	sb.WriteString("rules:\n")
 	targetResolver := newRuleTargetResolver(deduped, groups)
 	outboundByRecognition := make(map[int64]model.OutboundRule, len(outboundRules))
 	for _, outbound := range outboundRules {
 		outboundByRecognition[outbound.RecognitionID] = outbound
 	}
+	remoteRecognitionRules := make([]model.RecognitionRule, 0)
+	for _, recognition := range recognitionRules {
+		if !recognition.Enabled || recognition.SourceURL == "" {
+			continue
+		}
+		outbound, exists := outboundByRecognition[recognition.ID]
+		if !exists || !outbound.Enabled {
+			continue
+		}
+		remoteRecognitionRules = append(remoteRecognitionRules, recognition)
+	}
+	if len(remoteRecognitionRules) > 0 {
+		sb.WriteString("rule-providers:\n")
+		for _, recognition := range remoteRecognitionRules {
+			fmt.Fprintf(&sb, "  %s:\n", quote(recognition.Name))
+			sb.WriteString("    type: http\n")
+			fmt.Fprintf(&sb, "    behavior: %s\n", recognition.SourceBehavior)
+			fmt.Fprintf(&sb, "    url: %s\n", quote(recognition.SourceURL))
+			fmt.Fprintf(&sb, "    path: %s\n", quote("./ruleset/recognition-"+strconv.FormatInt(recognition.ID, 10)+".yaml"))
+			fmt.Fprintf(&sb, "    interval: %d\n", recognition.SourceInterval)
+			sb.WriteString("    format: yaml\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("rules:\n")
 	ruleCount := 0
 	hasMatch := false
 	// TUN 模式下必须保证局域网/本机回环直连，否则 MATCH 兜底会把 SSH/面板等
@@ -398,6 +423,15 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 		target := targetResolver.resolve(model.GroupTargetRef(outbound.GroupID))
 		if len(deduped) == 0 {
 			target = model.BuiltinDirect
+		}
+		if recognition.SourceURL != "" {
+			parts := []string{"RULE-SET", recognition.Name, target}
+			if recognition.SourceBehavior == "ipcidr" {
+				parts = append(parts, "no-resolve")
+			}
+			sb.WriteString("  - " + quote(strings.Join(parts, ",")) + "\n")
+			ruleCount++
+			continue
 		}
 		if kind == "MATCH" {
 			sb.WriteString("  - " + quote(strings.Join([]string{kind, target}, ",")) + "\n")

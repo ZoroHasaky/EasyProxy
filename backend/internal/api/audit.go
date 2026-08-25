@@ -101,6 +101,8 @@ func auditRoute(pattern, method string) (category, event, summary string, ok boo
 		return "operation", "node.changed", "节点配置已更新", true
 	case "/api/recognition-rules":
 		return "operation", "routing.recognition", "识别规则已更新", true
+	case "/api/recognition-rules/import":
+		return "operation", "routing.recognition_import", "YAML 识别规则已导入", true
 	case "/api/outbound-rules":
 		return "operation", "routing.outbound", "出站映射已更新", true
 	case "/api/groups":

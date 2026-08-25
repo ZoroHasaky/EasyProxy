@@ -91,13 +91,17 @@ type RuleProvider struct {
 
 // RecognitionRule 定义一组可复用的流量识别条件。
 // Conditions 中每一项都会展开为一条 Mihomo 规则，Priority 越大越先匹配。
+// SourceURL 非空时代表远程 YAML Rule Provider，并生成一条 RULE-SET 规则。
 type RecognitionRule struct {
-	ID         int64    `json:"id"`
-	Name       string   `json:"name"`
-	Kind       string   `json:"kind"`
-	Conditions []string `json:"conditions"`
-	Priority   int      `json:"priority"`
-	Enabled    bool     `json:"enabled"`
+	ID             int64    `json:"id"`
+	Name           string   `json:"name"`
+	Kind           string   `json:"kind"`
+	Conditions     []string `json:"conditions"`
+	SourceURL      string   `json:"source_url,omitempty"`
+	SourceBehavior string   `json:"source_behavior,omitempty"`
+	SourceInterval int      `json:"source_interval,omitempty"`
+	Priority       int      `json:"priority"`
+	Enabled        bool     `json:"enabled"`
 }
 
 // OutboundRule 将一条识别规则映射到一个策略组。

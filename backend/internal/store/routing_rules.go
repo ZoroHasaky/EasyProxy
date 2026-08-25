@@ -3,13 +3,14 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"easyproxy/internal/model"
 )
 
 func (s *Store) ListRecognitionRules() ([]model.RecognitionRule, error) {
-	rows, err := s.db.Query(`SELECT id,name,kind,conditions,priority,enabled
+	rows, err := s.db.Query(`SELECT id,name,kind,conditions,source_url,source_behavior,source_interval,priority,enabled
 		FROM recognition_rules ORDER BY priority DESC,id`)
 	if err != nil {
 		return nil, err
@@ -19,7 +20,7 @@ func (s *Store) ListRecognitionRules() ([]model.RecognitionRule, error) {
 	for rows.Next() {
 		var rule model.RecognitionRule
 		var conditions string
-		if err := rows.Scan(&rule.ID, &rule.Name, &rule.Kind, &conditions, &rule.Priority, &rule.Enabled); err != nil {
+		if err := rows.Scan(&rule.ID, &rule.Name, &rule.Kind, &conditions, &rule.SourceURL, &rule.SourceBehavior, &rule.SourceInterval, &rule.Priority, &rule.Enabled); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(conditions), &rule.Conditions)
@@ -54,6 +55,34 @@ func cleanRecognitionRule(rule *model.RecognitionRule) error {
 	if rule.Name == "" {
 		return fmt.Errorf("识别规则名称不能为空")
 	}
+	rule.SourceURL = strings.TrimSpace(rule.SourceURL)
+	rule.SourceBehavior = strings.ToLower(strings.TrimSpace(rule.SourceBehavior))
+	if rule.SourceURL != "" {
+		if strings.ContainsAny(rule.Name, ",\r\n") {
+			return fmt.Errorf("远程识别规则名称不能包含逗号或换行：%s", rule.Name)
+		}
+		u, err := url.Parse(rule.SourceURL)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Errorf("识别规则「%s」的 YAML 来源 URL 无效", rule.Name)
+		}
+		if strings.HasSuffix(strings.ToLower(u.Path), ".mrs") {
+			return fmt.Errorf("识别规则「%s」不再支持 MRS 来源", rule.Name)
+		}
+		if !validRuleProviderBehavior(rule.SourceBehavior) {
+			return fmt.Errorf("识别规则「%s」的 YAML 匹配类型无效", rule.Name)
+		}
+		if rule.SourceInterval <= 0 {
+			rule.SourceInterval = 86400
+		}
+		rule.Kind = "RULE-SET"
+		rule.Conditions = []string{}
+		return nil
+	}
+	if rule.Kind == "RULE-SET" {
+		return fmt.Errorf("RULE-SET 识别规则必须通过 YAML 规则源导入")
+	}
+	rule.SourceBehavior = ""
+	rule.SourceInterval = 0
 	if !validRecognitionKind(rule.Kind) {
 		return fmt.Errorf("不支持的识别范围：%s", rule.Kind)
 	}
@@ -76,6 +105,14 @@ func cleanRecognitionRule(rule *model.RecognitionRule) error {
 	return nil
 }
 
+func validRuleProviderBehavior(behavior string) bool {
+	switch behavior {
+	case "domain", "ipcidr", "classical":
+		return true
+	}
+	return false
+}
+
 func validRecognitionKind(kind string) bool {
 	switch kind {
 	case "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-REGEX",
@@ -85,6 +122,58 @@ func validRecognitionKind(kind string) bool {
 	default:
 		return false
 	}
+}
+
+// CreateRecognitionRules 原子追加识别规则，用于远程 YAML 来源批量导入。
+// 任一规则无效或名称冲突时不会写入任何记录。
+func (s *Store) CreateRecognitionRules(rules []model.RecognitionRule) ([]model.RecognitionRule, error) {
+	if len(rules) == 0 {
+		return nil, fmt.Errorf("没有可导入的识别规则")
+	}
+	cleaned := make([]model.RecognitionRule, 0, len(rules))
+	names := map[string]bool{}
+	for _, rule := range rules {
+		if err := cleanRecognitionRule(&rule); err != nil {
+			return nil, err
+		}
+		if names[rule.Name] {
+			return nil, fmt.Errorf("导入内容中存在重复的识别规则名称：%s", rule.Name)
+		}
+		names[rule.Name] = true
+		cleaned = append(cleaned, rule)
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	for name := range names {
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM recognition_rules WHERE name=?)`, name).Scan(&exists); err != nil {
+			return nil, err
+		}
+		if exists {
+			return nil, fmt.Errorf("识别规则名称已存在：%s", name)
+		}
+	}
+	for i := range cleaned {
+		conditions, err := json.Marshal(cleaned[i].Conditions)
+		if err != nil {
+			return nil, err
+		}
+		result, err := tx.Exec(`INSERT INTO recognition_rules(name,kind,conditions,source_url,source_behavior,source_interval,priority,enabled)
+			VALUES(?,?,?,?,?,?,?,?)`, cleaned[i].Name, cleaned[i].Kind, string(conditions), cleaned[i].SourceURL,
+			cleaned[i].SourceBehavior, cleaned[i].SourceInterval, cleaned[i].Priority, cleaned[i].Enabled)
+		if err != nil {
+			return nil, err
+		}
+		cleaned[i].ID, _ = result.LastInsertId()
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return cleaned, nil
 }
 
 // ReplaceRecognitionRules 原子保存识别规则；被出站规则引用的规则需先解除映射后才能删除。
@@ -130,15 +219,15 @@ func (s *Store) ReplaceRecognitionRules(rules []model.RecognitionRule) error {
 			if !existing[rule.ID] {
 				return fmt.Errorf("识别规则 ID %d 不存在", rule.ID)
 			}
-			if _, err := tx.Exec(`UPDATE recognition_rules SET name=?,kind=?,conditions=?,priority=?,enabled=? WHERE id=?`,
-				rule.Name, rule.Kind, string(conditions), rule.Priority, rule.Enabled, rule.ID); err != nil {
+			if _, err := tx.Exec(`UPDATE recognition_rules SET name=?,kind=?,conditions=?,source_url=?,source_behavior=?,source_interval=?,priority=?,enabled=? WHERE id=?`,
+				rule.Name, rule.Kind, string(conditions), rule.SourceURL, rule.SourceBehavior, rule.SourceInterval, rule.Priority, rule.Enabled, rule.ID); err != nil {
 				return err
 			}
 			kept[rule.ID] = true
 			continue
 		}
-		result, err := tx.Exec(`INSERT INTO recognition_rules(name,kind,conditions,priority,enabled) VALUES(?,?,?,?,?)`,
-			rule.Name, rule.Kind, string(conditions), rule.Priority, rule.Enabled)
+		result, err := tx.Exec(`INSERT INTO recognition_rules(name,kind,conditions,source_url,source_behavior,source_interval,priority,enabled) VALUES(?,?,?,?,?,?,?,?)`,
+			rule.Name, rule.Kind, string(conditions), rule.SourceURL, rule.SourceBehavior, rule.SourceInterval, rule.Priority, rule.Enabled)
 		if err != nil {
 			return err
 		}

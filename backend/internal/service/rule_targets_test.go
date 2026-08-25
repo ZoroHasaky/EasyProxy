@@ -6,6 +6,8 @@ import (
 
 	"easyproxy/internal/model"
 	"easyproxy/internal/store"
+
+	"gopkg.in/yaml.v3"
 )
 
 func testNode(id int64, name, hash, region string, enabled bool) model.Node {
@@ -122,6 +124,62 @@ func TestGenerateConfigRoutesRecognitionRuleToSelectedGroup(t *testing.T) {
 	}
 	if !strings.Contains(gen.YAML, "- 指定节点") {
 		t.Fatalf("manual node selection was not written to the group:\n%s", gen.YAML)
+	}
+}
+
+func TestGenerateConfigWritesYAMLRuleProvidersBeforeRuleSets(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	node := testNode(0, "规则节点", "hash-yaml-provider", "HK", true)
+	if err := st.CreateNode(&node); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReplaceGroups([]model.Group{{
+		Name: "规则组", Type: "select", MemberMode: "manual", NodeIDs: []int64{node.ID}, Enabled: true,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := st.CreateRecognitionRules([]model.RecognitionRule{
+		{Name: "apple", SourceURL: "https://example.com/apple.yaml", SourceBehavior: "domain", SourceInterval: 7200, Priority: 20, Enabled: true},
+		{Name: "private-ip", SourceURL: "https://example.com/private.yaml", SourceBehavior: "ipcidr", SourceInterval: 86400, Priority: 10, Enabled: true},
+		{Name: "classical", SourceURL: "https://example.com/classical.yaml", SourceBehavior: "classical", SourceInterval: 86400, Priority: 5, Enabled: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups, _ := st.ListGroups()
+	if err := st.ReplaceOutboundRules([]model.OutboundRule{
+		{RecognitionID: created[0].ID, GroupID: groups[0].ID, Enabled: true},
+		{RecognitionID: created[1].ID, GroupID: groups[0].ID, Enabled: true},
+		{RecognitionID: created[2].ID, GroupID: groups[0].ID, Enabled: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	gen, err := GenerateConfig(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed map[string]any
+	if err := yaml.Unmarshal([]byte(gen.YAML), &parsed); err != nil {
+		t.Fatalf("generated YAML is invalid: %v\n%s", err, gen.YAML)
+	}
+	providers, ok := parsed["rule-providers"].(map[string]any)
+	if !ok || len(providers) != 3 {
+		t.Fatalf("rule providers=%#v\n%s", parsed["rule-providers"], gen.YAML)
+	}
+	apple, ok := providers["apple"].(map[string]any)
+	if !ok || apple["format"] != "yaml" || apple["interval"] != 7200 {
+		t.Fatalf("apple provider=%#v", apple)
+	}
+	if !strings.Contains(gen.YAML, "RULE-SET,private-ip,规则组,no-resolve") || !strings.Contains(gen.YAML, "RULE-SET,classical,规则组") {
+		t.Fatalf("RULE-SET routes missing:\n%s", gen.YAML)
+	}
+	if strings.Index(gen.YAML, "RULE-SET,apple") > strings.Index(gen.YAML, "RULE-SET,private-ip") {
+		t.Fatalf("remote rules were not ordered by priority:\n%s", gen.YAML)
 	}
 }
 

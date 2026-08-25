@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -182,9 +183,7 @@ func (s *Store) GetCurrentRuleProvider(id int64) (*model.RuleProvider, error) {
 	return &p, nil
 }
 
-// ReplaceCurrentRules 原子保存唯一的当前规则集。识别规则按 ID 更新，避免编辑后 ID 变化；
-// 来源改名会联动 RULE-SET 引用，仍被引用的来源不能删除。
-func (s *Store) ReplaceCurrentRules(rules []model.Rule, providers []model.RuleProvider) error {
+func normalizeRuleProviders(providers []model.RuleProvider) error {
 	providerNames := map[string]bool{}
 	for i := range providers {
 		p := &providers[i]
@@ -198,6 +197,9 @@ func (s *Store) ReplaceCurrentRules(rules []model.Rule, providers []model.RulePr
 		if strings.ContainsAny(p.Name, ",\r\n") {
 			return fmt.Errorf("识别规则名称不能包含逗号或换行：%s", p.Name)
 		}
+		if parsedURL, err := url.Parse(p.URL); err == nil && strings.HasSuffix(strings.ToLower(parsedURL.Path), ".mrs") {
+			return fmt.Errorf("识别规则 %s 不再支持 MRS 来源", p.Name)
+		}
 		providerNames[p.Name] = true
 		switch p.Behavior {
 		case "domain", "ipcidr", "classical":
@@ -205,13 +207,26 @@ func (s *Store) ReplaceCurrentRules(rules []model.Rule, providers []model.RulePr
 			return fmt.Errorf("识别规则 %s 的匹配类型无效", p.Name)
 		}
 		switch p.Format {
-		case "yaml", "text", "mrs":
+		case "yaml", "text":
 		default:
 			return fmt.Errorf("识别规则 %s 的格式无效", p.Name)
 		}
 		if p.Interval <= 0 {
 			p.Interval = 86400
 		}
+	}
+	return nil
+}
+
+// ReplaceCurrentRules 原子保存唯一的当前规则集。识别规则按 ID 更新，避免编辑后 ID 变化；
+// 来源改名会联动 RULE-SET 引用，仍被引用的来源不能删除。
+func (s *Store) ReplaceCurrentRules(rules []model.Rule, providers []model.RuleProvider) error {
+	if err := normalizeRuleProviders(providers); err != nil {
+		return err
+	}
+	providerNames := make(map[string]bool, len(providers))
+	for _, provider := range providers {
+		providerNames[provider.Name] = true
 	}
 
 	tx, err := s.db.Begin()
@@ -321,6 +336,9 @@ func (s *Store) ReplaceCurrentRules(rules []model.Rule, providers []model.RulePr
 
 // ReplaceRules 整体替换某模板的规则与 rule-providers（事务）
 func (s *Store) ReplaceRules(templateID int64, rules []model.Rule, providers []model.RuleProvider) error {
+	if err := normalizeRuleProviders(providers); err != nil {
+		return err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err

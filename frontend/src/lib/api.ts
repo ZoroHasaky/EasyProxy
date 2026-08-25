@@ -173,8 +173,17 @@ export interface RecognitionRule {
   name: string;
   kind: string;
   conditions: string[];
+  source_url?: string;
+  source_behavior?: "domain" | "ipcidr" | "classical";
+  source_interval?: number;
   priority: number;
   enabled: boolean;
+}
+
+export interface RecognitionRuleImportResponse extends AutoApplyResponse {
+  ok: boolean;
+  count: number;
+  rules: RecognitionRule[];
 }
 
 export interface OutboundRule {

@@ -8,6 +8,7 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import {
   ArrowRight,
   Eye,
+  FileUp,
   Layers,
   Pencil,
   Plus,
@@ -15,7 +16,7 @@ import {
   ScrollText,
   Trash2,
 } from "lucide-react";
-import { api, autoApplyResultMessage, AutoApplyResponse, GenResult, OutboundRule, ProxyGroup, RecognitionRule } from "@/lib/api";
+import { api, autoApplyResultMessage, AutoApplyResponse, GenResult, OutboundRule, ProxyGroup, RecognitionRule, RecognitionRuleImportResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,6 +51,7 @@ const RECOGNITION_KINDS = [
   "PROCESS-NAME",
   "PROCESS-PATH",
   "IN-TYPE",
+  "RULE-SET",
   "MATCH",
 ];
 
@@ -68,6 +70,7 @@ const KIND_LABELS: Record<string, string> = {
   "PROCESS-NAME": "进程名称",
   "PROCESS-PATH": "进程路径",
   "IN-TYPE": "入站类型",
+  "RULE-SET": "远程 YAML 规则集",
   MATCH: "最终兜底",
 };
 
@@ -79,6 +82,7 @@ function RecognitionRulesPanel({
   rules,
   mappedRecognitionIDs,
   onAdd,
+  onImport,
   onEdit,
   onToggle,
   onDelete,
@@ -86,6 +90,7 @@ function RecognitionRulesPanel({
   rules: RecognitionRule[];
   mappedRecognitionIDs: Set<number>;
   onAdd: () => void;
+  onImport: () => void;
   onEdit: (rule: RecognitionRule) => void;
   onToggle: (id: number, enabled: boolean) => void;
   onDelete: (rule: RecognitionRule) => void;
@@ -102,15 +107,24 @@ function RecognitionRulesPanel({
             每条规则可填写多个匹配条件；优先级数值越大，越早参与匹配。
           </p>
         </div>
-        <Button size="sm" onClick={onAdd}>
-          <Plus className="h-4 w-4" />
-          新建识别规则
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={onImport}>
+            <FileUp className="h-4 w-4" />
+            导入 YAML 规则源
+          </Button>
+          <Button size="sm" onClick={onAdd}>
+            <Plus className="h-4 w-4" />
+            新建识别规则
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {rules.map((rule) => {
-          const preview = rule.kind === "MATCH" ? "无条件，作为最终兜底" : rule.conditions.join("、");
+          const isRemoteSource = Boolean(rule.source_url);
+          const preview = isRemoteSource
+            ? `${rule.source_behavior ?? "domain"} · ${rule.source_url}`
+            : rule.kind === "MATCH" ? "无条件，作为最终兜底" : rule.conditions.join("、");
           return (
             <div
               key={rule.id}
@@ -130,7 +144,7 @@ function RecognitionRulesPanel({
                   </Badge>
                 </div>
                 <div className="rounded-xl border border-border/50 bg-muted/35 p-3">
-                  <div className="text-[11px] text-muted-foreground">匹配条件（{rule.conditions.length}）</div>
+                  <div className="text-[11px] text-muted-foreground">{isRemoteSource ? `YAML 规则源 · 每 ${rule.source_interval ?? 86400} 秒更新` : `匹配条件（${rule.conditions.length}）`}</div>
                   <div className="mt-1.5 line-clamp-3 break-all font-mono text-xs" title={preview}>
                     {preview}
                   </div>
@@ -280,8 +294,21 @@ export default function RulesPage() {
   const [recognitionName, setRecognitionName] = useState("");
   const [recognitionKind, setRecognitionKind] = useState("DOMAIN-SUFFIX");
   const [conditionsText, setConditionsText] = useState("");
+  const [recognitionSourceURL, setRecognitionSourceURL] = useState("");
+  const [recognitionSourceBehavior, setRecognitionSourceBehavior] = useState("domain");
+  const [recognitionSourceInterval, setRecognitionSourceInterval] = useState(86400);
   const [recognitionPriority, setRecognitionPriority] = useState(0);
   const [recognitionEnabled, setRecognitionEnabled] = useState(true);
+
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importMode, setImportMode] = useState<"url" | "yaml">("url");
+  const [importURL, setImportURL] = useState("");
+  const [importName, setImportName] = useState("");
+  const [importBehavior, setImportBehavior] = useState("domain");
+  const [importInterval, setImportInterval] = useState(86400);
+  const [importPriority, setImportPriority] = useState(0);
+  const [importEnabled, setImportEnabled] = useState(true);
+  const [importYAML, setImportYAML] = useState("");
 
   const [outboundDialogOpen, setOutboundDialogOpen] = useState(false);
   const [editingOutbound, setEditingOutbound] = useState<OutboundRule | null>(null);
@@ -325,6 +352,36 @@ export default function RulesPage() {
     },
     onError: (error: any) => toast.error(error.message),
   });
+  const previewRecognitionImport = useMutation({
+    mutationFn: () => api.post<RecognitionRuleImportResponse>("/api/recognition-rules/import", {
+      content: importYAML,
+      priority: Number(importPriority) || 0,
+      enabled: importEnabled,
+      preview: true,
+    }),
+    onError: (error: any) => toast.error(error.message),
+  });
+  const importRecognition = useMutation({
+    mutationFn: () => api.post<RecognitionRuleImportResponse>("/api/recognition-rules/import", importMode === "url"
+      ? {
+          url: importURL,
+          name: importName,
+          behavior: importBehavior,
+          interval: Number(importInterval) || 0,
+          priority: Number(importPriority) || 0,
+          enabled: importEnabled,
+        }
+      : {
+          content: importYAML,
+          priority: Number(importPriority) || 0,
+          enabled: importEnabled,
+        }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["recognitionRules"] });
+      setImportDialogOpen(false);
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
 
   const mappedRecognitionIDs = useMemo(
     () => new Set(outboundRules.map((rule) => rule.recognition_id)),
@@ -336,6 +393,9 @@ export default function RulesPage() {
     setRecognitionName("");
     setRecognitionKind("DOMAIN-SUFFIX");
     setConditionsText("");
+    setRecognitionSourceURL("");
+    setRecognitionSourceBehavior("domain");
+    setRecognitionSourceInterval(86400);
     setRecognitionPriority(0);
     setRecognitionEnabled(true);
     setRecognitionDialogOpen(true);
@@ -346,22 +406,29 @@ export default function RulesPage() {
     setRecognitionName(rule.name);
     setRecognitionKind(rule.kind);
     setConditionsText(rule.conditions.join("\n"));
+    setRecognitionSourceURL(rule.source_url ?? "");
+    setRecognitionSourceBehavior(rule.source_behavior ?? "domain");
+    setRecognitionSourceInterval(rule.source_interval ?? 86400);
     setRecognitionPriority(rule.priority);
     setRecognitionEnabled(rule.enabled);
     setRecognitionDialogOpen(true);
   };
 
   const persistRecognition = async () => {
+    const isRemoteSource = recognitionKind === "RULE-SET";
     const next: RecognitionRule = {
       id: editingRecognition?.id ?? -Date.now(),
       name: recognitionName.trim(),
       kind: recognitionKind,
-      conditions: conditionsText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
+      conditions: isRemoteSource ? [] : conditionsText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
+      source_url: isRemoteSource ? recognitionSourceURL.trim() : undefined,
+      source_behavior: isRemoteSource ? recognitionSourceBehavior as "domain" | "ipcidr" | "classical" : undefined,
+      source_interval: isRemoteSource ? Number(recognitionSourceInterval) || 0 : undefined,
       priority: Number(recognitionPriority) || 0,
       enabled: recognitionEnabled,
     };
-    if (!next.name || (next.kind !== "MATCH" && next.conditions.length === 0)) {
-      toast.error("请填写规则名称和至少一个匹配条件");
+    if (!next.name || (next.kind !== "MATCH" && !isRemoteSource && next.conditions.length === 0) || (isRemoteSource && !next.source_url)) {
+      toast.error(isRemoteSource ? "请填写规则名称和 YAML 来源 URL" : "请填写规则名称和至少一个匹配条件");
       return;
     }
     const rules = editingRecognition
@@ -369,6 +436,24 @@ export default function RulesPage() {
       : [...recognitionRules, next];
     const result = await saveRecognition.mutateAsync(rules);
     reportAutoApply(editingRecognition ? "识别规则已更新" : "识别规则已创建", result);
+  };
+
+  const openRecognitionImport = () => {
+    setImportMode("url");
+    setImportURL("");
+    setImportName("");
+    setImportBehavior("domain");
+    setImportInterval(86400);
+    setImportPriority(0);
+    setImportEnabled(true);
+    setImportYAML("");
+    previewRecognitionImport.reset();
+    setImportDialogOpen(true);
+  };
+
+  const persistRecognitionImport = async () => {
+    const result = await importRecognition.mutateAsync();
+    reportAutoApply(`已导入 ${result.count} 条 YAML 识别规则`, result);
   };
 
   const deleteRecognition = async (rule: RecognitionRule) => {
@@ -458,6 +543,7 @@ export default function RulesPage() {
             rules={recognitionRules}
             mappedRecognitionIDs={mappedRecognitionIDs}
             onAdd={openAddRecognition}
+            onImport={openRecognitionImport}
             onEdit={openEditRecognition}
             onToggle={toggleRecognition}
             onDelete={deleteRecognition}
@@ -495,7 +581,16 @@ export default function RulesPage() {
               </div>
               <div className="space-y-1.5"><Label>优先级</Label><Input type="number" value={recognitionPriority} onChange={(event) => setRecognitionPriority(Number(event.target.value))} /><p className="text-[11px] text-muted-foreground">默认 0，数字越大越优先。</p></div>
             </div>
-            {recognitionKind !== "MATCH" ? (
+            {recognitionKind === "RULE-SET" ? (
+              <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/5 p-3">
+                <p className="text-xs text-muted-foreground">远程 YAML 规则集由 Mihomo 自动下载和更新；不支持 MRS 文件。</p>
+                <div className="space-y-1.5"><Label>YAML 来源 URL</Label><Input value={recognitionSourceURL} onChange={(event) => setRecognitionSourceURL(event.target.value)} placeholder="https://example.com/rules.yaml" /></div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5"><Label>匹配类型</Label><Select value={recognitionSourceBehavior} onChange={(event) => setRecognitionSourceBehavior(event.target.value)}><option value="domain">域名（domain）</option><option value="ipcidr">IP 网段（ipcidr）</option><option value="classical">传统规则（classical）</option></Select></div>
+                  <div className="space-y-1.5"><Label>更新周期（秒）</Label><Input type="number" min="1" value={recognitionSourceInterval} onChange={(event) => setRecognitionSourceInterval(Number(event.target.value))} /></div>
+                </div>
+              </div>
+            ) : recognitionKind !== "MATCH" ? (
               <div className="space-y-1.5">
                 <Label>匹配条件（每行一个）</Label>
                 <Textarea value={conditionsText} onChange={(event) => setConditionsText(event.target.value)} className="min-h-36 font-mono text-xs" placeholder={recognitionKind === "DOMAIN-SUFFIX" ? "example.com\ntracker.example\nprivate.example" : "每行填写一个匹配条件"} />
@@ -504,6 +599,42 @@ export default function RulesPage() {
             <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/40 p-3"><div><div className="text-xs font-semibold">启用此识别规则</div><div className="text-[11px] text-muted-foreground">禁用后不会写入 Mihomo 配置。</div></div><Switch checked={recognitionEnabled} onCheckedChange={setRecognitionEnabled} /></div>
           </div>
           <DialogFooter><Button variant="outline" size="sm" onClick={() => setRecognitionDialogOpen(false)}>取消</Button><Button size="sm" onClick={persistRecognition} disabled={saveRecognition.isPending}>{saveRecognition.isPending ? "保存中…" : "保存识别规则"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>导入 YAML 识别规则源</DialogTitle>
+            <DialogDescription>每个 Rule Provider 会创建为一条独立识别规则；请再在“出站映射”中决定实际出站规则。</DialogDescription>
+          </DialogHeader>
+          <Tabs value={importMode} onValueChange={(value) => { setImportMode(value as "url" | "yaml"); previewRecognitionImport.reset(); }}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="url">单个 YAML URL</TabsTrigger>
+              <TabsTrigger value="yaml">粘贴 YAML 配置</TabsTrigger>
+            </TabsList>
+            <TabsContent value="url" className="space-y-4 py-3">
+              <div className="space-y-1.5"><Label>YAML 文件 URL</Label><Input value={importURL} onChange={(event) => setImportURL(event.target.value)} placeholder="https://raw.githubusercontent.com/.../apple.yaml" /></div>
+              <div className="space-y-1.5"><Label>名称（可选）</Label><Input value={importName} onChange={(event) => setImportName(event.target.value)} placeholder="留空时从 YAML 文件名推导" /></div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5"><Label>匹配类型</Label><Select value={importBehavior} onChange={(event) => setImportBehavior(event.target.value)}><option value="domain">域名（domain）</option><option value="ipcidr">IP 网段（ipcidr）</option><option value="classical">传统规则（classical）</option></Select></div>
+                <div className="space-y-1.5"><Label>更新周期（秒）</Label><Input type="number" min="1" value={importInterval} onChange={(event) => setImportInterval(Number(event.target.value))} /></div>
+              </div>
+            </TabsContent>
+            <TabsContent value="yaml" className="space-y-3 py-3">
+              <div className="space-y-1.5"><Label>rule-providers YAML 配置</Label><Textarea value={importYAML} onChange={(event) => { setImportYAML(event.target.value); previewRecognitionImport.reset(); }} className="min-h-52 font-mono text-xs" placeholder={'rule-providers:\n  apple:\n    type: http\n    behavior: domain\n    url: https://example.com/apple.yaml\n    format: yaml\n    interval: 86400'} /></div>
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/35 p-3">
+                <div className="text-xs text-muted-foreground">仅读取名称、HTTP URL、匹配类型和更新周期；下载路径由 EasyProxy 自动生成。</div>
+                <Button type="button" variant="outline" size="sm" onClick={() => previewRecognitionImport.mutate()} disabled={!importYAML.trim() || previewRecognitionImport.isPending}><Eye className="h-3.5 w-3.5" />{previewRecognitionImport.isPending ? "解析中…" : "解析配置"}</Button>
+              </div>
+              {previewRecognitionImport.data && <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 p-3 text-xs text-emerald-700 dark:text-emerald-300">已解析 {previewRecognitionImport.data.count} 个规则源：{previewRecognitionImport.data.rules.map((rule) => rule.name).join("、")}</div>}
+            </TabsContent>
+          </Tabs>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5"><Label>优先级</Label><Input type="number" value={importPriority} onChange={(event) => setImportPriority(Number(event.target.value))} /><p className="text-[11px] text-muted-foreground">默认 0，数字越大越先匹配。</p></div>
+            <div className="flex items-center justify-between self-end rounded-xl border border-border/60 bg-muted/40 p-3"><div><div className="text-xs font-semibold">导入后启用</div><div className="text-[11px] text-muted-foreground">未映射前不会写入内核配置。</div></div><Switch checked={importEnabled} onCheckedChange={setImportEnabled} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" size="sm" onClick={() => setImportDialogOpen(false)}>取消</Button><Button size="sm" onClick={persistRecognitionImport} disabled={importRecognition.isPending || (importMode === "url" ? !importURL.trim() : !previewRecognitionImport.data)}>{importRecognition.isPending ? "导入中…" : "导入识别规则"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

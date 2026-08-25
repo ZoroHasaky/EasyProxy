@@ -187,11 +187,23 @@ func (s *Store) migrate() error {
 	if err := s.ensureColumn("proxy_groups", "node_ids", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
+	if err := s.ensureColumn("recognition_rules", "source_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+	if err := s.ensureColumn("recognition_rules", "source_behavior", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+	if err := s.ensureColumn("recognition_rules", "source_interval", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
 	if err := s.migrateRuleTargetRefs(); err != nil {
 		return fmt.Errorf("migrate target refs: %w", err)
 	}
 	if err := s.migrateCurrentRuleSet(); err != nil {
 		return fmt.Errorf("migrate current rules: %w", err)
+	}
+	if err := s.removeMRSRuleProviders(); err != nil {
+		return fmt.Errorf("remove MRS rule providers: %w", err)
 	}
 	if err := s.initializeAppliedConfigSettings(); err != nil {
 		return fmt.Errorf("initialize applied config settings: %w", err)
@@ -200,6 +212,73 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("prune audit logs: %w", err)
 	}
 	return nil
+}
+
+// removeMRSRuleProviders 是一次幂等清理：MRS 已不再受支持，删除旧来源及其 RULE-SET 引用。
+func (s *Store) removeMRSRuleProviders() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`SELECT id,template_id,name FROM rule_providers
+		WHERE lower(trim(format))='mrs' OR instr(lower(url), '.mrs') > 0`)
+	if err != nil {
+		return err
+	}
+	type providerRef struct {
+		id         int64
+		templateID int64
+		name       string
+	}
+	var providers []providerRef
+	for rows.Next() {
+		var provider providerRef
+		if err := rows.Scan(&provider.id, &provider.templateID, &provider.name); err != nil {
+			rows.Close()
+			return err
+		}
+		providers = append(providers, provider)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	changed := len(providers) > 0
+	for _, provider := range providers {
+		if _, err := tx.Exec(`DELETE FROM rules WHERE template_id=? AND upper(kind)='RULE-SET' AND value=?`, provider.templateID, provider.name); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM rule_providers WHERE id=?`, provider.id); err != nil {
+			return err
+		}
+	}
+
+	// 防御性清理：若开发版数据库曾写入远程 MRS 识别规则，也一并移除其出站映射。
+	result, err := tx.Exec(`DELETE FROM outbound_rules WHERE recognition_id IN (
+		SELECT id FROM recognition_rules WHERE instr(lower(source_url), '.mrs') > 0
+	)`)
+	if err != nil {
+		return err
+	}
+	if count, err := result.RowsAffected(); err == nil && count > 0 {
+		changed = true
+	}
+	result, err = tx.Exec(`DELETE FROM recognition_rules WHERE instr(lower(source_url), '.mrs') > 0`)
+	if err != nil {
+		return err
+	}
+	if count, err := result.RowsAffected(); err == nil && count > 0 {
+		changed = true
+	}
+	// 已应用 YAML 可能仍包含旧版生成的 MRS Provider。清空快照后，下一次启动或
+	// 应用会从已应用设置和当前规则数据重新生成，避免已删除来源被继续加载。
+	if changed {
+		if _, err := tx.Exec(`DELETE FROM applied_config_state WHERE id=1`); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // migrateCurrentRuleSet 将旧版激活模板的规则复制为唯一的当前规则集。

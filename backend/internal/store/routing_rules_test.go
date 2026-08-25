@@ -48,3 +48,37 @@ func TestRecognitionAndOutboundRulesPersistWithReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCreateRemoteYAMLRecognitionRulesIsAtomicAndRejectsMRS(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	created, err := st.CreateRecognitionRules([]model.RecognitionRule{
+		{Name: "apple", SourceURL: "https://example.com/apple.yaml", SourceBehavior: "domain", SourceInterval: 86400, Enabled: true},
+		{Name: "private-ip", SourceURL: "https://example.com/private.yaml", SourceBehavior: "ipcidr", Enabled: true},
+	})
+	if err != nil || len(created) != 2 {
+		t.Fatalf("created=%#v err=%v", created, err)
+	}
+	if created[0].Kind != "RULE-SET" || created[1].SourceInterval != 86400 {
+		t.Fatalf("remote rules were not normalized: %#v", created)
+	}
+	if _, err := st.CreateRecognitionRules([]model.RecognitionRule{
+		{Name: "apple", SourceURL: "https://example.com/another.yaml", SourceBehavior: "domain"},
+		{Name: "new", SourceURL: "https://example.com/new.yaml", SourceBehavior: "domain"},
+	}); err == nil || !strings.Contains(err.Error(), "已存在") {
+		t.Fatalf("duplicate batch should be rejected atomically, got %v", err)
+	}
+	rules, err := st.ListRecognitionRules()
+	if err != nil || len(rules) != 2 {
+		t.Fatalf("failed batch changed persisted rules=%#v err=%v", rules, err)
+	}
+	if _, err := st.CreateRecognitionRules([]model.RecognitionRule{{
+		Name: "legacy", SourceURL: "https://example.com/legacy.mrs", SourceBehavior: "domain",
+	}}); err == nil || !strings.Contains(err.Error(), "MRS") {
+		t.Fatalf("MRS source should be rejected, got %v", err)
+	}
+}

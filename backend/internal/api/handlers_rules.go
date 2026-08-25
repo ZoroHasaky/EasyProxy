@@ -287,13 +287,6 @@ func (s *Server) handleRuleProviderContent(w http.ResponseWriter, r *http.Reques
 	providers := []model.RuleProvider{*provider}
 	s.enrichRuleProviderStatus(providers)
 	provider = &providers[0]
-	if strings.EqualFold(provider.Format, "mrs") {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"provider": provider, "expandable": false,
-			"items": []string{}, "total": 0, "page": 1, "size": 0,
-		})
-		return
-	}
 	content, err := s.fetchTemplateContent(provider.URL, "")
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "识别规则下载失败: "+err.Error())

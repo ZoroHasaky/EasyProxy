@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
 
 	"easyproxy/internal/core"
@@ -37,36 +36,26 @@ func TestPreviewRuleTemplateDoesNotPersist(t *testing.T) {
 	}
 }
 
-func TestMRSProviderContentReturnsMetadataWithoutDownload(t *testing.T) {
-	dir := t.TempDir()
-	st, err := store.Open(dir)
+func TestMRSRuleProviderIsRejected(t *testing.T) {
+	st, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
 	if err := st.ReplaceCurrentRules(nil, []model.RuleProvider{{
 		Name: "private", URL: "https://invalid.example/private.mrs", Behavior: "domain", Format: "mrs", Interval: 86400,
-	}}); err != nil {
-		t.Fatal(err)
+	}}); err == nil {
+		t.Fatal("MRS rule provider should be rejected")
 	}
-	providers, _ := st.ListCurrentRuleProviders()
-	srv := New(st, dir, "test")
-	req := httptest.NewRequest(http.MethodGet, "/api/rule-providers/1/content", nil)
-	req.SetPathValue("id", strconv.FormatInt(providers[0].ID, 10))
-	rec := httptest.NewRecorder()
-	srv.handleRuleProviderContent(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	if err := st.ReplaceRules(1, nil, []model.RuleProvider{{
+		Name: "private", URL: "https://invalid.example/private.mrs", Behavior: "domain", Format: "mrs", Interval: 86400,
+	}}); err == nil {
+		t.Fatal("template MRS rule provider should be rejected")
 	}
-	var result struct {
-		Expandable bool               `json:"expandable"`
-		Provider   model.RuleProvider `json:"provider"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.Expandable || result.Provider.Status != "core_stopped" {
-		t.Fatalf("unexpected result: %#v", result)
+	if err := st.ReplaceCurrentRules(nil, []model.RuleProvider{{
+		Name: "disguised", URL: "https://invalid.example/disguised.mrs", Behavior: "domain", Format: "yaml", Interval: 86400,
+	}}); err == nil {
+		t.Fatal("MRS URL should be rejected even when format is YAML")
 	}
 }
 
