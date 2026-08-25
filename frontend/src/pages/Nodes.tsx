@@ -20,7 +20,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
-import { api, ProxyNode, RegionInfo } from "@/lib/api";
+import { api, autoApplyResultMessage, AutoApplyResponse, ProxyNode, RegionInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -90,6 +90,15 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
     queryFn: () => api.get<RegionInfo[]>("/api/nodes/regions"),
   });
 
+  const reportAutoApply = (savedMessage: string, result: AutoApplyResponse) => {
+    if (result.apply_error) {
+      toast.warning(`${savedMessage}，但自动应用失败，已加入待应用清单`);
+    } else {
+      toast.success(`${savedMessage}，${autoApplyResultMessage(result.apply_result)}`);
+    }
+    qc.invalidateQueries({ queryKey: ["config-pending"] });
+  };
+
   const checkMutation = useMutation({
     mutationFn: () =>
       api.post<{ tested: number }>("/api/nodes/check", {
@@ -107,15 +116,18 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, value }: { id: number; value: boolean }) =>
-      api.patch(`/api/nodes/${id}`, { enabled: value }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["nodes"] }),
+      api.patch<AutoApplyResponse>(`/api/nodes/${id}`, { enabled: value }),
+    onSuccess: (res, { value }) => {
+      reportAutoApply(value ? "节点已启用" : "节点已禁用", res);
+      qc.invalidateQueries({ queryKey: ["nodes"] });
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
   const removeMutation = useMutation({
-    mutationFn: (id: number) => api.del(`/api/nodes/${id}`),
-    onSuccess: () => {
-      toast.success("节点已删除");
+    mutationFn: (id: number) => api.del<AutoApplyResponse>(`/api/nodes/${id}`),
+    onSuccess: (res) => {
+      reportAutoApply("节点已删除", res);
       qc.invalidateQueries({ queryKey: ["nodes"] });
       qc.invalidateQueries({ queryKey: ["nodeRegions"] });
       qc.invalidateQueries({ queryKey: ["ruleTargets"] });
@@ -124,9 +136,9 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
 
   const editMutation = useMutation({
     mutationFn: () =>
-      api.patch(`/api/nodes/${editingNode!.id}`, { name: editingName.trim() }),
-    onSuccess: () => {
-      toast.success("节点名称已更新");
+      api.patch<AutoApplyResponse>(`/api/nodes/${editingNode!.id}`, { name: editingName.trim() }),
+    onSuccess: (res) => {
+      reportAutoApply("节点名称已更新", res);
       setEditingNode(null);
       setEditingName("");
       qc.invalidateQueries({ queryKey: ["nodes"] });
@@ -136,9 +148,9 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
   });
 
   const pruneMutation = useMutation({
-    mutationFn: () => api.post<{ removed: number }>("/api/nodes/prune"),
+    mutationFn: () => api.post<{ removed: number } & AutoApplyResponse>("/api/nodes/prune"),
     onSuccess: (res) => {
-      toast.success(`已清理 ${res.removed} 个失效不可用节点`);
+      reportAutoApply(`已清理 ${res.removed} 个失效不可用节点`, res);
       qc.invalidateQueries({ queryKey: ["nodes"] });
       qc.invalidateQueries({ queryKey: ["nodeRegions"] });
     },
@@ -160,9 +172,9 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
   };
 
   const importMutation = useMutation({
-    mutationFn: () => api.post<{ added: number }>("/api/nodes/import", { content: importText }),
+    mutationFn: () => api.post<{ added: number; duplicated: number } & AutoApplyResponse>("/api/nodes/import", { content: importText }),
     onSuccess: (res) => {
-      toast.success(`导入成功，新增 ${res.added} 个节点`);
+      reportAutoApply(`导入成功，新增 ${res.added} 个节点`, res);
       setImportOpen(false);
       setImportText("");
       qc.invalidateQueries({ queryKey: ["nodes"] });

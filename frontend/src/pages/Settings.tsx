@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Settings,
-  Save,
   Globe2,
   Sparkles,
   RefreshCw,
@@ -91,14 +90,15 @@ export default function SettingsPage() {
   const patch = (p: Partial<SettingsType>) => setForm((f) => (f ? { ...f, ...p } : f));
 
   const saveMutation = useMutation({
-    mutationFn: () => {
-      if (!form) return Promise.resolve();
-      const { default_geox_urls: _defaults, ...payload } = form;
-      return api.put("/api/settings", payload);
+    mutationFn: (payload: Partial<SettingsType>) => {
+      const { default_geox_urls: _defaults, ...body } = payload;
+      return api.put("/api/settings", body);
     },
-    onSuccess: () => {
-      toast.success("系统设置保存成功");
+    onSuccess: (_result, payload) => {
+      const requiresApply = ["geo_enabled", "geo_auto_update", "geo_update_interval", "geox_urls"].some((key) => key in payload);
+      toast.success(requiresApply ? "Geo 设置已保存，等待应用" : "面板更新设置已保存并生效");
       qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["config-pending"] });
       qc.invalidateQueries({ queryKey: ["geo-status"] });
     },
     onError: (e: any) => toast.error(e.message),
@@ -115,13 +115,18 @@ export default function SettingsPage() {
     });
   };
 
+  const saveGeoSource = (key: "geoip" | "geosite", value: string) => {
+    const geoxUrls = { ...form.geox_urls, [key]: sourceFieldValue(value) };
+    patch({ geox_urls: geoxUrls });
+    saveMutation.mutate({ geox_urls: geoxUrls });
+  };
+
   const restoreDefaultGeoSources = () => {
-    patch({
-      geox_urls: Object.fromEntries(
-        Object.entries(form.default_geox_urls ?? {}).map(([key, urls]) => [key, [...urls]]),
-      ),
-    });
-    toast.success("已恢复 3 条推荐镜像源，保存后生效");
+    const geoxUrls = Object.fromEntries(
+      Object.entries(form.default_geox_urls ?? {}).map(([key, urls]) => [key, [...urls]]),
+    );
+    patch({ geox_urls: geoxUrls });
+    saveMutation.mutate({ geox_urls: geoxUrls });
   };
 
   return (
@@ -138,14 +143,6 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        <Button
-          size="sm"
-          onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
-        >
-          <Save className="h-4 w-4" />
-          {saveMutation.isPending ? "保存中…" : "保存全局设置"}
-        </Button>
       </div>
 
       {/* Geo 数据库设置 */}
@@ -171,7 +168,10 @@ export default function SettingsPage() {
             </div>
             <Switch
               checked={form.geo_enabled}
-              onCheckedChange={(v) => patch({ geo_enabled: v })}
+              onCheckedChange={(v) => {
+                patch({ geo_enabled: v });
+                saveMutation.mutate({ geo_enabled: v });
+              }}
             />
           </div>
 
@@ -184,7 +184,10 @@ export default function SettingsPage() {
             </div>
             <Switch
               checked={form.geo_auto_update}
-              onCheckedChange={(v) => patch({ geo_auto_update: v })}
+              onCheckedChange={(v) => {
+                patch({ geo_auto_update: v });
+                saveMutation.mutate({ geo_auto_update: v });
+              }}
             />
           </div>
 
@@ -194,6 +197,7 @@ export default function SettingsPage() {
               type="number"
               value={form.geo_update_interval || 24}
               onChange={(e) => patch({ geo_update_interval: Number(e.target.value) })}
+              onBlur={() => saveMutation.mutate({ geo_update_interval: form.geo_update_interval })}
             />
           </div>
 
@@ -219,6 +223,7 @@ export default function SettingsPage() {
                     value={sourceLines(form.geox_urls[field.key])}
                     placeholder={`https://example.com/${field.file}`}
                     onChange={(event) => updateGeoSource(field.key, event.target.value)}
+                    onBlur={(event) => saveGeoSource(field.key, event.currentTarget.value)}
                   />
                 </div>
               ))}
@@ -287,6 +292,7 @@ export default function SettingsPage() {
               value={form.update_repo || ""}
               placeholder="例如 ZoroHasaky/EasyProxy"
               onChange={(e) => patch({ update_repo: e.target.value })}
+              onBlur={() => saveMutation.mutate({ update_repo: form.update_repo })}
             />
           </div>
 
@@ -299,7 +305,10 @@ export default function SettingsPage() {
             </div>
             <Switch
               checked={form.update_via_proxy}
-              onCheckedChange={(v) => patch({ update_via_proxy: v })}
+              onCheckedChange={(v) => {
+                patch({ update_via_proxy: v });
+                saveMutation.mutate({ update_via_proxy: v });
+              }}
             />
           </div>
         </CardContent>

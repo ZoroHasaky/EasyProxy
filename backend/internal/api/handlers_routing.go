@@ -25,8 +25,8 @@ func (s *Server) handlePutRecognitionRules(w http.ResponseWriter, r *http.Reques
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.dirty.Store(true)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(rules)})
+	result, applyError := s.applyChangedConfig("recognition_rules", []string{"识别规则"})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(rules), "apply_result": result, "apply_error": applyError})
 }
 
 func (s *Server) handleGetOutboundRules(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +48,6 @@ func (s *Server) handlePutOutboundRules(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.dirty.Store(true)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(rules)})
+	result, applyError := s.applyChangedConfig("outbound_rules", []string{"出站映射"})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(rules), "apply_result": result, "apply_error": applyError})
 }

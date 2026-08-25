@@ -38,7 +38,7 @@ type Server struct {
 
 	mihomoRP *httputil.ReverseProxy
 
-	dirty atomic.Bool
+	configApplyMu sync.Mutex
 
 	// must_changePw 内存缓存：鉴权是所有请求的热路径，不依赖数据库连接
 	mustChangePw atomic.Bool
@@ -130,12 +130,35 @@ func (s *Server) EnsureCoreStarted() {
 }
 
 func (s *Server) writeGeneratedConfig() bool {
-	gen, err := service.GenerateConfig(s.st)
+	if yaml, err := s.st.AppliedConfigYAML(); err != nil {
+		log.Printf("[config] 读取已应用配置快照失败: %v", err)
+		return false
+	} else if yaml != "" {
+		return s.writeConfigYAML(yaml)
+	}
+	// 兼容旧安装：首次迁移尚无完整 YAML 快照时，按已应用设置生成一份配置。
+	gen, err := service.GenerateAppliedConfig(s.st)
 	if err != nil {
-		log.Printf("[config] 生成失败: %v", err)
+		log.Printf("[config] 生成已应用配置失败: %v", err)
 		return false
 	}
-	if err := os.WriteFile(filepath.Join(s.dataDir, "config.yaml"), []byte(gen.YAML), 0o644); err != nil {
+	if err := s.st.SaveAppliedConfigYAML(gen.YAML); err != nil {
+		log.Printf("[config] 初始化已应用配置快照失败: %v", err)
+		return false
+	}
+	return s.writeConfigYAML(gen.YAML)
+}
+
+func (s *Server) generateConfigForSettings(values map[string]string) (string, error) {
+	gen, err := service.GenerateConfigForSettings(s.st, values)
+	if err != nil {
+		return "", err
+	}
+	return gen.YAML, nil
+}
+
+func (s *Server) writeConfigYAML(yaml string) bool {
+	if err := os.WriteFile(filepath.Join(s.dataDir, "config.yaml"), []byte(yaml), 0o644); err != nil {
 		log.Printf("[config] 写入失败: %v", err)
 		return false
 	}
@@ -189,16 +212,17 @@ func (s *Server) subscriptionLoop() {
 			if !due {
 				continue
 			}
-			proxy := ""
-			if s.mgr.Status().State == core.StateRunning {
-				proxy = fmt.Sprintf("127.0.0.1:%d", s.st.GetSettingInt("mixed_port", 7890))
-			}
+			proxy := s.runningCoreProxyAddr()
 			if _, _, err := service.SyncSubscription(s.st, &sub, proxy); err != nil {
 				log.Printf("[sub] %s 定时更新失败: %v", sub.Name, err)
 				continue
 			}
-			s.dirty.Store(true)
-			log.Printf("[sub] %s 定时更新完成", sub.Name)
+			result, applyError := s.applyChangedConfig("subscriptions", []string{"订阅"})
+			if applyError != "" {
+				log.Printf("[sub] %s 定时更新完成，但自动应用失败，已加入待重试: %s", sub.Name, applyError)
+				continue
+			}
+			log.Printf("[sub] %s 定时更新并%s完成", sub.Name, result)
 		}
 	}
 }
@@ -243,6 +267,7 @@ func (s *Server) Handler() http.Handler {
 	route("POST /api/groups/generate-regions", s.handleGenerateRegionGroups)
 
 	route("GET /api/config/preview", s.handleConfigPreview)
+	route("GET /api/config/pending", s.handleGetPendingConfigChanges)
 	route("POST /api/config/apply", s.handleConfigApply)
 
 	route("GET /api/core", s.handleCoreStatus)

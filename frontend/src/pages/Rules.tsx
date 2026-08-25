@@ -15,7 +15,7 @@ import {
   ScrollText,
   Trash2,
 } from "lucide-react";
-import { api, GenResult, OutboundRule, ProxyGroup, RecognitionRule } from "@/lib/api";
+import { api, autoApplyResultMessage, AutoApplyResponse, GenResult, OutboundRule, ProxyGroup, RecognitionRule } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -300,8 +300,17 @@ export default function RulesPage() {
   const outboundRules = outboundQuery.data ?? [];
   const groups = groupsQuery.data ?? [];
 
+  const reportAutoApply = (savedMessage: string, result: AutoApplyResponse) => {
+    if (result.apply_error) {
+      toast.warning(`${savedMessage}，但自动应用失败，已加入待应用清单`);
+    } else {
+      toast.success(`${savedMessage}，${autoApplyResultMessage(result.apply_result)}`);
+    }
+    qc.invalidateQueries({ queryKey: ["config-pending"] });
+  };
+
   const saveRecognition = useMutation({
-    mutationFn: (rules: RecognitionRule[]) => api.put("/api/recognition-rules", rules),
+    mutationFn: (rules: RecognitionRule[]) => api.put<AutoApplyResponse>("/api/recognition-rules", rules),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["recognitionRules"] });
       setRecognitionDialogOpen(false);
@@ -309,7 +318,7 @@ export default function RulesPage() {
     onError: (error: any) => toast.error(error.message),
   });
   const saveOutbound = useMutation({
-    mutationFn: (rules: OutboundRule[]) => api.put("/api/outbound-rules", rules),
+    mutationFn: (rules: OutboundRule[]) => api.put<AutoApplyResponse>("/api/outbound-rules", rules),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["outboundRules"] });
       setOutboundDialogOpen(false);
@@ -358,14 +367,21 @@ export default function RulesPage() {
     const rules = editingRecognition
       ? recognitionRules.map((rule) => (rule.id === editingRecognition.id ? next : rule))
       : [...recognitionRules, next];
-    await saveRecognition.mutateAsync(rules);
-    toast.success(editingRecognition ? "识别规则已更新" : "识别规则已创建");
+    const result = await saveRecognition.mutateAsync(rules);
+    reportAutoApply(editingRecognition ? "识别规则已更新" : "识别规则已创建", result);
   };
 
   const deleteRecognition = async (rule: RecognitionRule) => {
     if (!confirm(`确定删除识别规则「${rule.name}」吗？请先删除它关联的出站映射。`)) return;
-    await saveRecognition.mutateAsync(recognitionRules.filter((item) => item.id !== rule.id));
-    toast.success("识别规则已删除");
+    const result = await saveRecognition.mutateAsync(recognitionRules.filter((item) => item.id !== rule.id));
+    reportAutoApply("识别规则已删除", result);
+  };
+
+  const toggleRecognition = (id: number, enabled: boolean) => {
+    const rules = recognitionRules.map((rule) => (rule.id === id ? { ...rule, enabled } : rule));
+    void saveRecognition.mutateAsync(rules)
+      .then((result) => reportAutoApply(enabled ? "识别规则已启用" : "识别规则已禁用", result))
+      .catch(() => undefined);
   };
 
   const openAddOutbound = () => {
@@ -403,14 +419,21 @@ export default function RulesPage() {
     const rules = editingOutbound
       ? outboundRules.map((rule) => (rule.id === editingOutbound.id ? next : rule))
       : [...outboundRules, next];
-    await saveOutbound.mutateAsync(rules);
-    toast.success(editingOutbound ? "出站映射已更新" : "出站映射已创建");
+    const result = await saveOutbound.mutateAsync(rules);
+    reportAutoApply(editingOutbound ? "出站映射已更新" : "出站映射已创建", result);
   };
 
   const deleteOutbound = async (rule: OutboundRule) => {
     if (!confirm("确定删除这条出站映射吗？")) return;
-    await saveOutbound.mutateAsync(outboundRules.filter((item) => item.id !== rule.id));
-    toast.success("出站映射已删除");
+    const result = await saveOutbound.mutateAsync(outboundRules.filter((item) => item.id !== rule.id));
+    reportAutoApply("出站映射已删除", result);
+  };
+
+  const toggleOutbound = (id: number, enabled: boolean) => {
+    const rules = outboundRules.map((rule) => (rule.id === id ? { ...rule, enabled } : rule));
+    void saveOutbound.mutateAsync(rules)
+      .then((result) => reportAutoApply(enabled ? "出站映射已启用" : "出站映射已禁用", result))
+      .catch(() => undefined);
   };
 
   return (
@@ -436,7 +459,7 @@ export default function RulesPage() {
             mappedRecognitionIDs={mappedRecognitionIDs}
             onAdd={openAddRecognition}
             onEdit={openEditRecognition}
-            onToggle={(id, enabled) => saveRecognition.mutate(recognitionRules.map((rule) => (rule.id === id ? { ...rule, enabled } : rule)))}
+            onToggle={toggleRecognition}
             onDelete={deleteRecognition}
           />
         </TabsContent>
@@ -448,7 +471,7 @@ export default function RulesPage() {
             groups={groups}
             onAdd={openAddOutbound}
             onEdit={openEditOutbound}
-            onToggle={(id, enabled) => saveOutbound.mutate(outboundRules.map((rule) => (rule.id === id ? { ...rule, enabled } : rule)))}
+            onToggle={toggleOutbound}
             onDelete={deleteOutbound}
             onPreview={() => setPreviewOpen(true)}
           />

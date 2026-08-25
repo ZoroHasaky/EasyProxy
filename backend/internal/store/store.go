@@ -141,6 +141,21 @@ func (s *Store) migrate() error {
 			FOREIGN KEY(recognition_id) REFERENCES recognition_rules(id),
 			FOREIGN KEY(group_id) REFERENCES proxy_groups(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS applied_config_settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE IF NOT EXISTS pending_config_changes (
+			scope TEXT PRIMARY KEY,
+			fields TEXT NOT NULL DEFAULT '[]',
+			status TEXT NOT NULL DEFAULT 'pending',
+			last_error TEXT NOT NULL DEFAULT '',
+			updated_at TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE IF NOT EXISTS applied_config_state (
+			id INTEGER PRIMARY KEY CHECK (id=1),
+			yaml TEXT NOT NULL DEFAULT ''
+		)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -164,6 +179,9 @@ func (s *Store) migrate() error {
 	}
 	if err := s.migrateCurrentRuleSet(); err != nil {
 		return fmt.Errorf("migrate current rules: %w", err)
+	}
+	if err := s.initializeAppliedConfigSettings(); err != nil {
+		return fmt.Errorf("initialize applied config settings: %w", err)
 	}
 	return nil
 }

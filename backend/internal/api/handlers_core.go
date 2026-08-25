@@ -181,10 +181,11 @@ func (s *Server) updateProxyAddr() (string, error) {
 	if !s.st.GetSettingBool("update_via_proxy", false) {
 		return "", nil
 	}
-	if s.mgr.Status().State != core.StateRunning {
+	addr := s.runningCoreProxyAddr()
+	if addr == "" {
 		return "", fmt.Errorf("已启用通过本地代理更新，但 Mihomo 内核未运行")
 	}
-	return fmt.Sprintf("127.0.0.1:%d", s.st.GetSettingInt("mixed_port", 7890)), nil
+	return addr, nil
 }
 
 func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
@@ -360,79 +361,124 @@ func boolStr(b bool) string {
 	return "0"
 }
 
+func (s *Server) handleGetPendingConfigChanges(w http.ResponseWriter, r *http.Request) {
+	items, err := s.st.ListPendingConfigChanges()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "读取待应用配置失败: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(items), "items": items})
+}
+
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
+	// 与统一应用共享锁，确保本次保存要么完整进入待应用清单，要么被本次
+	// 一键应用捕获，不会在快照提交后被错误清空。
+	s.configApplyMu.Lock()
+	defer s.configApplyMu.Unlock()
+
 	var p settingsPayload
 	if err := readJSON(r, &p); err != nil {
 		writeErr(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
-	set := func(k, v string) { _ = s.st.SetSetting(k, v) }
 	if p.MixedPort != nil {
 		if *p.MixedPort < 1 || *p.MixedPort > 65535 {
 			writeErr(w, http.StatusBadRequest, "端口无效")
 			return
 		}
-		set("mixed_port", strconv.Itoa(*p.MixedPort))
-	}
-	if p.AllowLan != nil {
-		set("allow_lan", boolStr(*p.AllowLan))
-	}
-	if p.LogLevel != nil {
-		set("log_level", *p.LogLevel)
-	}
-	if p.TunEnable != nil {
-		set("tun_enable", boolStr(*p.TunEnable))
-	}
-	if p.TunStack != nil {
-		set("tun_stack", *p.TunStack)
-	}
-	if p.DnsEnable != nil {
-		set("dns_enable", boolStr(*p.DnsEnable))
-	}
-	if p.DnsMode != nil {
-		set("dns_mode", *p.DnsMode)
-	}
-	if p.DnsNameserver != nil {
-		b, _ := json.Marshal(p.DnsNameserver)
-		set("dns_nameserver", string(b))
-	}
-	if p.DnsFallback != nil {
-		b, _ := json.Marshal(p.DnsFallback)
-		set("dns_fallback", string(b))
-	}
-	if p.GeoEnabled != nil {
-		set("geo_enabled", boolStr(*p.GeoEnabled))
-	}
-	if p.GeoAutoUpdate != nil {
-		set("geo_auto_update", boolStr(*p.GeoAutoUpdate))
 	}
 	if p.GeoUpdateInterval != nil {
 		if *p.GeoUpdateInterval < 1 || *p.GeoUpdateInterval > 720 {
 			writeErr(w, http.StatusBadRequest, "Geo 更新间隔需在 1 到 720 小时之间")
 			return
 		}
-		set("geo_update_interval", strconv.Itoa(*p.GeoUpdateInterval))
 	}
+	var geoxURLs map[string][]string
 	if p.GeoxUrls != nil {
-		geoxURLs, err := validateGeoxURLs(p.GeoxUrls)
+		var err error
+		geoxURLs, err = validateGeoxURLs(p.GeoxUrls)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		b, _ := json.Marshal(geoxURLs)
-		set("geox_urls", string(b))
 	}
+
+	configValues := map[string]string{}
+	if p.MixedPort != nil {
+		configValues["mixed_port"] = strconv.Itoa(*p.MixedPort)
+	}
+	if p.AllowLan != nil {
+		configValues["allow_lan"] = boolStr(*p.AllowLan)
+	}
+	if p.LogLevel != nil {
+		configValues["log_level"] = *p.LogLevel
+	}
+	if p.TunEnable != nil {
+		configValues["tun_enable"] = boolStr(*p.TunEnable)
+	}
+	if p.TunStack != nil {
+		configValues["tun_stack"] = *p.TunStack
+	}
+	if p.DnsEnable != nil {
+		configValues["dns_enable"] = boolStr(*p.DnsEnable)
+	}
+	if p.DnsMode != nil {
+		configValues["dns_mode"] = *p.DnsMode
+	}
+	if p.DnsNameserver != nil {
+		b, _ := json.Marshal(p.DnsNameserver)
+		configValues["dns_nameserver"] = string(b)
+	}
+	if p.DnsFallback != nil {
+		b, _ := json.Marshal(p.DnsFallback)
+		configValues["dns_fallback"] = string(b)
+	}
+	if p.GeoEnabled != nil {
+		configValues["geo_enabled"] = boolStr(*p.GeoEnabled)
+	}
+	if p.GeoAutoUpdate != nil {
+		configValues["geo_auto_update"] = boolStr(*p.GeoAutoUpdate)
+	}
+	if p.GeoUpdateInterval != nil {
+		configValues["geo_update_interval"] = strconv.Itoa(*p.GeoUpdateInterval)
+	}
+	if geoxURLs != nil {
+		b, _ := json.Marshal(geoxURLs)
+		configValues["geox_urls"] = string(b)
+	}
+
+	pending, err := s.st.UpdateConfigSettingsAndSyncPending(configValues)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "保存配置失败: "+err.Error())
+		return
+	}
+	set := func(k, v string) error { return s.st.SetSetting(k, v) }
 	if p.UpdateRepo != nil {
-		set("update_repo", strings.TrimSpace(*p.UpdateRepo))
+		if err := set("update_repo", strings.TrimSpace(*p.UpdateRepo)); err != nil {
+			writeErr(w, http.StatusInternalServerError, "保存设置失败: "+err.Error())
+			return
+		}
 	}
 	if p.UpdateViaProxy != nil {
-		set("update_via_proxy", boolStr(*p.UpdateViaProxy))
+		if err := set("update_via_proxy", boolStr(*p.UpdateViaProxy)); err != nil {
+			writeErr(w, http.StatusInternalServerError, "保存设置失败: "+err.Error())
+			return
+		}
 	}
 	if p.CoreMirror != nil {
-		set("core_mirror", strings.TrimSpace(*p.CoreMirror))
+		if err := set("core_mirror", strings.TrimSpace(*p.CoreMirror)); err != nil {
+			writeErr(w, http.StatusInternalServerError, "保存设置失败: "+err.Error())
+			return
+		}
 	}
-	s.dirty.Store(true)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":            true,
+		"pending_count": len(pending),
+		"pending": map[string]any{
+			"count": len(pending),
+			"items": pending,
+		},
+	})
 }
 
 var supportedGeoxURLKeys = map[string]bool{
@@ -474,6 +520,9 @@ func (s *Server) handleBackupExport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBackupRestore(w http.ResponseWriter, r *http.Request) {
+	s.configApplyMu.Lock()
+	defer s.configApplyMu.Unlock()
+
 	if err := r.ParseMultipartForm(64 << 20); err != nil {
 		writeErr(w, http.StatusBadRequest, "上传失败")
 		return
@@ -494,9 +543,37 @@ func (s *Server) handleBackupRestore(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "恢复失败: "+err.Error())
 		return
 	}
+	// 备份恢复属于显式的全量恢复操作，随后立即重启内核，因此将恢复后的
+	// 设置和完整 YAML 作为新的已应用快照，并清除旧环境遗留的待应用/重试记录。
+	settings, err := s.st.CurrentConfigSettings()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "读取恢复配置失败: "+err.Error())
+		return
+	}
+	yaml, err := s.generateConfigForSettings(settings)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "生成恢复配置失败: "+err.Error())
+		return
+	}
+	if err := s.st.CommitAppliedConfig(settings, yaml); err != nil {
+		writeErr(w, http.StatusInternalServerError, "保存已应用配置快照失败: "+err.Error())
+		return
+	}
+	changes, err := s.st.ListPendingConfigChanges()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "读取待应用配置失败: "+err.Error())
+		return
+	}
+	scopes := make([]string, 0, len(changes))
+	for _, change := range changes {
+		scopes = append(scopes, change.Scope)
+	}
+	if err := s.st.DeletePendingConfigChanges(scopes...); err != nil {
+		writeErr(w, http.StatusInternalServerError, "清理待应用配置失败: "+err.Error())
+		return
+	}
 	s.mustChangePw.Store(s.st.GetSettingBool("must_change_password", false))
-	s.dirty.Store(true)
-	_ = s.writeGeneratedConfig()
+	_ = s.writeConfigYAML(yaml)
 	_ = s.mgr.Restart()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "已恢复，内核已重启加载新配置"})
 }

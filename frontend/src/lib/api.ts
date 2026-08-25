@@ -257,6 +257,48 @@ export interface Settings {
   core_mirror: string;
 }
 
+export interface PendingConfigItem {
+  scope: string;
+  fields: string[];
+  status: "pending" | "failed";
+  updated_at: string;
+  last_error?: string;
+}
+
+export interface PendingConfigResponse {
+  count: number;
+  items: PendingConfigItem[];
+}
+
+export interface ConfigApplyResult {
+  ok: boolean;
+  result: "saved" | "started" | "reloaded" | "restarted";
+}
+
+export type AutoApplyResult = "" | "saved" | "started" | "reloaded" | "restarted";
+
+// 所有节点、订阅和规则写接口都保留数据保存结果；自动同步到内核失败时
+// 通过 apply_error 告知前端，但 HTTP 仍成功，避免误导用户以为编辑丢失。
+export interface AutoApplyResponse {
+  apply_result?: AutoApplyResult;
+  apply_error?: string;
+}
+
+export function autoApplyResultMessage(result?: AutoApplyResult) {
+  switch (result) {
+    case "reloaded":
+      return "已热重载生效";
+    case "restarted":
+      return "已重启内核生效";
+    case "started":
+      return "已启动内核生效";
+    case "saved":
+      return "配置已保存，内核安装后生效";
+    default:
+      return "已保存";
+  }
+}
+
 export interface GeoDataStatus {
   key: "geoip" | "geosite";
   name: string;

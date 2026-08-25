@@ -11,6 +11,7 @@ import (
 	"easyproxy/internal/core"
 	"easyproxy/internal/model"
 	"easyproxy/internal/service"
+	"easyproxy/internal/store"
 )
 
 // ---------- 模板 ----------
@@ -26,10 +27,7 @@ func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) fetchTemplateContent(urlStr, ua string) (string, error) {
 	// 内核运行中提供代理地址：直连失败自动经代理重试（模板多在 GitHub，国内常需代理）
-	proxy := ""
-	if s.mgr.Status().State == core.StateRunning {
-		proxy = fmt.Sprintf("127.0.0.1:%d", s.st.GetSettingInt("mixed_port", 7890))
-	}
+	proxy := s.runningCoreProxyAddr()
 	content, _, err := service.FetchSubscriptionAuto(urlStr, ua, false, proxy)
 	return content, err
 }
@@ -73,7 +71,6 @@ func (s *Server) handleCreateTemplate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "规则解析失败: "+err.Error())
 		return
 	}
-	s.dirty.Store(true)
 	fresh, _ := s.st.GetTemplate(tpl.ID)
 	writeJSON(w, http.StatusOK, fresh)
 }
@@ -99,7 +96,6 @@ func (s *Server) handleRefreshTemplate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.dirty.Store(true)
 	fresh, _ := s.st.GetTemplate(tpl.ID)
 	writeJSON(w, http.StatusOK, fresh)
 }
@@ -123,7 +119,6 @@ func (s *Server) handleTemplateMapping(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.dirty.Store(true)
 	fresh, _ := s.st.GetTemplate(tpl.ID)
 	writeJSON(w, http.StatusOK, fresh)
 }
@@ -134,7 +129,6 @@ func (s *Server) handleActivateTemplate(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.dirty.Store(true)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -144,7 +138,6 @@ func (s *Server) handleDeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.dirty.Store(true)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -186,7 +179,6 @@ func (s *Server) handlePutRules(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.dirty.Store(true)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(req.Rules)})
 }
 
@@ -392,8 +384,8 @@ func (s *Server) handlePutGroups(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.dirty.Store(true)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(groups)})
+	result, applyError := s.applyChangedConfig("groups", []string{"出站规则"})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(groups), "apply_result": result, "apply_error": applyError})
 }
 
 func (s *Server) handleGenerateRegionGroups(w http.ResponseWriter, r *http.Request) {
@@ -402,8 +394,8 @@ func (s *Server) handleGenerateRegionGroups(w http.ResponseWriter, r *http.Reque
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.dirty.Store(true)
-	writeJSON(w, http.StatusOK, map[string]any{"created": created})
+	result, applyError := s.applyChangedConfig("groups", []string{"出站规则"})
+	writeJSON(w, http.StatusOK, map[string]any{"created": created, "apply_result": result, "apply_error": applyError})
 }
 
 // ---------- 配置生成 / 应用 ----------
@@ -434,49 +426,181 @@ func tunConfigNeedsRestart(running map[string]any, desiredEnabled bool, desiredS
 	return !ok || stack != desiredStack
 }
 
+func configValue(values map[string]string, key, def string) string {
+	if value, ok := values[key]; ok {
+		return value
+	}
+	return def
+}
+
+func configBool(values map[string]string, key string, def bool) bool {
+	switch configValue(values, key, "") {
+	case "1", "true":
+		return true
+	case "0", "false":
+		return false
+	default:
+		return def
+	}
+}
+
+func configInt(values map[string]string, key string, def int) int {
+	value, err := strconv.Atoi(configValue(values, key, ""))
+	if err != nil {
+		return def
+	}
+	return value
+}
+
+// runningCoreProxyAddr 返回运行中的内核当前实际监听的混合端口。
+// 端口改动在用户点击统一应用前不能用于订阅、更新等运行时请求。
+func (s *Server) runningCoreProxyAddr() string {
+	if s.mgr.Status().State != core.StateRunning {
+		return ""
+	}
+	values, err := s.st.AppliedConfigSettings()
+	if err != nil {
+		return "127.0.0.1:7890"
+	}
+	return fmt.Sprintf("127.0.0.1:%d", configInt(values, "mixed_port", 7890))
+}
+
+// applyConfig 应用所有已保存的目标设置，仅由顶栏“一键应用”入口调用。
 func (s *Server) applyConfig() (string, error) {
-	if !s.writeGeneratedConfig() {
-		return "", fmt.Errorf("配置生成失败")
+	s.configApplyMu.Lock()
+	defer s.configApplyMu.Unlock()
+
+	result, settings, yaml, err := s.applyConfigWithSettings(true)
+	if err != nil {
+		return "", err
+	}
+	if err := s.st.CommitAppliedConfig(settings, yaml); err != nil {
+		return "", fmt.Errorf("更新已应用配置快照失败: %w", err)
+	}
+	changes, err := s.st.ListPendingConfigChanges()
+	if err != nil {
+		return "", fmt.Errorf("读取待应用配置失败: %w", err)
+	}
+	scopes := make([]string, 0, len(changes))
+	for _, change := range changes {
+		scopes = append(scopes, change.Scope)
+	}
+	if err := s.st.DeletePendingConfigChanges(scopes...); err != nil {
+		return "", fmt.Errorf("清理待应用配置失败: %w", err)
+	}
+	return result, nil
+}
+
+// applyAppliedConfig 只应用最后一次成功应用的设置快照，用于节点/规则的即时生效。
+func (s *Server) applyAppliedConfig() (string, error) {
+	s.configApplyMu.Lock()
+	defer s.configApplyMu.Unlock()
+
+	result, _, yaml, err := s.applyConfigWithSettings(false)
+	if err != nil {
+		return "", err
+	}
+	if err := s.st.SaveAppliedConfigYAML(yaml); err != nil {
+		return "", fmt.Errorf("保存已应用配置快照失败: %w", err)
+	}
+	return result, err
+}
+
+// applyConfigWithSettings 由已持有 configApplyMu 的调用方执行。它生成候选 YAML 并
+// 加载到内核；调用方必须在锁内把成功的候选内容提交为已应用快照。
+func (s *Server) applyConfigWithSettings(includePending bool) (string, map[string]string, string, error) {
+	var values map[string]string
+	if includePending {
+		var err error
+		values, err = s.st.CurrentConfigSettings()
+		if err != nil {
+			return "", nil, "", fmt.Errorf("读取目标配置失败: %w", err)
+		}
+	} else {
+		var err error
+		values, err = s.st.AppliedConfigSettings()
+		if err != nil {
+			return "", nil, "", fmt.Errorf("读取已应用配置失败: %w", err)
+		}
+	}
+	yaml, err := s.generateConfigForSettings(values)
+	if err != nil {
+		return "", nil, "", fmt.Errorf("配置生成失败: %w", err)
+	}
+	if !s.writeConfigYAML(yaml) {
+		return "", nil, "", fmt.Errorf("写入配置失败")
+	}
+
+	// 目标配置加载失败时立即回写此前成功的配置文件，避免下次手动重启
+	// 意外带入尚未确认的设置或本次自动应用失败的数据。
+	restoreAppliedConfig := func() {
+		_ = s.writeGeneratedConfig()
 	}
 	if _, err := os.Stat(core.CorePath(s.dataDir)); err != nil {
-		return "saved", nil // 内核缺失，仅保存
+		return "saved", values, yaml, nil // 内核缺失，仅保存
 	}
 	st := s.mgr.Status()
 	if st.State != core.StateRunning {
 		if err := s.mgr.Start(); err != nil {
-			return "", err
+			restoreAppliedConfig()
+			return "", values, "", err
 		}
-		return "started", nil
+		return "started", values, yaml, nil
 	}
 	needRestart := false
 	var running map[string]any
 	if err := s.client.GetConfigs(&running); err == nil {
 		if tunConfigNeedsRestart(
 			running,
-			s.st.GetSettingBool("tun_enable", false),
-			s.st.GetSetting("tun_stack", "mixed"),
+			configBool(values, "tun_enable", false),
+			configValue(values, "tun_stack", "mixed"),
 		) {
 			needRestart = true
 		}
-		if mp, ok := running["mixed-port"].(float64); ok && int(mp) != s.st.GetSettingInt("mixed_port", 7890) {
+		if mp, ok := running["mixed-port"].(float64); ok && int(mp) != configInt(values, "mixed_port", 7890) {
 			needRestart = true
 		}
 	}
 	if needRestart {
 		if err := s.mgr.Restart(); err != nil {
-			return "", err
+			restoreAppliedConfig()
+			return "", values, "", err
 		}
-		return "restarted", nil
+		return "restarted", values, yaml, nil
 	}
 	// 新版 mihomo 要求 PUT /configs 的 path 为绝对路径
 	if err := s.client.ReloadConfig(filepath.Join(s.dataDir, "config.yaml")); err != nil {
 		// 热重载失败时退回重启内核，保证配置仍能生效
 		if rerr := s.mgr.Restart(); rerr != nil {
-			return "", fmt.Errorf("热重载失败: %v；重启内核也失败: %v", err, rerr)
+			restoreAppliedConfig()
+			return "", values, "", fmt.Errorf("热重载失败: %v；重启内核也失败: %v", err, rerr)
 		}
-		return "restarted", nil
+		return "restarted", values, yaml, nil
 	}
-	return "reloaded", nil
+	return "reloaded", values, yaml, nil
+}
+
+// applyChangedConfig 将节点、订阅或规则的保存立即同步至内核。失败时保留编辑，
+// 并在顶栏待应用清单中提供稍后重试入口。
+func (s *Server) applyChangedConfig(scope string, fields []string) (string, string) {
+	result, err := s.applyAppliedConfig()
+	if err == nil {
+		_ = s.st.DeletePendingConfigChange(scope)
+		return result, ""
+	}
+	_ = s.st.UpsertPendingConfigChange(store.PendingConfigChange{
+		Scope: scope, Fields: fields, Status: store.PendingConfigStatusFailed, LastError: err.Error(),
+	})
+	return "", err.Error()
+}
+
+// writeAutoApplyResult 统一返回“数据已保存 + 自动应用结果”。自动应用失败不会回滚
+// 用户刚保存的数据，而是交由顶栏的待应用清单重试。
+func (s *Server) writeAutoApplyResult(w http.ResponseWriter, payload map[string]any, scope string, fields []string) {
+	result, applyError := s.applyChangedConfig(scope, fields)
+	payload["apply_result"] = result
+	payload["apply_error"] = applyError
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func (s *Server) handleConfigApply(w http.ResponseWriter, r *http.Request) {
@@ -485,6 +609,5 @@ func (s *Server) handleConfigApply(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "应用失败: "+err.Error())
 		return
 	}
-	s.dirty.Store(false)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": result})
 }

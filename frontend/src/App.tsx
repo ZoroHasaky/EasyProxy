@@ -16,6 +16,7 @@ import SettingsPage from "@/pages/Settings";
 import AboutPage from "@/pages/About";
 import { MihomoRuntimeProvider } from "@/contexts/app-state";
 import { UpdateProvider } from "@/contexts/update-state";
+import { ConfigApplyProvider } from "@/contexts/config-apply-state";
 
 function Me() {
   const me = useQuery({
@@ -46,9 +47,10 @@ function Me() {
   }
   return (
     <UpdateProvider>
-      <MihomoRuntimeProvider>
-        <Layout>
-          <Routes>
+      <ConfigApplyProvider>
+        <MihomoRuntimeProvider>
+          <Layout>
+            <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route
               path="/subscriptions"
@@ -67,9 +69,10 @@ function Me() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Layout>
-      </MihomoRuntimeProvider>
+            </Routes>
+          </Layout>
+        </MihomoRuntimeProvider>
+      </ConfigApplyProvider>
     </UpdateProvider>
   );
 }

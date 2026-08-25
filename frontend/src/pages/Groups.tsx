@@ -11,7 +11,7 @@ import {
   Check,
   RotateCcw,
 } from "lucide-react";
-import { api, ProxyGroup, ProxyNode, RegionInfo } from "@/lib/api";
+import { api, autoApplyResultMessage, AutoApplyResponse, ProxyGroup, ProxyNode, RegionInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,6 +73,15 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
     queryKey: ["nodes", "enabled"],
     queryFn: () => api.get<ProxyNode[]>("/api/nodes?enabled=true"),
   });
+
+  const reportAutoApply = (savedMessage: string, result: AutoApplyResponse) => {
+    if (result.apply_error) {
+      toast.warning(`${savedMessage}，但自动应用失败，已加入待应用清单`);
+    } else {
+      toast.success(`${savedMessage}，${autoApplyResultMessage(result.apply_result)}`);
+    }
+    qc.invalidateQueries({ queryKey: ["config-pending"] });
+  };
 
   const openAdd = () => {
     setEditingGroup(null);
@@ -136,10 +145,10 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
               ...payload,
             },
           ];
-      return api.put("/api/groups", nextGroups);
+      return api.put<AutoApplyResponse>("/api/groups", nextGroups);
     },
-    onSuccess: () => {
-      toast.success(editingGroup ? "出站规则已更新" : "出站规则已创建");
+    onSuccess: (res) => {
+      reportAutoApply(editingGroup ? "出站规则已更新" : "出站规则已创建", res);
       setModalOpen(false);
       qc.invalidateQueries({ queryKey: ["groups"] });
       qc.invalidateQueries({ queryKey: ["ruleTargets"] });
@@ -149,12 +158,12 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
-      api.put(
+      api.put<AutoApplyResponse>(
         "/api/groups",
         (groups.data ?? []).filter((group) => group.id !== id),
       ),
-    onSuccess: () => {
-      toast.success("出站规则已删除");
+    onSuccess: (res) => {
+      reportAutoApply("出站规则已删除", res);
       qc.invalidateQueries({ queryKey: ["groups"] });
       qc.invalidateQueries({ queryKey: ["ruleTargets"] });
     },
@@ -162,9 +171,9 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
   });
 
   const generateRegionGroups = useMutation({
-    mutationFn: () => api.post<{ created: number }>("/api/groups/generate-regions"),
+    mutationFn: () => api.post<{ created: number } & AutoApplyResponse>("/api/groups/generate-regions"),
     onSuccess: (res) => {
-      toast.success(`已根据现有节点地区自动生成 ${res.created} 个测速出站规则`);
+      reportAutoApply(`已根据现有节点地区自动生成 ${res.created} 个测速出站规则`, res);
       qc.invalidateQueries({ queryKey: ["groups"] });
       qc.invalidateQueries({ queryKey: ["ruleTargets"] });
     },

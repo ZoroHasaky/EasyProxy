@@ -1,12 +1,10 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"easyproxy/internal/core"
 	"easyproxy/internal/model"
 	"easyproxy/internal/parser"
 	"easyproxy/internal/service"
@@ -34,10 +32,7 @@ func (s *Server) handleCreateSub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 先抓取验证再落库；内核运行中提供代理地址，抓取失败自动换路径重试
-	proxy := ""
-	if s.mgr.Status().State == core.StateRunning {
-		proxy = fmt.Sprintf("127.0.0.1:%d", s.st.GetSettingInt("mixed_port", 7890))
-	}
+	proxy := s.runningCoreProxyAddr()
 	added, removed, err := func() (int, int, error) {
 		if err := s.st.CreateSubscription(&sub); err != nil {
 			return 0, 0, err
@@ -53,9 +48,10 @@ func (s *Server) handleCreateSub(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "订阅抓取失败: "+err.Error())
 		return
 	}
-	s.dirty.Store(true)
 	fresh, _ := s.st.GetSubscription(sub.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"subscription": fresh, "added": added, "removed": removed})
+	s.writeAutoApplyResult(w, map[string]any{
+		"subscription": fresh, "added": added, "removed": removed,
+	}, "subscriptions", []string{"订阅"})
 }
 
 func (s *Server) handleUpdateSub(w http.ResponseWriter, r *http.Request) {
@@ -78,8 +74,7 @@ func (s *Server) handleUpdateSub(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.dirty.Store(true)
-	writeJSON(w, http.StatusOK, sub)
+	s.writeAutoApplyResult(w, map[string]any{"subscription": sub}, "subscriptions", []string{"订阅"})
 }
 
 func (s *Server) handleDeleteSub(w http.ResponseWriter, r *http.Request) {
@@ -88,8 +83,7 @@ func (s *Server) handleDeleteSub(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.dirty.Store(true)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	s.writeAutoApplyResult(w, map[string]any{"ok": true}, "subscriptions", []string{"订阅"})
 }
 
 func (s *Server) handleUpdateSubNow(w http.ResponseWriter, r *http.Request) {
@@ -99,18 +93,16 @@ func (s *Server) handleUpdateSubNow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "订阅不存在")
 		return
 	}
-	proxy := ""
-	if s.mgr.Status().State == core.StateRunning {
-		proxy = fmt.Sprintf("127.0.0.1:%d", s.st.GetSettingInt("mixed_port", 7890))
-	}
+	proxy := s.runningCoreProxyAddr()
 	added, removed, err := service.SyncSubscription(s.st, sub, proxy)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "更新失败: "+err.Error())
 		return
 	}
-	s.dirty.Store(true)
 	fresh, _ := s.st.GetSubscription(sub.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"subscription": fresh, "added": added, "removed": removed})
+	s.writeAutoApplyResult(w, map[string]any{
+		"subscription": fresh, "added": added, "removed": removed,
+	}, "subscriptions", []string{"订阅"})
 }
 
 // ---------- 节点 ----------
@@ -175,8 +167,11 @@ func (s *Server) handleImportNodes(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.dirty.Store(true)
-	writeJSON(w, http.StatusOK, map[string]any{"added": added, "duplicated": dup})
+	if added == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"added": added, "duplicated": dup, "apply_result": "", "apply_error": ""})
+		return
+	}
+	s.writeAutoApplyResult(w, map[string]any{"added": added, "duplicated": dup}, "nodes", []string{"节点池"})
 }
 
 func (s *Server) handlePatchNode(w http.ResponseWriter, r *http.Request) {
@@ -223,8 +218,7 @@ func (s *Server) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.dirty.Store(true)
-	writeJSON(w, http.StatusOK, node)
+	s.writeAutoApplyResult(w, map[string]any{"node": node}, "nodes", []string{"节点池"})
 }
 
 func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
@@ -233,8 +227,7 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.dirty.Store(true)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	s.writeAutoApplyResult(w, map[string]any{"ok": true}, "nodes", []string{"节点池"})
 }
 
 // handleNodeDelay 单节点测速：经 mihomo 对指定节点测延迟并回写
@@ -244,13 +237,6 @@ func (s *Server) handleNodeDelay(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "节点不存在")
 		return
-	}
-	if s.dirty.Load() {
-		if _, err := s.applyConfig(); err != nil {
-			writeErr(w, http.StatusBadGateway, "应用配置失败: "+err.Error())
-			return
-		}
-		s.dirty.Store(false)
 	}
 	ms, derr := s.client.Delay(node.Name, service.DefaultTestURL, 5000)
 	if derr != nil {
@@ -269,8 +255,11 @@ func (s *Server) handlePruneNodes(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.dirty.Store(true)
-	writeJSON(w, http.StatusOK, map[string]any{"removed": n})
+	if n == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"removed": n, "apply_result": "", "apply_error": ""})
+		return
+	}
+	s.writeAutoApplyResult(w, map[string]any{"removed": n}, "nodes", []string{"节点池"})
 }
 
 func (s *Server) handleCheckNodes(w http.ResponseWriter, r *http.Request) {
@@ -284,13 +273,6 @@ func (s *Server) handleCheckNodes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		nodeIDs = req.IDs
-	}
-	if s.dirty.Load() {
-		if _, err := s.applyConfig(); err != nil {
-			writeErr(w, http.StatusBadGateway, "应用配置失败: "+err.Error())
-			return
-		}
-		s.dirty.Store(false)
 	}
 	n, err := service.CheckLatencies(s.st, s.client, nodeIDs)
 	if err != nil {

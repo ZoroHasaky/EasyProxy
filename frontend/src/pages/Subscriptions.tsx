@@ -13,7 +13,7 @@ import {
   Clock,
   Zap,
 } from "lucide-react";
-import { api, Subscription } from "@/lib/api";
+import { api, autoApplyResultMessage, AutoApplyResponse, Subscription } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,6 +36,12 @@ import {
 } from "@/components/ui/dialog";
 import { subscriptionUsage, timeAgo, cn } from "@/lib/utils";
 
+type SubscriptionApplyResponse = AutoApplyResponse & {
+  subscription?: Subscription;
+  added?: number;
+  removed?: number;
+};
+
 export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
@@ -52,6 +58,15 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
     queryKey: ["subscriptions"],
     queryFn: () => api.get<Subscription[]>("/api/subscriptions"),
   });
+
+  const reportAutoApply = (savedMessage: string, result: AutoApplyResponse) => {
+    if (result.apply_error) {
+      toast.warning(`${savedMessage}，但自动应用失败，已加入待应用清单`);
+    } else {
+      toast.success(`${savedMessage}，${autoApplyResultMessage(result.apply_result)}`);
+    }
+    qc.invalidateQueries({ queryKey: ["config-pending"] });
+  };
 
   const openAdd = () => {
     setEditingSub(null);
@@ -86,12 +101,12 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
         enabled,
       };
       if (editingSub) {
-        return api.put(`/api/subscriptions/${editingSub.id}`, payload);
+        return api.put<SubscriptionApplyResponse>(`/api/subscriptions/${editingSub.id}`, payload);
       }
-      return api.post("/api/subscriptions", payload);
+      return api.post<SubscriptionApplyResponse>("/api/subscriptions", payload);
     },
-    onSuccess: () => {
-      toast.success(editingSub ? "订阅已更新" : "订阅已添加");
+    onSuccess: (res) => {
+      reportAutoApply(editingSub ? "订阅已更新" : "订阅已添加", res);
       setModalOpen(false);
       qc.invalidateQueries({ queryKey: ["subscriptions"] });
       qc.invalidateQueries({ queryKey: ["nodes"] });
@@ -101,9 +116,9 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
   });
 
   const syncMutation = useMutation({
-    mutationFn: (id: number) => api.post(`/api/subscriptions/${id}/update`),
-    onSuccess: () => {
-      toast.success("订阅更新成功");
+    mutationFn: (id: number) => api.post<SubscriptionApplyResponse>(`/api/subscriptions/${id}/update`),
+    onSuccess: (res) => {
+      reportAutoApply("订阅更新成功", res);
       qc.invalidateQueries({ queryKey: ["subscriptions"] });
       qc.invalidateQueries({ queryKey: ["nodes"] });
       qc.invalidateQueries({ queryKey: ["nodeRegions"] });
@@ -115,11 +130,13 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
   const syncAllMutation = useMutation({
     mutationFn: async () => {
       const failed: string[] = [];
+      let autoApplyFailed = 0;
       let updated = 0;
       for (const sub of subs.data ?? []) {
         try {
-          await api.post(`/api/subscriptions/${sub.id}/update`);
+          const result = await api.post<SubscriptionApplyResponse>(`/api/subscriptions/${sub.id}/update`);
           updated++;
+          if (result.apply_error) autoApplyFailed++;
         } catch (e: any) {
           failed.push(`${sub.name}: ${e.message}`);
         }
@@ -127,10 +144,15 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
       if (failed.length) {
         throw new Error(`已更新 ${updated} 个订阅；${failed.join("；")}`);
       }
-      return updated;
+      return { updated, autoApplyFailed };
     },
-    onSuccess: (updated) => {
-      toast.success(`已完成 ${updated} 个订阅的更新`);
+    onSuccess: ({ updated, autoApplyFailed }) => {
+      if (autoApplyFailed > 0) {
+        toast.warning(`已完成 ${updated} 个订阅的更新，但自动应用失败，已加入待应用清单`);
+      } else {
+        toast.success(`已完成 ${updated} 个订阅的更新并生效`);
+      }
+      qc.invalidateQueries({ queryKey: ["config-pending"] });
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["subscriptions"] });
@@ -142,9 +164,9 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.del(`/api/subscriptions/${id}`),
-    onSuccess: () => {
-      toast.success("已删除该订阅及其关联节点");
+    mutationFn: (id: number) => api.del<AutoApplyResponse>(`/api/subscriptions/${id}`),
+    onSuccess: (res) => {
+      reportAutoApply("已删除该订阅及其关联节点", res);
       qc.invalidateQueries({ queryKey: ["subscriptions"] });
       qc.invalidateQueries({ queryKey: ["nodes"] });
       qc.invalidateQueries({ queryKey: ["nodeRegions"] });

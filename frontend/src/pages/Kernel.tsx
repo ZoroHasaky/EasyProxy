@@ -9,8 +9,6 @@ import {
   Download,
   Eye,
   RotateCw,
-  Save,
-  Rocket,
   ShieldAlert,
   CheckCircle2,
   UploadCloud,
@@ -78,42 +76,12 @@ export default function KernelPage() {
   const patch = (p: Partial<Settings>) => setForm((f) => (f ? { ...f, ...p } : f));
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      api.put("/api/settings", {
-        mixed_port: form?.mixed_port,
-        allow_lan: form?.allow_lan,
-        log_level: form?.log_level,
-        core_mirror: form?.core_mirror,
-      }),
-    onSuccess: () => {
-      toast.success("基础设置已保存，请点击「应用配置」生效");
+    mutationFn: (payload: Partial<Settings>) => api.put("/api/settings", payload),
+    onSuccess: (_result, payload) => {
+      const requiresApply = ["mixed_port", "allow_lan", "log_level"].some((key) => key in payload);
+      toast.success(requiresApply ? "基础设置已保存，等待应用" : "内核下载设置已保存并生效");
       qc.invalidateQueries({ queryKey: ["settings"] });
-    },
-    onError: (e: any) => toast.error(e.message),
-  });
-
-  const applyMutation = useMutation({
-    mutationFn: async () => {
-      await api.put("/api/settings", {
-        mixed_port: form?.mixed_port,
-        allow_lan: form?.allow_lan,
-        log_level: form?.log_level,
-        core_mirror: form?.core_mirror,
-      });
-      return api.post<{ result: string }>("/api/config/apply");
-    },
-    onSuccess: (res) => {
-      toast.success(
-        res.result === "reloaded"
-          ? "配置已热重载生效！"
-          : res.result === "restarted"
-          ? "内核已自动重启生效！"
-          : res.result === "started"
-          ? "内核已成功启动！"
-          : "配置已保存",
-      );
-      qc.invalidateQueries({ queryKey: ["core"] });
-      qc.invalidateQueries({ queryKey: ["meta"] });
+      qc.invalidateQueries({ queryKey: ["config-pending"] });
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -185,14 +153,6 @@ export default function KernelPage() {
           >
             <RotateCw className={cn("h-3.5 w-3.5", restartCoreMutation.isPending && "animate-spin")} />
             重启内核
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => applyMutation.mutate()}
-            disabled={applyMutation.isPending}
-          >
-            <Rocket className="h-4 w-4" />
-            应用配置并重载
           </Button>
         </div>
       </div>
@@ -314,6 +274,7 @@ export default function KernelPage() {
                   type="number"
                   value={form.mixed_port}
                   onChange={(e) => patch({ mixed_port: Number(e.target.value) })}
+                  onBlur={() => saveMutation.mutate({ mixed_port: form.mixed_port })}
                 />
                 <p className="text-[11px] text-muted-foreground">默认端口为 7890</p>
               </div>
@@ -322,7 +283,11 @@ export default function KernelPage() {
                 <Label>日志输出级别</Label>
                 <Select
                   value={form.log_level}
-                  onChange={(e) => patch({ log_level: e.target.value })}
+                  onChange={(e) => {
+                    const logLevel = e.target.value;
+                    patch({ log_level: logLevel });
+                    saveMutation.mutate({ log_level: logLevel });
+                  }}
                 >
                   {LOG_LEVELS.map((l) => (
                     <option key={l.value} value={l.value}>
@@ -339,6 +304,7 @@ export default function KernelPage() {
                 placeholder="例如 https://ghproxy.com/ 或留空使用官方源"
                 value={form.core_mirror || ""}
                 onChange={(e) => patch({ core_mirror: e.target.value })}
+                onBlur={() => saveMutation.mutate({ core_mirror: form.core_mirror })}
               />
             </div>
 
@@ -351,20 +317,11 @@ export default function KernelPage() {
               </div>
               <Switch
                 checked={form.allow_lan}
-                onCheckedChange={(v) => patch({ allow_lan: v })}
+                onCheckedChange={(v) => {
+                  patch({ allow_lan: v });
+                  saveMutation.mutate({ allow_lan: v });
+                }}
               />
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending}
-              >
-                <Save className="h-3.5 w-3.5" />
-                仅保存参数
-              </Button>
             </div>
           </CardContent>
         </Card>

@@ -69,7 +69,25 @@ func (s *Store) ListNodes(f model.NodeFilter) ([]model.Node, error) {
 }
 
 func (s *Store) ListEnabledNodes() ([]model.Node, error) {
-	return s.ListNodes(model.NodeFilter{Enabled: "true"})
+	// 订阅被禁用后，其历史节点仍保留在节点池中供用户查看/重新启用，
+	// 但不能继续写入运行配置。
+	rows, err := s.db.Query(`SELECT ` + nodeCols + ` FROM nodes
+		WHERE enabled=1 AND (source_type!='sub' OR EXISTS(
+			SELECT 1 FROM subscriptions WHERE subscriptions.id=nodes.source_id AND subscriptions.enabled=1
+		)) ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.Node{}
+	for rows.Next() {
+		n, err := scanNode(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *n)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) GetNode(id int64) (*model.Node, error) {

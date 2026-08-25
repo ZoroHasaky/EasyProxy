@@ -3,16 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Network,
-  Save,
-  ShieldCheck,
-  Zap,
-  Info,
-  Layers,
-  Server,
-  AlertTriangle,
 } from "lucide-react";
 import { api, Settings } from "@/lib/api";
-import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select } from "@/components/ui/select";
@@ -42,46 +34,37 @@ export default function TransparentProxyPage() {
 
   const patch = (p: Partial<Settings>) => setForm((f) => (f ? { ...f, ...p } : f));
 
+  const saveMutation = useMutation({
+    mutationFn: (payload: Partial<Settings>) => api.put("/api/settings", payload),
+    onSuccess: () => {
+      toast.success("透明代理设置已保存，等待应用");
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["config-pending"] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const checkTun = async (on: boolean) => {
     patch({ tun_enable: on });
+    saveMutation.mutate({ tun_enable: on });
     if (!on) return;
     try {
       const res = await api.get<{ ok: boolean; detail: string }>("/api/tun/check");
       if (!res.ok) {
         toast.error(`TUN 环境预检异常：${res.detail}`, { duration: 7000 });
       } else {
-        toast.success("TUN 软路由环境预检通过！");
+        toast.success("TUN 软路由环境预检通过");
       }
     } catch {
-      /* 忽略 */
+      /* 预检失败不阻止保存，统一应用时仍会给出内核错误 */
     }
   };
 
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      await api.put("/api/settings", {
-        tun_enable: form?.tun_enable,
-        tun_stack: form?.tun_stack,
-        dns_enable: form?.dns_enable,
-        dns_mode: form?.dns_mode,
-        dns_nameserver: form?.dns_nameserver,
-        dns_fallback: form?.dns_fallback,
-      });
-      return api.post<{ result: string }>("/api/config/apply");
-    },
-    onSuccess: (res) => {
-      toast.success(
-        res.result === "reloaded"
-          ? "透明代理配置已热重载生效！"
-          : res.result === "restarted"
-          ? "透明代理已生效，内核已自动重启！"
-          : "设置已保存",
-      );
-      qc.invalidateQueries({ queryKey: ["settings"] });
-      qc.invalidateQueries({ queryKey: ["core"] });
-    },
-    onError: (e: any) => toast.error(e.message),
-  });
+  const saveNameservers = (key: "dns_nameserver" | "dns_fallback", value: string) => {
+    const servers = value.split("\n").map((item) => item.trim()).filter(Boolean);
+    patch({ [key]: servers });
+    saveMutation.mutate({ [key]: servers });
+  };
 
   if (!form) return <div className="text-xs text-muted-foreground p-8 text-center">正在加载设置…</div>;
 
@@ -99,14 +82,6 @@ export default function TransparentProxyPage() {
           </p>
         </div>
 
-        <Button
-          size="sm"
-          onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
-        >
-          <Save className="h-4 w-4" />
-          {saveMutation.isPending ? "应用中…" : "保存并立即生效"}
-        </Button>
       </div>
 
       {/* TUN 设置卡片 */}
@@ -140,7 +115,11 @@ export default function TransparentProxyPage() {
             <Label>TUN 协议栈 (Stack)</Label>
             <Select
               value={form.tun_stack}
-              onChange={(e) => patch({ tun_stack: e.target.value })}
+              onChange={(e) => {
+                const tunStack = e.target.value;
+                patch({ tun_stack: tunStack });
+                saveMutation.mutate({ tun_stack: tunStack });
+              }}
             >
               <option value="mixed">mixed（推荐，兼顾性能与兼容性）</option>
               <option value="system">system（原生系统协议栈）</option>
@@ -168,7 +147,10 @@ export default function TransparentProxyPage() {
             </div>
             <Switch
               checked={form.dns_enable}
-              onCheckedChange={(v) => patch({ dns_enable: v })}
+              onCheckedChange={(v) => {
+                patch({ dns_enable: v });
+                saveMutation.mutate({ dns_enable: v });
+              }}
             />
           </div>
 
@@ -176,7 +158,11 @@ export default function TransparentProxyPage() {
             <Label>DNS 模式</Label>
             <Select
               value={form.dns_mode}
-              onChange={(e) => patch({ dns_mode: e.target.value })}
+              onChange={(e) => {
+                const dnsMode = e.target.value;
+                patch({ dns_mode: dnsMode });
+                saveMutation.mutate({ dns_mode: dnsMode });
+              }}
             >
               <option value="fake-ip">fake-ip（速度极快，推荐）</option>
               <option value="redir-host">redir-host（真实解析回退）</option>
@@ -196,6 +182,7 @@ export default function TransparentProxyPage() {
                       .filter(Boolean),
                   })
                 }
+                onBlur={(e) => saveNameservers("dns_nameserver", e.currentTarget.value)}
                 rows={3}
                 className="font-mono text-xs"
                 placeholder="223.5.5.5&#10;119.29.29.29"
@@ -214,6 +201,7 @@ export default function TransparentProxyPage() {
                       .filter(Boolean),
                   })
                 }
+                onBlur={(e) => saveNameservers("dns_fallback", e.currentTarget.value)}
                 rows={3}
                 className="font-mono text-xs"
                 placeholder="https://dns.cloudflare.com/dns-query&#10;https://dns.google/dns-query"

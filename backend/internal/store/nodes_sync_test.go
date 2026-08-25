@@ -141,3 +141,35 @@ func TestDeleteSubscriptionRemovesItsNodesOnly(t *testing.T) {
 		t.Fatal("deleted subscription still exists")
 	}
 }
+
+func TestListEnabledNodesSkipsDisabledSubscription(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	sub := model.Subscription{Name: "已暂停订阅", URL: "https://paused.example.com", Enabled: false}
+	if err := st.CreateSubscription(&sub); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.SyncSubscriptionNodes(sub.ID, []model.Node{
+		subscriptionNode("暂停订阅节点", "paused-node.example.com", "paused-hash"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manual := subscriptionNode("手工节点", "manual.example.com", "manual-hash")
+	manual.SourceType = "manual"
+	manual.SourceID = 0
+	if err := st.CreateNode(&manual); err != nil {
+		t.Fatal(err)
+	}
+
+	nodes, err := st.ListEnabledNodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 || nodes[0].ID != manual.ID {
+		t.Fatalf("enabled nodes should only contain manual node: %#v", nodes)
+	}
+}

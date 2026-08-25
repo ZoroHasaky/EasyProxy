@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"regexp"
@@ -73,12 +74,16 @@ func DefaultGeoxURLs() map[string]string {
 
 // GeoxSources 读取 Geo 数据源，并兼容旧版 map[string]string 存储格式。
 func GeoxSources(st *store.Store) map[string][]string {
+	return geoxSourcesFromRaw(st.GetSetting("geox_urls", ""))
+}
+
+func geoxSourcesFromRaw(raw string) map[string][]string {
 	var sources map[string][]string
-	if st.GetSettingJSON("geox_urls", &sources) && len(sources) > 0 {
+	if raw != "" && json.Unmarshal([]byte(raw), &sources) == nil && len(sources) > 0 {
 		return normalizeGeoxSources(sources)
 	}
 	var legacy map[string]string
-	if st.GetSettingJSON("geox_urls", &legacy) && len(legacy) > 0 {
+	if raw != "" && json.Unmarshal([]byte(raw), &legacy) == nil && len(legacy) > 0 {
 		wrapped := make(map[string][]string, len(legacy))
 		for key, value := range legacy {
 			wrapped[key] = []string{value}
@@ -86,6 +91,45 @@ func GeoxSources(st *store.Store) map[string][]string {
 		return normalizeGeoxSources(wrapped)
 	}
 	return DefaultGeoxSources()
+}
+
+type configSettings struct {
+	st     *store.Store
+	values map[string]string
+}
+
+func (c configSettings) get(key, def string) string {
+	if value, ok := c.values[key]; ok {
+		return value
+	}
+	return c.st.GetSetting(key, def)
+}
+
+func (c configSettings) getInt(key string, def int) int {
+	value := c.get(key, "")
+	if value == "" {
+		return def
+	}
+	number, err := strconv.Atoi(value)
+	if err != nil {
+		return def
+	}
+	return number
+}
+
+func (c configSettings) getBool(key string, def bool) bool {
+	switch c.get(key, "") {
+	case "1", "true":
+		return true
+	case "0", "false":
+		return false
+	default:
+		return def
+	}
+}
+
+func (c configSettings) getJSON(key string, out any) bool {
+	return json.Unmarshal([]byte(c.get(key, "")), out) == nil
 }
 
 func normalizeGeoxSources(sources map[string][]string) map[string][]string {
@@ -152,6 +196,26 @@ func detectLANIP() string {
 
 // GenerateConfig 依据节点池/策略组/规则模板/设置生成最终 mihomo 配置
 func GenerateConfig(st *store.Store) (*GenResult, error) {
+	return generateConfig(st, configSettings{st: st})
+}
+
+// GenerateConfigForSettings 使用给定的设置快照生成目标配置。调用方可用它保证
+// “生成、加载、记录为已应用”严格对应同一组设置。
+func GenerateConfigForSettings(st *store.Store, values map[string]string) (*GenResult, error) {
+	return generateConfig(st, configSettings{st: st, values: values})
+}
+
+// GenerateAppliedConfig 使用最近一次成功应用的设置快照生成配置。
+// 节点、订阅和规则的即时应用必须调用此函数，避免提前带入顶栏待应用设置。
+func GenerateAppliedConfig(st *store.Store) (*GenResult, error) {
+	values, err := st.AppliedConfigSettings()
+	if err != nil {
+		return nil, err
+	}
+	return GenerateConfigForSettings(st, values)
+}
+
+func generateConfig(st *store.Store, settings configSettings) (*GenResult, error) {
 	deduped, err := EffectiveNodes(st)
 	if err != nil {
 		return nil, err
@@ -165,9 +229,9 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 	var sb strings.Builder
 	sb.WriteString("# 由 EasyProxy 自动生成，手动修改会被覆盖\n\n")
 
-	mixedPort := st.GetSettingInt("mixed_port", 7890)
-	allowLan := st.GetSettingBool("allow_lan", true)
-	logLevel := st.GetSetting("log_level", "info")
+	mixedPort := settings.getInt("mixed_port", 7890)
+	allowLan := settings.getBool("allow_lan", true)
+	logLevel := settings.get("log_level", "info")
 	fmt.Fprintf(&sb, "mixed-port: %d\nallow-lan: %t\nbind-address: '*'\nmode: rule\nlog-level: %s\nipv6: true\n\n",
 		mixedPort, allowLan, logLevel)
 
@@ -175,21 +239,21 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 	secret := st.GetSetting("controller_secret", "")
 	fmt.Fprintf(&sb, "external-controller: 127.0.0.1:%d\nsecret: %s\n\n", controllerPort, quote(secret))
 
-	if st.GetSettingBool("geo_enabled", true) {
-		geox := activeGeoxURLs(GeoxSources(st))
+	if settings.getBool("geo_enabled", true) {
+		geox := activeGeoxURLs(geoxSourcesFromRaw(settings.get("geox_urls", "")))
 		if len(geox) > 0 {
 			sb.WriteString("geox-url:\n")
 			for _, k := range sortedKeys(geox) {
 				fmt.Fprintf(&sb, "  %s: %s\n", k, quote(geox[k]))
 			}
 		}
-		fmt.Fprintf(&sb, "geo-auto-update: %t\n", st.GetSettingBool("geo_auto_update", false))
-		fmt.Fprintf(&sb, "geo-update-interval: %d\n", st.GetSettingInt("geo_update_interval", 24))
+		fmt.Fprintf(&sb, "geo-auto-update: %t\n", settings.getBool("geo_auto_update", false))
+		fmt.Fprintf(&sb, "geo-update-interval: %d\n", settings.getInt("geo_update_interval", 24))
 		sb.WriteString("\n")
 	}
 
-	tunEnable := st.GetSettingBool("tun_enable", false)
-	tunStack := st.GetSetting("tun_stack", "mixed")
+	tunEnable := settings.getBool("tun_enable", false)
+	tunStack := settings.get("tun_stack", "mixed")
 	sb.WriteString("tun:\n")
 	fmt.Fprintf(&sb, "  enable: %t\n  stack: %s\n  auto-route: true\n  auto-redirect: true\n", tunEnable, tunStack)
 	sb.WriteString("  auto-detect-interface: true\n  strict-route: true\n  dns-hijack:\n    - any:53\n    - tcp://any:53\n\n")
@@ -203,14 +267,14 @@ func GenerateConfig(st *store.Store) (*GenResult, error) {
 	sb.WriteString("    HTTP:\n      ports: [80, 8080-8880]\n      override-destination: true\n")
 	sb.WriteString("\n")
 
-	dnsEnable := st.GetSettingBool("dns_enable", true)
-	dnsMode := st.GetSetting("dns_mode", "fake-ip")
+	dnsEnable := settings.getBool("dns_enable", true)
+	dnsMode := settings.get("dns_mode", "fake-ip")
 	ns := []string{}
-	if !st.GetSettingJSON("dns_nameserver", &ns) || len(ns) == 0 {
+	if !settings.getJSON("dns_nameserver", &ns) || len(ns) == 0 {
 		ns = defaultNameservers()
 	}
 	fallback := []string{}
-	if !st.GetSettingJSON("dns_fallback", &fallback) {
+	if !settings.getJSON("dns_fallback", &fallback) {
 		fallback = defaultFallbackDNS()
 	}
 	// 透明代理模式下 DNS 直接监听局域网 IP 的 53 端口：局域网设备把 DNS 指向本机即可用；
