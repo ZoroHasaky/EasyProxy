@@ -394,6 +394,11 @@ export interface AuditLogResponse {
   next_before: number;
 }
 
+export interface ClashConfigLink {
+  token: string;
+  path: string;
+}
+
 export interface UpdateCheck {
   current: string;
   latest: string;

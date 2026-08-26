@@ -153,6 +153,8 @@ func auditRoute(pattern, method string) (category, event, summary string, ok boo
 		return "operation", "routing.region_groups", "地区节点组合已生成", true
 	case "/api/config/apply":
 		return "operation", "config.apply", "待应用配置已执行", true
+	case "/api/clash-config/link/rotate":
+		return "operation", "config_export.link_rotate", "配置订阅链接已重新生成", true
 	case "/api/settings":
 		return "operation", "settings.changed", "系统设置已保存", true
 	case "/api/password":

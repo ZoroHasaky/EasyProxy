@@ -110,7 +110,7 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
               )
             }
           >
-            <item.icon className="h-4.5 w-4.5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
+            <item.icon className="h-5 w-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
             <div className={cn("flex min-w-0 flex-col overflow-hidden whitespace-nowrap text-left transition-[max-width,opacity,transform] duration-200 ease-out", collapsed ? "delay-100 max-w-0 -translate-x-2 opacity-0" : "delay-0 max-w-32 translate-x-0 opacity-100")}>
               <span className="leading-tight">{item.label}</span>
             </div>
@@ -119,41 +119,26 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
       </nav>
 
       {/* 底部内核运行状态与退出 */}
-      <div className={cn("p-3 border-t border-border/60 bg-muted/20", collapsed ? "px-2" : "p-3.5")}>
-        {!collapsed ? (
-          <div className="space-y-3">
-            <div className="flex h-11 w-full items-center justify-between rounded-xl border border-border/50 bg-card px-3 shadow-xs">
-              <div className="flex items-center gap-2">
-                <div className={cn("h-2 w-2 rounded-full", running ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} />
-                <span className="text-xs font-medium text-muted-foreground">内核状态</span>
-              </div>
-              <Badge variant={running ? "success" : "destructive"} className="text-[10px] px-2 py-0">
-                {coreLabel}
-              </Badge>
+      <div className="border-t border-border/60 bg-muted/20 p-3">
+        <div className="space-y-3">
+          <div className="relative flex h-11 w-full items-center rounded-xl border border-border/50 bg-card px-3 shadow-xs">
+            <div className={cn("absolute top-1/2 flex items-center transition-[left,transform] duration-300 ease-in-out", collapsed ? "left-1/2 -translate-x-1/2" : "left-3 translate-x-0")}>
+              <div className={cn("h-2.5 w-2.5 shrink-0 rounded-full", running ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} title={`内核: ${coreLabel}`} />
+              <span className={cn("overflow-hidden whitespace-nowrap text-xs font-medium text-muted-foreground transition-[max-width,margin,opacity,transform] duration-200 ease-out", collapsed ? "delay-100 ml-0 max-w-0 -translate-x-2 opacity-0" : "ml-2 max-w-20 translate-x-0 opacity-100")}>内核状态</span>
             </div>
-            <button
-              onClick={onLogout}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-border/50 bg-card px-3 text-xs font-medium text-muted-foreground shadow-xs transition-colors hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-            >
-              <LogOut className="h-4 w-4" />
-              退出登录
-            </button>
+            <Badge variant={running ? "success" : "destructive"} className={cn("absolute right-3 overflow-hidden text-[10px] transition-[max-width,padding,opacity] duration-200 ease-out", collapsed ? "delay-100 max-w-0 border-0 px-0 py-0 opacity-0" : "max-w-20 px-2 py-0 opacity-100")}>
+              {coreLabel}
+            </Badge>
           </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <div
-              className={cn("h-2.5 w-2.5 rounded-full", running ? "bg-emerald-500 animate-pulse" : "bg-rose-500")}
-              title={`内核: ${coreLabel}`}
-            />
-            <button
-              onClick={onLogout}
-              title="退出登录"
-              className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
-        )}
+          <button
+            onClick={onLogout}
+            title={collapsed ? "退出登录" : undefined}
+            className="flex h-11 w-full items-center justify-center rounded-xl border border-border/50 bg-card px-3 text-xs font-medium text-muted-foreground shadow-xs transition-colors hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            <span className={cn("overflow-hidden whitespace-nowrap transition-[max-width,margin,opacity,transform] duration-200 ease-out", collapsed ? "delay-100 ml-0 max-w-0 -translate-x-2 opacity-0" : "ml-2 max-w-20 translate-x-0 opacity-100")}>退出登录</span>
+          </button>
+        </div>
       </div>
     </div>
   );

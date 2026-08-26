@@ -217,6 +217,78 @@ func GenerateAppliedConfig(st *store.Store) (*GenResult, error) {
 	return GenerateConfigForSettings(st, values)
 }
 
+// GenerateClashExport 生成可被 Mihomo/Clash Verge 直接导入的独立路由配置。
+// 它只保留节点、节点组合、规则与按需 Geo 数据源，不泄露本机监听、DNS、TUN 或控制器设置。
+func GenerateClashExport(st *store.Store) (*GenResult, error) {
+	generated, err := GenerateConfig(st)
+	if err != nil {
+		return nil, err
+	}
+
+	var runtime map[string]any
+	if err := yaml.Unmarshal([]byte(generated.YAML), &runtime); err != nil {
+		return nil, fmt.Errorf("解析生成配置失败: %w", err)
+	}
+
+	export := map[string]any{"mode": "rule"}
+	for _, key := range []string{"proxies", "proxy-groups", "rule-providers", "rules"} {
+		if value, ok := runtime[key]; ok {
+			export[key] = value
+		}
+	}
+
+	needGeoIP, needGeoSite := exportedGeoRuleUsage(runtime["rules"])
+	if needGeoIP || needGeoSite {
+		if sources, ok := runtime["geox-url"].(map[string]any); ok {
+			selected := map[string]any{}
+			if needGeoIP {
+				if source, exists := sources["geoip"]; exists {
+					selected["geoip"] = source
+				}
+			}
+			if needGeoSite {
+				if source, exists := sources["geosite"]; exists {
+					selected["geosite"] = source
+				}
+			}
+			if len(selected) > 0 {
+				export["geodata-mode"] = true
+				export["geo-auto-update"] = true
+				export["geo-update-interval"] = 24
+				export["geox-url"] = selected
+			}
+		}
+	}
+
+	encoded, err := yaml.Marshal(export)
+	if err != nil {
+		return nil, fmt.Errorf("编码导出配置失败: %w", err)
+	}
+	generated.YAML = "# 由 EasyProxy 导出，仅包含节点与分流规则\n\n" + string(encoded)
+	return generated, nil
+}
+
+func exportedGeoRuleUsage(value any) (needGeoIP, needGeoSite bool) {
+	rules, ok := value.([]any)
+	if !ok {
+		return false, false
+	}
+	for _, value := range rules {
+		rule, ok := value.(string)
+		if !ok {
+			continue
+		}
+		kind := strings.ToUpper(strings.TrimSpace(strings.SplitN(rule, ",", 2)[0]))
+		switch kind {
+		case "GEOIP":
+			needGeoIP = true
+		case "GEOSITE":
+			needGeoSite = true
+		}
+	}
+	return needGeoIP, needGeoSite
+}
+
 func generateConfig(st *store.Store, settings configSettings) (*GenResult, error) {
 	deduped, err := EffectiveNodes(st)
 	if err != nil {

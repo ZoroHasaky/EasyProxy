@@ -259,6 +259,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("GET /api/meta", s.handleMeta)
 	mux.HandleFunc("GET /api/regions", s.handleRegions)
+	mux.HandleFunc("GET /api/clash-config/subscription/{token}", s.handleClashConfigSubscription)
 
 	// 需登录
 	route := func(pattern string, h http.HandlerFunc) {
@@ -298,6 +299,9 @@ func (s *Server) Handler() http.Handler {
 	route("GET /api/config/preview", s.handleConfigPreview)
 	route("GET /api/config/pending", s.handleGetPendingConfigChanges)
 	route("POST /api/config/apply", s.handleConfigApply)
+	route("GET /api/clash-config/download", s.handleDownloadClashConfig)
+	route("GET /api/clash-config/link", s.handleGetClashConfigLink)
+	route("POST /api/clash-config/link/rotate", s.handleRotateClashConfigLink)
 
 	route("GET /api/core", s.handleCoreStatus)
 	route("GET /api/core/logs", s.handleCoreLogs)

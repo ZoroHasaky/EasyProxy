@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Clock, KeyRound, Loader2, Lock, RefreshCw, Server, ShieldCheck } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Clock, Copy, Download, KeyRound, Link2, Loader2, Lock, RefreshCw, Server, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import { api, MetaInfo } from "@/lib/api";
+import { api, ClashConfigLink, MetaInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useUpdate } from "@/contexts/update-state";
@@ -16,9 +17,11 @@ function formatTime(value?: string) {
 }
 
 export default function SettingsPage() {
+  const queryClient = useQueryClient();
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [configLinkOpen, setConfigLinkOpen] = useState(false);
   const { checkForUpdates, isChecking, setDialogOpen } = useUpdate();
   const metaQuery = useQuery({
     queryKey: ["meta"],
@@ -32,6 +35,19 @@ export default function SettingsPage() {
       setNewPassword("");
       setConfirmPassword("");
       toast.success("管理密码已修改");
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+  const configLinkQuery = useQuery({
+    queryKey: ["clash-config-link"],
+    queryFn: () => api.get<ClashConfigLink>("/api/clash-config/link"),
+    enabled: configLinkOpen,
+  });
+  const rotateConfigLink = useMutation({
+    mutationFn: () => api.post<ClashConfigLink>("/api/clash-config/link/rotate"),
+    onSuccess: (link) => {
+      queryClient.setQueryData(["clash-config-link"], link);
+      toast.success("配置订阅链接已重新生成，旧链接已失效");
     },
     onError: (error: any) => toast.error(error.message),
   });
@@ -52,6 +68,22 @@ export default function SettingsPage() {
   const openUpdateDialog = () => {
     setDialogOpen(true);
     void checkForUpdates();
+  };
+  const subscriptionURL = configLinkQuery.data ? new URL(configLinkQuery.data.path, window.location.origin).toString() : "";
+  const downloadClashConfig = () => {
+    window.location.assign("/api/clash-config/download");
+  };
+  const copyConfigLink = async () => {
+    try {
+      await navigator.clipboard.writeText(subscriptionURL);
+      toast.success("配置链接已复制");
+    } catch {
+      toast.error("复制失败，请手动复制链接");
+    }
+  };
+  const confirmRotateConfigLink = () => {
+    if (!window.confirm("重新生成后，已添加到 Clash Verge 的旧配置链接将立即失效。确定继续吗？")) return;
+    rotateConfigLink.mutate();
   };
 
   const meta = metaQuery.data;
@@ -103,6 +135,29 @@ export default function SettingsPage() {
       <Card className="border-border/80">
         <CardHeader className="pb-3">
           <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-sky-500/10 p-2 text-sky-600 dark:text-sky-400"><Link2 className="h-4.5 w-4.5" /></div>
+            <div>
+              <CardTitle className="text-base font-bold">配置导出与分享</CardTitle>
+              <CardDescription>导出可被 Clash Verge 使用的节点与分流配置，不包含本机端口、DNS、TUN 和控制器设置。</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
+          <p className="text-[11px] text-muted-foreground">配置链接会实时读取当前已保存的节点、节点组合与规则；请妥善保管。</p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={downloadClashConfig}>
+              <Download className="h-3.5 w-3.5" />下载配置
+            </Button>
+            <Button type="button" size="sm" onClick={() => setConfigLinkOpen(true)}>
+              <Link2 className="h-3.5 w-3.5" />配置链接
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/80">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-3">
             <div className="rounded-xl bg-primary/10 p-2 text-primary"><KeyRound className="h-4.5 w-4.5" /></div>
             <div>
               <CardTitle className="text-base font-bold">修改管理密码</CardTitle>
@@ -136,6 +191,33 @@ export default function SettingsPage() {
           </form>
         </CardContent>
       </Card>
+
+      <Dialog open={configLinkOpen} onOpenChange={setConfigLinkOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>配置链接</DialogTitle>
+            <DialogDescription>将此链接添加到 Clash Verge 的订阅中。链接包含节点参数，请勿分享给不可信的人。</DialogDescription>
+          </DialogHeader>
+          {configLinkQuery.isLoading ? (
+            <div className="flex h-28 items-center justify-center text-xs text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />正在生成配置链接…</div>
+          ) : configLinkQuery.isError ? (
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">读取配置链接失败，请关闭后重试。</div>
+          ) : (
+            <div className="space-y-3">
+              <Input value={subscriptionURL} readOnly onFocus={(event) => event.currentTarget.select()} className="font-mono text-xs" />
+              <p className="text-[11px] leading-relaxed text-muted-foreground">节点或规则保存后，Clash Verge 下次刷新订阅即可获得最新配置；重新生成链接会立即使旧链接失效。</p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" size="sm" onClick={confirmRotateConfigLink} disabled={rotateConfigLink.isPending || configLinkQuery.isLoading}>
+              {rotateConfigLink.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}重新生成链接
+            </Button>
+            <Button type="button" size="sm" onClick={copyConfigLink} disabled={!subscriptionURL}>
+              <Copy className="h-3.5 w-3.5" />复制链接
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
