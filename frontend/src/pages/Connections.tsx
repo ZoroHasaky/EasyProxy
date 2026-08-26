@@ -207,7 +207,8 @@ export default function ConnectionsPage() {
             const sourcePort = conn.metadata?.sourcePort || "未知";
             const network = conn.metadata?.network || "未知";
             const protocol = conn.metadata?.type || "未知";
-            const chainItems = (conn.chains || []).filter(Boolean);
+            // Mihomo 返回的 Chains 从实际节点向上回溯到入口策略组；界面按实际出站方向展示。
+            const chainItems = (conn.chains || []).filter(Boolean).reverse();
             const chain = chainItems.join(" → ") || "直连";
             const proxyNode = chainItems[chainItems.length - 1] || "直连";
             const speed = connectionSpeeds[conn.id] ?? { up: 0, down: 0 };

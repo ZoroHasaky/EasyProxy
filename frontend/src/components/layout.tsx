@@ -82,7 +82,7 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
   return (
     <div className="flex flex-col h-full">
       {/* 品牌区 */}
-      <div className={cn("flex h-16 items-center gap-3 border-b border-border/60 transition-[padding] duration-300 ease-in-out", collapsed ? "justify-center px-2" : "px-4")}>
+      <div className="flex h-16 items-center gap-3 border-b border-border/60 px-4">
         <img src="/easyproxy-logo.svg" alt="EasyProxy" className="h-10 w-10 shrink-0 rounded-2xl shadow-md shadow-primary/25" />
         <div className={cn("flex min-w-0 flex-col overflow-hidden whitespace-nowrap transition-[max-width,opacity,transform] duration-200 ease-out", collapsed ? "delay-100 max-w-0 -translate-x-2 opacity-0" : "delay-0 max-w-32 translate-x-0 opacity-100")}>
           <span className="font-bold text-base tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
@@ -103,8 +103,7 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
             onClick={onNavigate}
             className={({ isActive }) =>
               cn(
-                "group relative flex items-center rounded-xl text-sm font-medium transition-all duration-200",
-                collapsed ? "justify-center h-11 w-11 mx-auto" : "h-11 px-3.5 gap-3",
+                "group relative flex h-11 items-center gap-3 rounded-xl px-3.5 text-sm font-medium transition-colors duration-200",
                 isActive
                   ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"

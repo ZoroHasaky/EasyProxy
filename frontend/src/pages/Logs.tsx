@@ -58,7 +58,8 @@ function getTrafficTrace(details?: Record<string, unknown>) {
   const safeDetails = details ?? {};
   return {
     rule: [asString(safeDetails.rule), asString(safeDetails.rule_payload)].filter(Boolean).join(", "),
-    route: asStringList(safeDetails.chains).join(" → "),
+    // Mihomo 返回的 Chains 从实际节点向上回溯到入口策略组；界面按实际出站方向展示。
+    route: asStringList(safeDetails.chains).reverse().join(" → "),
   };
 }
 
