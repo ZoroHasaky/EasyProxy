@@ -131,7 +131,7 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
       <div className={cn("p-3 border-t border-border/60 bg-muted/20", collapsed ? "px-2" : "p-3.5")}>
         {!collapsed ? (
           <div className="space-y-3">
-            <div className="flex items-center justify-between px-2 py-1.5 rounded-xl bg-card border border-border/50 shadow-xs">
+            <div className="flex h-11 w-full items-center justify-between rounded-xl border border-border/50 bg-card px-3 shadow-xs">
               <div className="flex items-center gap-2">
                 <div className={cn("h-2 w-2 rounded-full", running ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} />
                 <span className="text-xs font-medium text-muted-foreground">内核状态</span>
@@ -142,7 +142,7 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
             </div>
             <button
               onClick={onLogout}
-              className="flex w-full items-center justify-center gap-2 h-9 rounded-xl text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-border/50 bg-card px-3 text-xs font-medium text-muted-foreground shadow-xs transition-colors hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
             >
               <LogOut className="h-4 w-4" />
               退出登录
@@ -232,7 +232,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {/* 折叠切换按钮 */}
         <button
           onClick={toggleCollapsed}
-          className="absolute -right-3.5 top-6 z-40 flex h-7 w-7 items-center justify-center rounded-full border border-border/80 bg-card shadow-md hover:bg-accent text-muted-foreground transition-all duration-150"
+          className="absolute -right-3.5 top-[50px] z-40 flex h-7 w-7 items-center justify-center rounded-full border border-border/80 bg-card shadow-md hover:bg-accent text-muted-foreground transition-all duration-150"
         >
           {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
         </button>

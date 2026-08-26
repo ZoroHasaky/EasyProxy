@@ -17,7 +17,7 @@ import {
   Trash2,
   WandSparkles,
 } from "lucide-react";
-import { api, autoApplyResultMessage, AutoApplyResponse, GenResult, GeoRecognitionGenerationResponse, GeoRecognitionPresetCatalog, OutboundRule, proxyGroupTypeLabel, ProxyGroup, RecognitionRule, RecognitionRuleImportResponse } from "@/lib/api";
+import { api, autoApplyResultMessage, AutoApplyResponse, GenResult, GeoRecognitionGenerationResponse, GeoRecognitionPresetCatalog, mihomo, OutboundRule, proxyGroupTypeLabel, ProxyGroup, RecognitionRule, RecognitionRuleImportResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,11 +78,16 @@ const KIND_LABELS: Record<string, string> = {
 const BUILTIN_OUTBOUND_TARGETS = [
   { id: -1, name: "直连", target: "DIRECT", description: "不经过代理，直接连接目标" },
   { id: -2, name: "拒绝", target: "REJECT", description: "直接拒绝匹配到的连接" },
-  { id: -3, name: "全节点自动", target: "AUTO", description: "按测速结果从全部节点中自动选择" },
+  { id: -3, name: "主代理出口", target: "PROXY", description: "由仪表盘的主代理出口选择决定最终出站" },
 ] as const;
 
 function builtinOutboundTarget(id: number) {
   return BUILTIN_OUTBOUND_TARGETS.find((target) => target.id === id);
+}
+
+function proxySelectionLabel(selection?: string) {
+  if (!selection) return "内核未运行或尚未选择";
+  return selection === "AUTO" ? "自动测速（AUTO）" : selection;
 }
 
 function kindLabel(kind: string) {
@@ -208,6 +213,7 @@ function OutboundRulesPanel({
   onToggle,
   onDelete,
   onPreview,
+  proxySelection,
 }: {
   rules: OutboundRule[];
   recognitionRules: RecognitionRule[];
@@ -217,6 +223,7 @@ function OutboundRulesPanel({
   onToggle: (id: number, enabled: boolean) => void;
   onDelete: (rule: OutboundRule) => void;
   onPreview: () => void;
+  proxySelection?: string;
 }) {
   const recognitionByID = new Map(recognitionRules.map((rule) => [rule.id, rule]));
   const groupByID = new Map(groups.map((group) => [group.id, group]));
@@ -266,7 +273,7 @@ function OutboundRulesPanel({
                 <div>
                   <div className="text-[11px] text-muted-foreground">出站目标</div>
                   <div className="mt-1 truncate text-sm font-semibold text-primary">{builtinTarget ? `${builtinTarget.name}（${builtinTarget.target}）` : group?.name ?? "已删除的节点组合"}</div>
-                  {builtinTarget ? <div className="mt-1 text-[11px] text-muted-foreground">{builtinTarget.description}</div> : group && <div className="mt-1 text-[11px] text-muted-foreground">{proxyGroupTypeLabel(group.type)} · {group.member_mode === "manual" ? `手选 ${group.node_ids.length} 节点` : "按组合策略选择"}</div>}
+                  {builtinTarget ? <div className="mt-1 text-[11px] text-muted-foreground">{builtinTarget.target === "PROXY" ? `当前选择：${proxySelectionLabel(proxySelection)}` : builtinTarget.description}</div> : group && <div className="mt-1 text-[11px] text-muted-foreground">{proxyGroupTypeLabel(group.type)} · {group.member_mode === "manual" ? `手选 ${group.node_ids.length} 节点` : "按组合策略选择"}</div>}
                 </div>
               </div>
               <div className="mt-4 flex justify-end gap-1 border-t border-border/40 pt-3">
@@ -282,7 +289,7 @@ function OutboundRulesPanel({
         <div className="rounded-2xl border border-dashed border-border/70 bg-card/30 py-12 text-center">
           <Radio className="mx-auto mb-2 h-10 w-10 text-muted-foreground/40" />
           <h4 className="text-sm font-semibold">暂无出站映射</h4>
-          <p className="mt-1 text-xs text-muted-foreground">先创建识别规则，再绑定直连、拒绝、全节点自动或节点组合。</p>
+          <p className="mt-1 text-xs text-muted-foreground">先创建识别规则，再绑定直连、拒绝、主代理出口或节点组合。</p>
         </div>
       )}
     </div>
@@ -308,6 +315,11 @@ export default function RulesPage() {
   const groupsQuery = useQuery({
     queryKey: ["groups"],
     queryFn: () => api.get<ProxyGroup[]>("/api/groups"),
+  });
+  const proxiesQuery = useQuery({
+    queryKey: ["proxies"],
+    queryFn: () => mihomo.proxies(),
+    refetchInterval: 10_000,
   });
 
   const [recognitionDialogOpen, setRecognitionDialogOpen] = useState(false);
@@ -630,6 +642,7 @@ export default function RulesPage() {
             onToggle={toggleOutbound}
             onDelete={deleteOutbound}
             onPreview={() => setPreviewOpen(true)}
+            proxySelection={proxiesQuery.data?.proxies?.PROXY?.now}
           />
         </TabsContent>
       </Tabs>
@@ -758,7 +771,7 @@ export default function RulesPage() {
 
       <Dialog open={outboundDialogOpen} onOpenChange={setOutboundDialogOpen}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>{editingOutbound ? "编辑出站映射" : "新建出站映射"}</DialogTitle><DialogDescription>将一条识别规则交给一个节点组合，由它决定最终出站节点。</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingOutbound ? "编辑出站映射" : "新建出站映射"}</DialogTitle><DialogDescription>将一条识别规则交给内置出站目标或节点组合，决定最终的流量处理方式。</DialogDescription></DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5"><Label>识别规则</Label><Select value={String(outboundRecognitionID)} onChange={(event) => setOutboundRecognitionID(Number(event.target.value))}><option value="0">请选择识别规则</option>{availableRecognitionRules.map((rule) => <option key={rule.id} value={rule.id}>{rule.name}（{rule.kind}，优先级 {rule.priority}）</option>)}</Select></div>
             <div className="space-y-1.5"><Label>出站目标</Label><Select value={String(outboundGroupID)} onChange={(event) => setOutboundGroupID(Number(event.target.value))}><option value="0">请选择出站目标</option><optgroup label="内置出站目标">{BUILTIN_OUTBOUND_TARGETS.map((target) => <option key={target.id} value={target.id}>{target.name}（{target.target}）</option>)}</optgroup><optgroup label="节点组合">{groups.map((group) => <option key={group.id} value={group.id}>{group.name}（{proxyGroupTypeLabel(group.type)}{group.enabled ? "" : "，已禁用"}）</option>)}</optgroup></Select></div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Sparkles, Settings, Zap } from "lucide-react";
+import { Sparkles, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { api, Settings as SettingsType } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -54,17 +54,6 @@ export default function SettingsPage() {
           </Button>
         </div>
       </div>
-
-      <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/60 p-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h3 className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
-            <Settings className="h-4.5 w-4.5 text-primary" />
-            系统设置
-          </h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">管理面板更新源与更新代理选项</p>
-        </div>
-      </div>
-
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">

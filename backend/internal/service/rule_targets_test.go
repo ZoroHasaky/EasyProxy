@@ -140,7 +140,7 @@ func TestGenerateConfigRoutesRecognitionRulesToBuiltinOutboundTargets(t *testing
 	if err := st.ReplaceRecognitionRules([]model.RecognitionRule{
 		{Name: "直连规则", Kind: "DOMAIN-SUFFIX", Conditions: []string{"direct.example"}, Priority: 3, Enabled: true},
 		{Name: "拒绝规则", Kind: "DOMAIN-SUFFIX", Conditions: []string{"reject.example"}, Priority: 2, Enabled: true},
-		{Name: "自动规则", Kind: "DOMAIN-SUFFIX", Conditions: []string{"auto.example"}, Priority: 1, Enabled: true},
+		{Name: "主出口规则", Kind: "DOMAIN-SUFFIX", Conditions: []string{"proxy.example"}, Priority: 1, Enabled: true},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestGenerateConfigRoutesRecognitionRulesToBuiltinOutboundTargets(t *testing
 	if err := st.ReplaceOutboundRules([]model.OutboundRule{
 		{RecognitionID: ids["直连规则"], GroupID: model.OutboundTargetDirectID, Enabled: true},
 		{RecognitionID: ids["拒绝规则"], GroupID: model.OutboundTargetRejectID, Enabled: true},
-		{RecognitionID: ids["自动规则"], GroupID: model.OutboundTargetAutoID, Enabled: true},
+		{RecognitionID: ids["主出口规则"], GroupID: model.OutboundTargetProxyID, Enabled: true},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -163,11 +163,17 @@ func TestGenerateConfigRoutesRecognitionRulesToBuiltinOutboundTargets(t *testing
 	for _, expected := range []string{
 		"DOMAIN-SUFFIX,direct.example,DIRECT",
 		"DOMAIN-SUFFIX,reject.example,REJECT",
-		"DOMAIN-SUFFIX,auto.example,AUTO",
+		"DOMAIN-SUFFIX,proxy.example,PROXY",
 	} {
 		if !strings.Contains(gen.YAML, expected) {
 			t.Fatalf("missing builtin outbound route %q:\n%s", expected, gen.YAML)
 		}
+	}
+	if !strings.Contains(gen.YAML, "profile:\n  store-selected: true") {
+		t.Fatalf("generated config does not persist select choices:\n%s", gen.YAML)
+	}
+	if !strings.Contains(gen.YAML, "name: AUTO") || !strings.Contains(gen.YAML, "type: url-test") {
+		t.Fatalf("generated config no longer contains the AUTO url-test group:\n%s", gen.YAML)
 	}
 }
 

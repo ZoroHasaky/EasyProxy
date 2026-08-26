@@ -187,7 +187,8 @@ const (
 const (
 	OutboundTargetDirectID int64 = -1
 	OutboundTargetRejectID int64 = -2
-	OutboundTargetAutoID   int64 = -3
+	// 保持 -3 不变：旧版“全节点自动”映射升级后改为跟随主代理出口。
+	OutboundTargetProxyID int64 = -3
 )
 
 func BuiltinOutboundTarget(id int64) (string, bool) {
@@ -196,8 +197,8 @@ func BuiltinOutboundTarget(id int64) (string, bool) {
 		return BuiltinDirect, true
 	case OutboundTargetRejectID:
 		return BuiltinReject, true
-	case OutboundTargetAutoID:
-		return "AUTO", true
+	case OutboundTargetProxyID:
+		return "PROXY", true
 	default:
 		return "", false
 	}

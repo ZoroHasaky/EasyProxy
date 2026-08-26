@@ -70,7 +70,7 @@ func TestOpenMigratesOutboundRulesForBuiltinTargets(t *testing.T) {
 		t.Fatalf("legacy outbound mapping was not preserved: %#v err=%v", outbounds, err)
 	}
 	if err := st.ReplaceOutboundRules([]model.OutboundRule{{
-		ID: outbounds[0].ID, RecognitionID: outbounds[0].RecognitionID, GroupID: model.OutboundTargetAutoID, Enabled: true,
+		ID: outbounds[0].ID, RecognitionID: outbounds[0].RecognitionID, GroupID: model.OutboundTargetProxyID, Enabled: true,
 	}}); err != nil {
 		t.Fatalf("builtin target should be accepted after migration: %v", err)
 	}

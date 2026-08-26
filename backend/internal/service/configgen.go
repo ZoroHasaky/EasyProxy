@@ -234,6 +234,8 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 	logLevel := settings.get("log_level", "info")
 	fmt.Fprintf(&sb, "mixed-port: %d\nallow-lan: %t\nbind-address: '*'\nmode: rule\nlog-level: %s\nipv6: true\n\n",
 		mixedPort, allowLan, logLevel)
+	// 保留 select 组的运行时选择，避免 PROXY 在热重载或重启后回到默认项。
+	sb.WriteString("profile:\n  store-selected: true\n\n")
 
 	controllerPort := st.GetSettingInt("controller_port", 9095)
 	secret := st.GetSetting("controller_secret", "")
