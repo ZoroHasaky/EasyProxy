@@ -20,10 +20,12 @@ import (
 )
 
 const (
-	CoreRepo        = "MetaCubeX/mihomo"
-	GitHubAPI       = "https://api.github.com"
-	GitHubRelease   = "https://github.com"
-	FallbackVersion = "v1.19.13"
+	CoreRepo                   = "MetaCubeX/mihomo"
+	GitHubAPI                  = "https://api.github.com"
+	GitHubRelease              = "https://github.com"
+	FallbackVersion            = "v1.19.13"
+	CoreDownloadSourceTimeout  = time.Minute
+	CoreDownloadOverallTimeout = 5 * time.Minute
 )
 
 func CorePath(dataDir string) string { return filepath.Join(dataDir, "core", "mihomo") }
@@ -116,13 +118,76 @@ func assetArch(goarch string) (string, error) {
 	return "", fmt.Errorf("不支持的架构: %s", goarch)
 }
 
-// DownloadCore 下载并安装内核。多个下载源按序自动尝试：用户镜像（若有）→ 内置镜像 → 直连；
-// mirror 为 GitHub 下载前缀（如 https://ghproxy.net/https://github.com），空则不额外优先
+// DownloadProgress 是下载内核时的非敏感进度信息。Source 仅为显示名称，不包含完整 URL，
+// 以避免自定义镜像地址中的认证参数写入操作日志。
+type DownloadProgress struct {
+	Stage   string
+	Source  string
+	Attempt int
+	Total   int
+	Version string
+	Err     error
+}
+
+type coreDownloadSource struct {
+	base  string
+	label string
+}
+
+// coreDownloadSources 按自定义镜像、GitHub 官方源、内置镜像的顺序整理下载源。
+func coreDownloadSources(mirror string) []coreDownloadSource {
+	candidates := make([]coreDownloadSource, 0, len(CoreDownloadMirrors)+1)
+	if m := strings.TrimSpace(mirror); m != "" {
+		candidates = append(candidates, coreDownloadSource{base: strings.TrimRight(m, "/"), label: "自定义镜像"})
+	}
+	for i, base := range CoreDownloadMirrors {
+		label := "GitHub 官方源"
+		if i > 0 {
+			label = fmt.Sprintf("内置镜像 %d", i)
+		}
+		candidates = append(candidates, coreDownloadSource{base: base, label: label})
+	}
+
+	seen := map[string]bool{}
+	sources := make([]coreDownloadSource, 0, len(candidates))
+	for _, candidate := range candidates {
+		base := strings.TrimRight(candidate.base, "/")
+		if base == "" {
+			base = GitHubRelease
+		}
+		if seen[base] {
+			continue
+		}
+		seen[base] = true
+		candidate.base = base
+		sources = append(sources, candidate)
+	}
+	return sources
+}
+
+func reportDownloadProgress(progress func(DownloadProgress), update DownloadProgress) {
+	if progress != nil {
+		progress(update)
+	}
+}
+
+// DownloadCore 下载并安装内核。多个下载源按序自动尝试：用户镜像（若有）→ 官方源 → 内置镜像；
+// mirror 为 GitHub 下载前缀（如 https://ghproxy.net/https://github.com），空则不额外优先。
 func DownloadCore(dataDir, version, mirror string) error {
+	return DownloadCoreWithProgress(dataDir, version, mirror, nil)
+}
+
+// DownloadCoreWithProgress 下载并安装内核，并在每个源尝试与失败时报告进度。
+// 单源最多等待一分钟，所有源合计最多等待五分钟，避免网络不可达时长时间没有反馈。
+func DownloadCoreWithProgress(dataDir, version, mirror string, progress func(DownloadProgress)) error {
 	if version == "" || version == "latest" {
+		reportDownloadProgress(progress, DownloadProgress{Stage: "resolving_version"})
 		v, err := LatestCoreVersion()
 		if err != nil {
 			v = FallbackVersion
+			reportDownloadProgress(progress, DownloadProgress{Stage: "using_fallback_version", Version: v, Err: err})
+		} else {
+			reportDownloadProgress(progress, DownloadProgress{Stage: "resolved_version", Version: v})
 		}
 		version = v
 	}
@@ -131,48 +196,43 @@ func DownloadCore(dataDir, version, mirror string) error {
 		return err
 	}
 
-	bases := []string{}
-	if m := strings.TrimSpace(mirror); m != "" {
-		bases = append(bases, strings.TrimRight(m, "/"))
-	}
-	bases = append(bases, CoreDownloadMirrors...)
-	seen := map[string]bool{}
-	urls := make([]string, 0, len(bases))
-	for _, base := range bases {
-		if base == "" {
-			base = GitHubRelease
-		} else {
-			base = strings.TrimRight(base, "/")
-		}
-		if seen[base] {
-			continue
-		}
-		seen[base] = true
-		urls = append(urls, fmt.Sprintf("%s/%s/releases/download/%s/mihomo-linux-%s-%s.gz",
-			base, CoreRepo, version, arch, version))
-	}
+	sources := coreDownloadSources(mirror)
 
-	deadline := time.Now().Add(20 * time.Minute)
+	deadline := time.Now().Add(CoreDownloadOverallTimeout)
 	var lastErr error
-	for _, u := range urls {
+	for i, source := range sources {
 		if time.Now().After(deadline) {
 			break
 		}
+		u := fmt.Sprintf("%s/%s/releases/download/%s/mihomo-linux-%s-%s.gz",
+			source.base, CoreRepo, version, arch, version)
+		update := DownloadProgress{Source: source.label, Attempt: i + 1, Total: len(sources), Version: version}
+		reportDownloadProgress(progress, DownloadProgress{Stage: "attempt", Source: update.Source, Attempt: update.Attempt, Total: update.Total, Version: update.Version})
 		log.Printf("[core] 尝试下载源: %s", u)
 		data, err := fetchCoreAsset(u)
 		if err != nil {
 			lastErr = err
 			log.Printf("[core] 该源失败: %v", err)
+			update.Stage, update.Err = "failed", err
+			reportDownloadProgress(progress, update)
 			continue
 		}
-		return installCoreBytes(dataDir, data)
+		if err := installCoreBytes(dataDir, data); err != nil {
+			return err
+		}
+		update.Stage = "completed"
+		reportDownloadProgress(progress, update)
+		return nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("下载总时限 %s 已到", CoreDownloadOverallTimeout)
 	}
 	return fmt.Errorf("全部下载源失败，最后错误: %w", lastErr)
 }
 
-// fetchCoreAsset 从单个源下载内核压缩包（单源 5 分钟超时）
+// fetchCoreAsset 从单个源下载内核压缩包。
 func fetchCoreAsset(u string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), CoreDownloadSourceTimeout)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	resp, err := http.DefaultClient.Do(req)

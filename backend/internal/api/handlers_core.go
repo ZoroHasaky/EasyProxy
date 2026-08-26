@@ -147,6 +147,45 @@ func (s *Server) handleCoreLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.mgr.RecentLogs())
 }
 
+// coreDownloadProgress 将下载过程写入持久化内核日志。来源名称由 core 层提供，
+// 不含用户自定义镜像的完整 URL，避免意外记录认证信息。
+func (s *Server) coreDownloadProgress(eventPrefix string) func(core.DownloadProgress) {
+	return func(update core.DownloadProgress) {
+		details := map[string]any{}
+		if update.Version != "" {
+			details["version"] = update.Version
+		}
+		if update.Source != "" {
+			details["source"] = update.Source
+			details["attempt"] = update.Attempt
+			details["total"] = update.Total
+		}
+		if update.Err != nil {
+			details["error"] = safeAuditError(update.Err)
+		}
+
+		event := eventPrefix + "." + update.Stage
+		summary, level := "", "info"
+		switch update.Stage {
+		case "resolving_version":
+			summary = "正在查询 Mihomo 最新内核版本"
+		case "resolved_version":
+			summary = "已获取 Mihomo 最新内核版本"
+		case "using_fallback_version":
+			summary, level = "获取最新版本失败，改用内置稳定版本", "warning"
+		case "attempt":
+			summary = fmt.Sprintf("正在尝试下载 Mihomo 内核（%s，%d/%d）", update.Source, update.Attempt, update.Total)
+		case "failed":
+			summary, level = fmt.Sprintf("Mihomo 内核下载源失败，准备切换下一源（%s，%d/%d）", update.Source, update.Attempt, update.Total), "warning"
+		case "completed":
+			summary, level = "Mihomo 内核下载并校验完成", "success"
+		default:
+			return
+		}
+		s.audit("core", event, level, summary, details)
+	}
+}
+
 func (s *Server) handleCoreDownload(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Version string `json:"version"`
@@ -173,7 +212,7 @@ func (s *Server) handleCoreDownload(w http.ResponseWriter, r *http.Request) {
 		mirror := s.st.GetSetting("core_mirror", "")
 		ver := req.Version
 		log.Printf("[core] 开始下载内核 ver=%s mirror=%s", ver, mirror)
-		if err := core.DownloadCore(s.dataDir, ver, mirror); err != nil {
+		if err := core.DownloadCoreWithProgress(s.dataDir, ver, mirror, s.coreDownloadProgress("core.download")); err != nil {
 			s.dlMu.Lock()
 			s.dlErr = err.Error()
 			s.dlMu.Unlock()

@@ -122,7 +122,7 @@ func (s *Server) EnsureCoreStarted() {
 		mirror := s.st.GetSetting("core_mirror", "")
 		log.Println("[core] 内核不存在，开始自动下载…")
 		s.audit("core", "core.auto_download", "info", "已开始自动下载 Mihomo 内核", nil)
-		if err := core.DownloadCore(s.dataDir, "latest", mirror); err != nil {
+		if err := core.DownloadCoreWithProgress(s.dataDir, "latest", mirror, s.coreDownloadProgress("core.auto_download")); err != nil {
 			log.Printf("[core] 自动下载失败: %v（可在面板手动上传）", err)
 			s.audit("core", "core.auto_download", "error", "Mihomo 内核自动下载失败", map[string]any{"error": safeAuditError(err)})
 			return

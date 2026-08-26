@@ -122,11 +122,11 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
       <div className="border-t border-border/60 bg-muted/20 p-3">
         <div className="space-y-3">
           <div className="relative flex h-11 w-full items-center rounded-xl border border-border/50 bg-card px-3 shadow-xs">
-            <div className={cn("absolute top-1/2 flex items-center transition-[left,transform] duration-300 ease-in-out", collapsed ? "left-1/2 -translate-x-1/2" : "left-3 translate-x-0")}>
+            <div className={cn("absolute top-1/2 flex -translate-y-1/2 items-center transition-[left,transform] duration-300 ease-in-out", collapsed ? "left-1/2 -translate-x-1/2" : "left-3 translate-x-0")}>
               <div className={cn("h-2.5 w-2.5 shrink-0 rounded-full", running ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} title={`内核: ${coreLabel}`} />
               <span className={cn("overflow-hidden whitespace-nowrap text-xs font-medium text-muted-foreground transition-[max-width,margin,opacity,transform] duration-200 ease-out", collapsed ? "delay-100 ml-0 max-w-0 -translate-x-2 opacity-0" : "ml-2 max-w-20 translate-x-0 opacity-100")}>内核状态</span>
             </div>
-            <Badge variant={running ? "success" : "destructive"} className={cn("absolute right-3 overflow-hidden text-[10px] transition-[max-width,padding,opacity] duration-200 ease-out", collapsed ? "delay-100 max-w-0 border-0 px-0 py-0 opacity-0" : "max-w-20 px-2 py-0 opacity-100")}>
+            <Badge variant={running ? "success" : "destructive"} className={cn("absolute right-3 top-1/2 -translate-y-1/2 overflow-hidden text-[10px] transition-[max-width,padding,opacity] duration-200 ease-out", collapsed ? "delay-100 max-w-0 border-0 px-0 py-0 opacity-0" : "max-w-20 px-2 py-0 opacity-100")}>
               {coreLabel}
             </Badge>
           </div>
