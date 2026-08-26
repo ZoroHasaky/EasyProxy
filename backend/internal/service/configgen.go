@@ -420,8 +420,11 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 			continue
 		}
 		kind := strings.ToUpper(recognition.Kind)
-		target := targetResolver.resolve(model.GroupTargetRef(outbound.GroupID))
-		if len(deduped) == 0 {
+		target, builtinTarget := model.BuiltinOutboundTarget(outbound.GroupID)
+		if !builtinTarget {
+			target = targetResolver.resolve(model.GroupTargetRef(outbound.GroupID))
+		}
+		if len(deduped) == 0 && (target == GroupPROXY || target == GroupAUTO) {
 			target = model.BuiltinDirect
 		}
 		if recognition.SourceURL != "" {

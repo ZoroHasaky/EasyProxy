@@ -141,8 +141,7 @@ func (s *Store) migrate() error {
 			recognition_id INTEGER NOT NULL UNIQUE,
 			group_id INTEGER NOT NULL,
 			enabled INTEGER NOT NULL DEFAULT 1,
-			FOREIGN KEY(recognition_id) REFERENCES recognition_rules(id),
-			FOREIGN KEY(group_id) REFERENCES proxy_groups(id)
+			FOREIGN KEY(recognition_id) REFERENCES recognition_rules(id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS applied_config_settings (
 			key TEXT PRIMARY KEY,
@@ -199,6 +198,9 @@ func (s *Store) migrate() error {
 	if err := s.ensureColumn("recognition_rules", "source_interval", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
+	if err := s.migrateOutboundRulesBuiltinTargets(); err != nil {
+		return fmt.Errorf("migrate outbound builtin targets: %w", err)
+	}
 	if err := s.migrateRuleTargetRefs(); err != nil {
 		return fmt.Errorf("migrate target refs: %w", err)
 	}
@@ -221,6 +223,63 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("prune audit logs: %w", err)
 	}
 	return nil
+}
+
+// migrateOutboundRulesBuiltinTargets 移除旧表对 proxy_groups 的外键约束，使
+// group_id 能保存内置出站目标的负数 ID；识别规则的外键约束仍然保留。
+func (s *Store) migrateOutboundRulesBuiltinTargets() error {
+	rows, err := s.db.Query(`PRAGMA foreign_key_list(outbound_rules)`)
+	if err != nil {
+		return err
+	}
+	hasGroupForeignKey := false
+	for rows.Next() {
+		var id, sequence int
+		var table, from, to, onUpdate, onDelete, match string
+		if err := rows.Scan(&id, &sequence, &table, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+			return err
+		}
+		if table == "proxy_groups" && from == "group_id" {
+			hasGroupForeignKey = true
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if !hasGroupForeignKey {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`CREATE TABLE outbound_rules_next (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		recognition_id INTEGER NOT NULL UNIQUE,
+		group_id INTEGER NOT NULL,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		FOREIGN KEY(recognition_id) REFERENCES recognition_rules(id)
+	)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO outbound_rules_next(id,recognition_id,group_id,enabled)
+		SELECT id,recognition_id,group_id,enabled FROM outbound_rules`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DROP TABLE outbound_rules`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`ALTER TABLE outbound_rules_next RENAME TO outbound_rules`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // removeImplicitGeoIPRuleFromAppliedConfig 清理旧版本在无显式规则时插入的

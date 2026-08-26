@@ -186,6 +186,28 @@ export interface RecognitionRuleImportResponse extends AutoApplyResponse {
   rules: RecognitionRule[];
 }
 
+export interface GeoRecognitionPreset {
+  id: string;
+  name: string;
+  kind: "GEOIP" | "GEOSITE";
+  condition: string;
+  available: boolean;
+  reason?: string;
+}
+
+export interface GeoRecognitionPresetCatalog {
+  available: boolean;
+  message?: string;
+  presets: GeoRecognitionPreset[];
+}
+
+export interface GeoRecognitionGenerationResponse extends AutoApplyResponse {
+  ok: boolean;
+  count: number;
+  created: RecognitionRule[];
+  skipped: { id: string; reason: string }[];
+}
+
 export interface OutboundRule {
   id: number;
   recognition_id: number;
@@ -322,6 +344,7 @@ export interface GeoDataStatus {
   message: string;
   size_bytes: number;
   updated_at?: string;
+  counts_available: boolean;
   group_count: number;
   entry_count: number;
 }

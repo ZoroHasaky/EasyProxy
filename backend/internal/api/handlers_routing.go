@@ -10,11 +10,209 @@ import (
 
 	"easyproxy/internal/core"
 	"easyproxy/internal/model"
+	"easyproxy/internal/service"
 
 	"gopkg.in/yaml.v3"
 )
 
 const defaultRuleProviderInterval = 86400
+
+type geoRecognitionPresetDefinition struct {
+	ID       string
+	Name     string
+	Kind     string
+	DataKey  string
+	Category string
+}
+
+var geoRecognitionPresetDefinitions = []geoRecognitionPresetDefinition{
+	{ID: "private-ip", Name: "私有地址", Kind: "GEOIP", DataKey: "geoip", Category: "private"},
+	{ID: "cn-ip", Name: "中国大陆 IP", Kind: "GEOIP", DataKey: "geoip", Category: "CN"},
+	{ID: "private-domain", Name: "私有域名", Kind: "GEOSITE", DataKey: "geosite", Category: "private"},
+	{ID: "cn-domain", Name: "中国大陆域名", Kind: "GEOSITE", DataKey: "geosite", Category: "cn"},
+	{ID: "ads", Name: "广告服务", Kind: "GEOSITE", DataKey: "geosite", Category: "category-ads-all"},
+	{ID: "google", Name: "Google 服务", Kind: "GEOSITE", DataKey: "geosite", Category: "google"},
+	{ID: "apple", Name: "Apple 服务", Kind: "GEOSITE", DataKey: "geosite", Category: "apple"},
+	{ID: "microsoft", Name: "Microsoft 服务", Kind: "GEOSITE", DataKey: "geosite", Category: "microsoft"},
+	{ID: "github", Name: "GitHub", Kind: "GEOSITE", DataKey: "geosite", Category: "github"},
+	{ID: "openai", Name: "OpenAI", Kind: "GEOSITE", DataKey: "geosite", Category: "openai"},
+	{ID: "telegram", Name: "Telegram", Kind: "GEOSITE", DataKey: "geosite", Category: "telegram"},
+}
+
+type geoRecognitionPreset struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	Condition string `json:"condition"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+type geoRecognitionPresetCatalog struct {
+	Available bool                   `json:"available"`
+	Message   string                 `json:"message,omitempty"`
+	Presets   []geoRecognitionPreset `json:"presets"`
+}
+
+type generateGeoRecognitionRulesRequest struct {
+	PresetIDs []string `json:"preset_ids"`
+}
+
+type geoRecognitionGenerationSkip struct {
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+}
+
+func (s *Server) geoRecognitionPresets() geoRecognitionPresetCatalog {
+	catalog := geoRecognitionPresetCatalog{Presets: make([]geoRecognitionPreset, 0, len(geoRecognitionPresetDefinitions))}
+	if !s.st.GetSettingBool("geo_enabled", true) {
+		catalog.Message = "Geo 数据未启用，请先在 Geo 数据页面启用、应用并更新数据"
+		for _, definition := range geoRecognitionPresetDefinitions {
+			catalog.Presets = append(catalog.Presets, geoRecognitionPreset{
+				ID: definition.ID, Name: definition.Name, Kind: definition.Kind, Condition: definition.Category,
+				Reason: "Geo 数据未启用",
+			})
+		}
+		return catalog
+	}
+
+	sets := service.GeoDataCategorySets(s.dataDir)
+	for _, definition := range geoRecognitionPresetDefinitions {
+		preset := geoRecognitionPreset{
+			ID: definition.ID, Name: definition.Name, Kind: definition.Kind, Condition: definition.Category,
+		}
+		set := sets[definition.DataKey]
+		if set.Err != nil {
+			preset.Reason = map[string]string{"geoip": "GeoIP 数据未就绪", "geosite": "GeoSite 数据未就绪"}[definition.DataKey]
+		} else if condition, ok := set.Lookup(definition.Category); ok {
+			preset.Condition = condition
+			preset.Available = true
+			catalog.Available = true
+		} else {
+			preset.Reason = fmt.Sprintf("当前数据中未找到 %s 分类", definition.Category)
+		}
+		catalog.Presets = append(catalog.Presets, preset)
+	}
+	if !catalog.Available {
+		catalog.Message = "未检测到可用于生成规则的 Geo 数据，请先在 Geo 数据页面手动更新"
+	}
+	return catalog
+}
+
+func recognitionConditionKey(kind, condition string) string {
+	return strings.ToUpper(strings.TrimSpace(kind)) + "\x00" + strings.ToLower(strings.TrimSpace(condition))
+}
+
+func (s *Server) rejectGeoRecognitionGeneration(w http.ResponseWriter, status int, message string) {
+	s.audit("operation", "routing.geo_generate", "warning", "根据 Geo 数据生成识别规则未执行", map[string]any{"reason": message})
+	writeErr(w, status, message)
+}
+
+// handleGetGeoRecognitionPresets 根据实际已拉取的 Geo 数据返回可生成的常用规则。
+func (s *Server) handleGetGeoRecognitionPresets(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.geoRecognitionPresets())
+}
+
+// handleGenerateGeoRecognitionRules 仅接受预置 ID，并在服务端再次验证 Geo 数据与分类。
+// 它只新增识别规则，不创建出站映射，因此不会直接改变流量的最终出站。
+func (s *Server) handleGenerateGeoRecognitionRules(w http.ResponseWriter, r *http.Request) {
+	var req generateGeoRecognitionRulesRequest
+	if err := readJSON(r, &req); err != nil || len(req.PresetIDs) == 0 {
+		s.rejectGeoRecognitionGeneration(w, http.StatusBadRequest, "请选择至少一条 Geo 预置规则")
+		return
+	}
+
+	catalog := s.geoRecognitionPresets()
+	byID := make(map[string]geoRecognitionPreset, len(catalog.Presets))
+	for _, preset := range catalog.Presets {
+		byID[preset.ID] = preset
+	}
+	selected := make([]geoRecognitionPreset, 0, len(req.PresetIDs))
+	seenIDs := map[string]bool{}
+	for _, id := range req.PresetIDs {
+		id = strings.TrimSpace(id)
+		if id == "" || seenIDs[id] {
+			continue
+		}
+		preset, ok := byID[id]
+		if !ok {
+			s.rejectGeoRecognitionGeneration(w, http.StatusBadRequest, "包含未知的 Geo 预置规则")
+			return
+		}
+		if !preset.Available {
+			s.rejectGeoRecognitionGeneration(w, http.StatusConflict, "预置规则「"+preset.Name+"」当前不可用："+preset.Reason)
+			return
+		}
+		seenIDs[id] = true
+		selected = append(selected, preset)
+	}
+	if len(selected) == 0 {
+		s.rejectGeoRecognitionGeneration(w, http.StatusBadRequest, "请选择至少一条 Geo 预置规则")
+		return
+	}
+	if !catalog.Available {
+		s.rejectGeoRecognitionGeneration(w, http.StatusConflict, catalog.Message)
+		return
+	}
+
+	existing, err := s.st.ListRecognitionRules()
+	if err != nil {
+		s.audit("operation", "routing.geo_generate", "error", "根据 Geo 数据生成识别规则失败", map[string]any{"error": safeAuditError(err)})
+		writeErr(w, http.StatusInternalServerError, "读取现有识别规则失败")
+		return
+	}
+	existingNames := map[string]bool{}
+	existingConditions := map[string]bool{}
+	for _, rule := range existing {
+		existingNames[strings.ToLower(strings.TrimSpace(rule.Name))] = true
+		for _, condition := range rule.Conditions {
+			existingConditions[recognitionConditionKey(rule.Kind, condition)] = true
+		}
+	}
+
+	candidates := make([]model.RecognitionRule, 0, len(selected))
+	skipped := make([]geoRecognitionGenerationSkip, 0)
+	for _, preset := range selected {
+		conditionKey := recognitionConditionKey(preset.Kind, preset.Condition)
+		if existingConditions[conditionKey] {
+			skipped = append(skipped, geoRecognitionGenerationSkip{ID: preset.ID, Reason: "已存在相同类型与条件的识别规则"})
+			continue
+		}
+		name := "Geo · " + preset.Name
+		if existingNames[strings.ToLower(name)] {
+			skipped = append(skipped, geoRecognitionGenerationSkip{ID: preset.ID, Reason: "规则名称已被占用"})
+			continue
+		}
+		candidates = append(candidates, model.RecognitionRule{
+			Name: name, Kind: preset.Kind, Conditions: []string{preset.Condition}, Priority: 1, Enabled: true,
+		})
+		existingNames[strings.ToLower(name)] = true
+		existingConditions[conditionKey] = true
+	}
+
+	if len(candidates) == 0 {
+		s.audit("operation", "routing.geo_generate", "info", "根据 Geo 数据未生成新的识别规则", map[string]any{"created": 0, "skipped": len(skipped)})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": 0, "created": []model.RecognitionRule{}, "skipped": skipped, "apply_result": "", "apply_error": ""})
+		return
+	}
+	created, err := s.st.CreateRecognitionRules(candidates)
+	if err != nil {
+		s.rejectGeoRecognitionGeneration(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, applyError := s.applyChangedConfig("recognition_rules", []string{"识别规则"})
+	level, summary := "success", "已根据 Geo 数据生成识别规则"
+	details := map[string]any{"created": len(created), "skipped": len(skipped)}
+	if applyError != "" {
+		level, summary = "warning", "已根据 Geo 数据生成识别规则，但自动应用失败"
+		details["error"] = safeAuditError(fmt.Errorf("%s", applyError))
+	}
+	s.audit("operation", "routing.geo_generate", level, summary, details)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "count": len(created), "created": created, "skipped": skipped,
+		"apply_result": result, "apply_error": applyError,
+	})
+}
 
 type recognitionRuleImportRequest struct {
 	URL      string `json:"url"`

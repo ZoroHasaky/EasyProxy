@@ -127,6 +127,50 @@ func TestGenerateConfigRoutesRecognitionRuleToSelectedGroup(t *testing.T) {
 	}
 }
 
+func TestGenerateConfigRoutesRecognitionRulesToBuiltinOutboundTargets(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	node := testNode(0, "自动测速节点", "hash-builtin-target", "HK", true)
+	if err := st.CreateNode(&node); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReplaceRecognitionRules([]model.RecognitionRule{
+		{Name: "直连规则", Kind: "DOMAIN-SUFFIX", Conditions: []string{"direct.example"}, Priority: 3, Enabled: true},
+		{Name: "拒绝规则", Kind: "DOMAIN-SUFFIX", Conditions: []string{"reject.example"}, Priority: 2, Enabled: true},
+		{Name: "自动规则", Kind: "DOMAIN-SUFFIX", Conditions: []string{"auto.example"}, Priority: 1, Enabled: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recognitions, _ := st.ListRecognitionRules()
+	ids := map[string]int64{}
+	for _, recognition := range recognitions {
+		ids[recognition.Name] = recognition.ID
+	}
+	if err := st.ReplaceOutboundRules([]model.OutboundRule{
+		{RecognitionID: ids["直连规则"], GroupID: model.OutboundTargetDirectID, Enabled: true},
+		{RecognitionID: ids["拒绝规则"], GroupID: model.OutboundTargetRejectID, Enabled: true},
+		{RecognitionID: ids["自动规则"], GroupID: model.OutboundTargetAutoID, Enabled: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	gen, err := GenerateConfig(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"DOMAIN-SUFFIX,direct.example,DIRECT",
+		"DOMAIN-SUFFIX,reject.example,REJECT",
+		"DOMAIN-SUFFIX,auto.example,AUTO",
+	} {
+		if !strings.Contains(gen.YAML, expected) {
+			t.Fatalf("missing builtin outbound route %q:\n%s", expected, gen.YAML)
+		}
+	}
+}
+
 func TestGenerateConfigWritesYAMLRuleProvidersBeforeRuleSets(t *testing.T) {
 	st, err := store.Open(t.TempDir())
 	if err != nil {

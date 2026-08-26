@@ -19,7 +19,7 @@ func TestGeoDataStatusesCountsDatEntries(t *testing.T) {
 		t.Fatalf("status count = %d, want 2", len(items))
 	}
 	geoIP := items[0]
-	if geoIP.State != "loaded" || geoIP.GroupCount != 2 || geoIP.EntryCount != 3 {
+	if geoIP.State != "loaded" || !geoIP.CountsAvailable || geoIP.GroupCount != 2 || geoIP.EntryCount != 3 {
 		t.Fatalf("geoip status = %#v", geoIP)
 	}
 	if geoIP.Source != "https://example.com/geoip.dat" || geoIP.UpdatedAt == nil {
@@ -36,8 +36,36 @@ func TestGeoDataStatusesRejectsInvalidFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	items := GeoDataStatuses(dir, nil, true, false)
-	if items[1].State != "error" {
+	if items[1].State != "error" || items[1].CountsAvailable {
 		t.Fatalf("geosite status = %#v", items[1])
+	}
+	if categories := GeoDataCategorySets(dir); categories["geosite"].Err == nil {
+		t.Fatalf("invalid geosite categories = %#v", categories["geosite"])
+	}
+}
+
+func TestGeoDataCategorySetsReadActualCategoryNames(t *testing.T) {
+	dir := t.TempDir()
+	geoRecord := func(name string) []byte {
+		value := append(protoBytes(1, []byte(name)), protoBytes(2, nil)...)
+		return protoBytes(1, value)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "GeoIP.dat"), append(geoRecord("PRIVATE"), geoRecord("CN")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "GeoSite.dat"), append(geoRecord("github"), geoRecord("category-ads-all")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sets := GeoDataCategorySets(dir)
+	if private, ok := sets["geoip"].Lookup("private"); !ok || private != "PRIVATE" {
+		t.Fatalf("geoip categories = %#v", sets["geoip"])
+	}
+	if github, ok := sets["geosite"].Lookup("GITHUB"); !ok || github != "github" {
+		t.Fatalf("geosite categories = %#v", sets["geosite"])
+	}
+	if _, ok := sets["geosite"].Lookup("openai"); ok {
+		t.Fatalf("unexpected category = %#v", sets["geosite"])
 	}
 }
 

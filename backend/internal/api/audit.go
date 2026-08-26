@@ -101,6 +101,8 @@ func auditRoute(pattern, method string) (category, event, summary string, ok boo
 		return "operation", "routing.recognition", "识别规则已更新", true
 	case "/api/recognition-rules/import":
 		return "operation", "routing.recognition_import", "YAML 识别规则已导入", true
+	case "/api/recognition-rules/generate-geo":
+		return "operation", "routing.geo_generate", "已根据 Geo 数据生成识别规则", true
 	case "/api/outbound-rules":
 		return "operation", "routing.outbound", "出站映射已更新", true
 	case "/api/groups":
@@ -130,7 +132,7 @@ func shouldAuditRoute(pattern, method string) bool {
 
 func isExplicitlyAudited(pattern string) bool {
 	switch pattern {
-	case "/api/core/download", "/api/core/upload", "/api/core/restart", "/api/update/apply", "/api/update/restart", "/api/geo/refresh":
+	case "/api/core/download", "/api/core/upload", "/api/core/restart", "/api/update/apply", "/api/update/restart", "/api/geo/refresh", "/api/recognition-rules/generate-geo":
 		return true
 	}
 	return false

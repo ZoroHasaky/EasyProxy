@@ -279,19 +279,22 @@ func (s *Store) ReplaceOutboundRules(rules []model.OutboundRule) error {
 	kept := map[int64]bool{}
 	recognitions := map[int64]bool{}
 	for _, rule := range rules {
-		if rule.RecognitionID <= 0 || rule.GroupID <= 0 {
-			return fmt.Errorf("出站映射必须选择识别规则和节点组合")
+		if rule.RecognitionID <= 0 || (rule.GroupID <= 0 && !model.IsBuiltinOutboundTarget(rule.GroupID)) {
+			return fmt.Errorf("出站映射必须选择识别规则和出站目标")
 		}
 		if recognitions[rule.RecognitionID] {
 			return fmt.Errorf("同一识别规则只能映射到一个节点组合")
 		}
 		recognitions[rule.RecognitionID] = true
-		var recognitionExists, groupExists bool
+		var recognitionExists bool
 		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM recognition_rules WHERE id=?)`, rule.RecognitionID).Scan(&recognitionExists); err != nil || !recognitionExists {
 			return fmt.Errorf("识别规则不存在")
 		}
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM proxy_groups WHERE id=?)`, rule.GroupID).Scan(&groupExists); err != nil || !groupExists {
-			return fmt.Errorf("节点组合不存在")
+		if !model.IsBuiltinOutboundTarget(rule.GroupID) {
+			var groupExists bool
+			if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM proxy_groups WHERE id=?)`, rule.GroupID).Scan(&groupExists); err != nil || !groupExists {
+				return fmt.Errorf("节点组合不存在")
+			}
 		}
 		if rule.ID > 0 {
 			if !existing[rule.ID] {

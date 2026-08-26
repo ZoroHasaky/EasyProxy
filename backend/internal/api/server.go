@@ -285,6 +285,8 @@ func (s *Server) Handler() http.Handler {
 	route("GET /api/recognition-rules", s.handleGetRecognitionRules)
 	route("PUT /api/recognition-rules", s.handlePutRecognitionRules)
 	route("POST /api/recognition-rules/import", s.handleImportRecognitionRules)
+	route("GET /api/recognition-rules/geo-presets", s.handleGetGeoRecognitionPresets)
+	route("POST /api/recognition-rules/generate-geo", s.handleGenerateGeoRecognitionRules)
 	route("GET /api/outbound-rules", s.handleGetOutboundRules)
 	route("PUT /api/outbound-rules", s.handlePutOutboundRules)
 	route("GET /api/groups", s.handleGetGroups)

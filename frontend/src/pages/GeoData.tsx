@@ -178,7 +178,7 @@ export default function GeoDataPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <CardTitle className="text-base font-bold">当前数据状态</CardTitle>
-              <CardDescription>条目数直接从本地 Geo 数据库解析；状态每 30 秒刷新一次。</CardDescription>
+              <CardDescription>可解析时显示分类与条目数；无法解析时显示上次拉取时间。状态每 30 秒刷新一次。</CardDescription>
             </div>
             <div className="flex items-center gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => refreshGeoMutation.mutate()} disabled={refreshGeoMutation.isPending || !canRefreshGeo} title={!form.geo_enabled ? "请先启用 Geo 数据" : geoStatusQuery.data?.core_running === false ? "请先启动内核" : "按当前生效配置立即更新 GeoIP 与 GeoSite 数据库"}>
@@ -200,13 +200,20 @@ export default function GeoDataPage() {
                 <div key={status.key} className="rounded-xl border border-border/50 bg-muted/40 p-3">
                   <div className="flex items-center justify-between gap-3"><div className="text-sm font-semibold">{status.name}</div>{statusBadge(status)}</div>
                   <div className="mt-1 text-[11px] text-muted-foreground">{status.message}</div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                    <div><div className="text-muted-foreground">分类</div><div className="mt-0.5 font-mono font-semibold">{status.group_count.toLocaleString()} 个</div></div>
-                    <div><div className="text-muted-foreground">条目</div><div className="mt-0.5 font-mono font-semibold">{status.entry_count.toLocaleString()} 条</div></div>
-                  </div>
+                  {status.counts_available ? (
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div><div className="text-muted-foreground">分类</div><div className="mt-0.5 font-mono font-semibold">{status.group_count.toLocaleString()} 个</div></div>
+                      <div><div className="text-muted-foreground">条目</div><div className="mt-0.5 font-mono font-semibold">{status.entry_count.toLocaleString()} 条</div></div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-xs">
+                      <div className="text-muted-foreground">上次拉取</div>
+                      <div className="mt-0.5 font-mono font-semibold">{status.updated_at ? new Date(status.updated_at).toLocaleString("zh-CN", { hour12: false }) : "暂无记录"}</div>
+                    </div>
+                  )}
                   <div className="mt-3 border-t border-border/50 pt-2 text-[11px] text-muted-foreground">
                     <div>文件：{status.file} · {formatSize(status.size_bytes)}</div>
-                    {status.updated_at && <div className="mt-0.5">更新时间：{new Date(status.updated_at).toLocaleString("zh-CN", { hour12: false })}</div>}
+                    {status.counts_available && status.updated_at && <div className="mt-0.5">上次拉取：{new Date(status.updated_at).toLocaleString("zh-CN", { hour12: false })}</div>}
                   </div>
                 </div>
               ))}

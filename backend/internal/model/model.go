@@ -183,6 +183,31 @@ const (
 	BuiltinReject = "REJECT"
 )
 
+// 出站映射使用负数 ID 表示不依赖节点组合的内置目标，正数仍指向 proxy_groups。
+const (
+	OutboundTargetDirectID int64 = -1
+	OutboundTargetRejectID int64 = -2
+	OutboundTargetAutoID   int64 = -3
+)
+
+func BuiltinOutboundTarget(id int64) (string, bool) {
+	switch id {
+	case OutboundTargetDirectID:
+		return BuiltinDirect, true
+	case OutboundTargetRejectID:
+		return BuiltinReject, true
+	case OutboundTargetAutoID:
+		return "AUTO", true
+	default:
+		return "", false
+	}
+}
+
+func IsBuiltinOutboundTarget(id int64) bool {
+	_, ok := BuiltinOutboundTarget(id)
+	return ok
+}
+
 func IsBuiltinTarget(t string) bool {
 	switch t {
 	case "PROXY", "AUTO", "DIRECT", "REJECT", "REJECT-DROP", "PASS":

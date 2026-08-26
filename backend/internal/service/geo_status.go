@@ -11,16 +11,29 @@ import (
 // GeoDataStatus 是 GeoIP / GeoSite 本地文件的可用状态。条目数由文件自身的
 // protobuf 结构统计，不依赖网络请求或内核管理接口。
 type GeoDataStatus struct {
-	Key        string     `json:"key"`
-	Name       string     `json:"name"`
-	File       string     `json:"file"`
-	Source     string     `json:"source"`
-	State      string     `json:"state"`
-	Message    string     `json:"message"`
-	SizeBytes  int64      `json:"size_bytes"`
-	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
-	GroupCount int        `json:"group_count"`
-	EntryCount int        `json:"entry_count"`
+	Key             string     `json:"key"`
+	Name            string     `json:"name"`
+	File            string     `json:"file"`
+	Source          string     `json:"source"`
+	State           string     `json:"state"`
+	Message         string     `json:"message"`
+	SizeBytes       int64      `json:"size_bytes"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
+	CountsAvailable bool       `json:"counts_available"`
+	GroupCount      int        `json:"group_count"`
+	EntryCount      int        `json:"entry_count"`
+}
+
+// GeoDataCategorySet 保存一类 Geo 数据中可供 GEOIP/GEOSITE 规则引用的分类名。
+// Categories 的键为小写名称，值为数据文件中实际使用的名称，便于不区分大小写查找。
+type GeoDataCategorySet struct {
+	Categories map[string]string
+	Err        error
+}
+
+func (s GeoDataCategorySet) Lookup(name string) (string, bool) {
+	value, ok := s.Categories[strings.ToLower(strings.TrimSpace(name))]
+	return value, ok
 }
 
 type geoDataDefinition struct {
@@ -74,6 +87,7 @@ func GeoDataStatuses(dataDir string, sources map[string][]string, enabled, coreR
 		}
 		status.GroupCount = groups
 		status.EntryCount = entries
+		status.CountsAvailable = true
 		switch {
 		case !enabled:
 			status.State = "disabled"
@@ -88,6 +102,22 @@ func GeoDataStatuses(dataDir string, sources map[string][]string, enabled, coreR
 		items = append(items, status)
 	}
 	return items
+}
+
+// GeoDataCategorySets 读取本地 GeoIP/GeoSite 数据中的分类名称。无法读取或解析的
+// 文件会保留错误，调用方可据此拒绝生成可能被 Mihomo 忽略的规则。
+func GeoDataCategorySets(dataDir string) map[string]GeoDataCategorySet {
+	sets := make(map[string]GeoDataCategorySet, len(geoDataDefinitions))
+	for _, def := range geoDataDefinitions {
+		path, _ := geoDataPath(dataDir, def.file)
+		_, _, categories, err := geoDataFileMetadata(path)
+		if err != nil {
+			sets[def.key] = GeoDataCategorySet{Err: err}
+			continue
+		}
+		sets[def.key] = GeoDataCategorySet{Categories: categories}
+	}
+	return sets
 }
 
 // geoDataPath 与 Mihomo 的路径选择保持一致：它会以不区分大小写的方式在数据目录
@@ -109,32 +139,51 @@ func geoDataPath(dataDir, expectedName string) (string, string) {
 // GeoIPList/GeoSiteList 均由字段 1 的重复嵌套消息组成；嵌套消息字段 2 分别是
 // CIDR 与 Domain 的重复条目。只读取 protobuf 边界，不引入体积较大的 geodata 依赖。
 func geoDataFileCounts(path string) (int, int, error) {
+	groups, entries, _, err := geoDataFileMetadata(path)
+	return groups, entries, err
+}
+
+// geoDataFileMetadata 从 v2ray/MetaCubeX .dat 中统计条目，并提取每个顶层分类的
+// 名称。GeoIPList/GeoSiteList 均以字段 1 表示分类记录，记录内的字段 1 是分类名，
+// 字段 2 是 CIDR 或域名条目。
+func geoDataFileMetadata(path string) (int, int, map[string]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
 	if len(data) == 0 {
-		return 0, 0, fmt.Errorf("文件为空")
+		return 0, 0, nil, fmt.Errorf("文件为空")
 	}
 	groups, entries := 0, 0
+	categories := map[string]string{}
+	var nestedErr error
 	err = scanProtoFields(data, func(field int, wire int, value []byte) {
-		if field != 1 || wire != 2 {
+		if field != 1 || wire != 2 || nestedErr != nil {
 			return
 		}
 		groups++
-		_ = scanProtoFields(value, func(nestedField int, nestedWire int, _ []byte) {
+		nestedErr = scanProtoFields(value, func(nestedField int, nestedWire int, nestedValue []byte) {
+			if nestedField == 1 && nestedWire == 2 {
+				name := strings.TrimSpace(string(nestedValue))
+				if name != "" {
+					categories[strings.ToLower(name)] = name
+				}
+			}
 			if nestedField == 2 && nestedWire == 2 {
 				entries++
 			}
 		})
 	})
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, nil, err
+	}
+	if nestedErr != nil {
+		return 0, 0, nil, nestedErr
 	}
 	if groups == 0 {
-		return 0, 0, fmt.Errorf("未找到 Geo 数据条目")
+		return 0, 0, nil, fmt.Errorf("未找到 Geo 数据条目")
 	}
-	return groups, entries, nil
+	return groups, entries, categories, nil
 }
 
 // scanProtoFields 仅扫描 protobuf 的标准线格式，遇到截断或未知 wire type 会报错。

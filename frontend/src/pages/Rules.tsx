@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import CodeMirror from "@uiw/react-codemirror";
@@ -15,8 +15,9 @@ import {
   Radio,
   ScrollText,
   Trash2,
+  WandSparkles,
 } from "lucide-react";
-import { api, autoApplyResultMessage, AutoApplyResponse, GenResult, OutboundRule, proxyGroupTypeLabel, ProxyGroup, RecognitionRule, RecognitionRuleImportResponse } from "@/lib/api";
+import { api, autoApplyResultMessage, AutoApplyResponse, GenResult, GeoRecognitionGenerationResponse, GeoRecognitionPresetCatalog, OutboundRule, proxyGroupTypeLabel, ProxyGroup, RecognitionRule, RecognitionRuleImportResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,6 +75,16 @@ const KIND_LABELS: Record<string, string> = {
   MATCH: "最终兜底",
 };
 
+const BUILTIN_OUTBOUND_TARGETS = [
+  { id: -1, name: "直连", target: "DIRECT", description: "不经过代理，直接连接目标" },
+  { id: -2, name: "拒绝", target: "REJECT", description: "直接拒绝匹配到的连接" },
+  { id: -3, name: "全节点自动", target: "AUTO", description: "按测速结果从全部节点中自动选择" },
+] as const;
+
+function builtinOutboundTarget(id: number) {
+  return BUILTIN_OUTBOUND_TARGETS.find((target) => target.id === id);
+}
+
 function kindLabel(kind: string) {
   return `${KIND_LABELS[kind] ?? kind}（${kind}）`;
 }
@@ -83,6 +94,8 @@ function RecognitionRulesPanel({
   mappedRecognitionIDs,
   onAdd,
   onImport,
+  onGenerateGeo,
+  geoLoading,
   onEdit,
   onToggle,
   onDelete,
@@ -91,6 +104,8 @@ function RecognitionRulesPanel({
   mappedRecognitionIDs: Set<number>;
   onAdd: () => void;
   onImport: () => void;
+  onGenerateGeo: () => void;
+  geoLoading: boolean;
   onEdit: (rule: RecognitionRule) => void;
   onToggle: (id: number, enabled: boolean) => void;
   onDelete: (rule: RecognitionRule) => void;
@@ -111,6 +126,10 @@ function RecognitionRulesPanel({
           <Button variant="outline" size="sm" onClick={onImport}>
             <FileUp className="h-4 w-4" />
             导入 YAML 规则源
+          </Button>
+          <Button variant="outline" size="sm" onClick={onGenerateGeo} disabled={geoLoading}>
+            <WandSparkles className="h-4 w-4" />
+            {geoLoading ? "检查 Geo 数据中…" : "根据 Geo 自动生成"}
           </Button>
           <Button size="sm" onClick={onAdd}>
             <Plus className="h-4 w-4" />
@@ -211,7 +230,7 @@ function OutboundRulesPanel({
             出站映射
           </h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            只负责绑定“识别规则 → 节点组合”；实际节点选择完全由节点组合决定。
+            绑定“识别规则 → 内置出站目标或节点组合”，决定最终的流量处理方式。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -219,7 +238,7 @@ function OutboundRulesPanel({
             <Eye className="h-3.5 w-3.5" />
             预览 YAML
           </Button>
-          <Button size="sm" onClick={onAdd} disabled={recognitionRules.length === 0 || groups.length === 0}>
+          <Button size="sm" onClick={onAdd} disabled={recognitionRules.length === 0}>
             <Plus className="h-4 w-4" />
             新建出站映射
           </Button>
@@ -230,6 +249,7 @@ function OutboundRulesPanel({
         {rules.map((rule) => {
           const recognition = recognitionByID.get(rule.recognition_id);
           const group = groupByID.get(rule.group_id);
+          const builtinTarget = builtinOutboundTarget(rule.group_id);
           return (
             <div key={rule.id} className={cn("rounded-2xl border border-border/60 bg-card/60 p-4", !rule.enabled && "opacity-55")}>
               <div className="flex items-center justify-between gap-2">
@@ -242,11 +262,11 @@ function OutboundRulesPanel({
                   <div className="mt-1 truncate text-sm font-semibold">{recognition?.name ?? "已删除的识别规则"}</div>
                   {recognition && <div className="mt-1 text-[11px] text-muted-foreground">{kindLabel(recognition.kind)} · 优先级 {recognition.priority}</div>}
                 </div>
-                <div className="flex items-center gap-2 text-primary"><ArrowRight className="h-4 w-4" /><span className="text-xs">交由节点组合处理</span></div>
+                <div className="flex items-center gap-2 text-primary"><ArrowRight className="h-4 w-4" /><span className="text-xs">{builtinTarget ? "交由内置目标处理" : "交由节点组合处理"}</span></div>
                 <div>
-                  <div className="text-[11px] text-muted-foreground">节点组合</div>
-                  <div className="mt-1 truncate text-sm font-semibold text-primary">{group?.name ?? "已删除的节点组合"}</div>
-                  {group && <div className="mt-1 text-[11px] text-muted-foreground">{proxyGroupTypeLabel(group.type)} · {group.member_mode === "manual" ? `手选 ${group.node_ids.length} 节点` : "按组合策略选择"}</div>}
+                  <div className="text-[11px] text-muted-foreground">出站目标</div>
+                  <div className="mt-1 truncate text-sm font-semibold text-primary">{builtinTarget ? `${builtinTarget.name}（${builtinTarget.target}）` : group?.name ?? "已删除的节点组合"}</div>
+                  {builtinTarget ? <div className="mt-1 text-[11px] text-muted-foreground">{builtinTarget.description}</div> : group && <div className="mt-1 text-[11px] text-muted-foreground">{proxyGroupTypeLabel(group.type)} · {group.member_mode === "manual" ? `手选 ${group.node_ids.length} 节点` : "按组合策略选择"}</div>}
                 </div>
               </div>
               <div className="mt-4 flex justify-end gap-1 border-t border-border/40 pt-3">
@@ -262,7 +282,7 @@ function OutboundRulesPanel({
         <div className="rounded-2xl border border-dashed border-border/70 bg-card/30 py-12 text-center">
           <Radio className="mx-auto mb-2 h-10 w-10 text-muted-foreground/40" />
           <h4 className="text-sm font-semibold">暂无出站映射</h4>
-          <p className="mt-1 text-xs text-muted-foreground">先创建识别规则和节点组合，再把它们绑定在这里。</p>
+          <p className="mt-1 text-xs text-muted-foreground">先创建识别规则，再绑定直连、拒绝、全节点自动或节点组合。</p>
         </div>
       )}
     </div>
@@ -271,6 +291,7 @@ function OutboundRulesPanel({
 
 export default function RulesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const activeTab = ["recognition", "groups", "outbound"].includes(searchParams.get("tab") ?? "")
     ? searchParams.get("tab")!
@@ -309,6 +330,10 @@ export default function RulesPage() {
   const [importPriority, setImportPriority] = useState(0);
   const [importEnabled, setImportEnabled] = useState(true);
   const [importYAML, setImportYAML] = useState("");
+
+  const [geoPresetDialogOpen, setGeoPresetDialogOpen] = useState(false);
+  const [geoPresetCatalog, setGeoPresetCatalog] = useState<GeoRecognitionPresetCatalog | null>(null);
+  const [selectedGeoPresetIDs, setSelectedGeoPresetIDs] = useState<string[]>([]);
 
   const [outboundDialogOpen, setOutboundDialogOpen] = useState(false);
   const [editingOutbound, setEditingOutbound] = useState<OutboundRule | null>(null);
@@ -391,6 +416,30 @@ export default function RulesPage() {
     },
     onError: (error: any) => toast.error(error.message),
   });
+  const loadGeoPresets = useMutation({
+    mutationFn: () => api.get<GeoRecognitionPresetCatalog>("/api/recognition-rules/geo-presets"),
+    onSuccess: (catalog) => {
+      setGeoPresetCatalog(catalog);
+      setSelectedGeoPresetIDs(catalog.presets.filter((preset) => preset.available).map((preset) => preset.id));
+      setGeoPresetDialogOpen(true);
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
+  const generateGeoRecognition = useMutation({
+    mutationFn: () => api.post<GeoRecognitionGenerationResponse>("/api/recognition-rules/generate-geo", { preset_ids: selectedGeoPresetIDs }),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ["recognitionRules"] });
+      qc.invalidateQueries({ queryKey: ["config-pending"] });
+      qc.invalidateQueries({ queryKey: ["configPreview"] });
+      if (result.count > 0) {
+        reportAutoApply(`已根据 Geo 数据生成 ${result.count} 条识别规则${result.skipped.length ? `，跳过 ${result.skipped.length} 条` : ""}`, result);
+      } else {
+        toast.info(`没有可新增的 Geo 识别规则，已跳过 ${result.skipped.length} 条`);
+      }
+      setGeoPresetDialogOpen(false);
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
 
   const mappedRecognitionIDs = useMemo(
     () => new Set(outboundRules.map((rule) => rule.recognition_id)),
@@ -460,6 +509,16 @@ export default function RulesPage() {
     setImportDialogOpen(true);
   };
 
+  const openGeoPresetGenerator = () => {
+    loadGeoPresets.mutate();
+  };
+
+  const toggleGeoPreset = (id: string, checked: boolean) => {
+    setSelectedGeoPresetIDs((current) => checked
+      ? [...current, id]
+      : current.filter((item) => item !== id));
+  };
+
   const persistRecognitionImport = async () => {
     const result = await importRecognition.mutateAsync();
     reportAutoApply(`已导入 ${result.count} 条 YAML 识别规则`, result);
@@ -482,7 +541,7 @@ export default function RulesPage() {
     const available = recognitionRules.find((rule) => !mappedRecognitionIDs.has(rule.id));
     setEditingOutbound(null);
     setOutboundRecognitionID(available?.id ?? 0);
-    setOutboundGroupID(groups[0]?.id ?? 0);
+    setOutboundGroupID(0);
     setOutboundEnabled(true);
     setOutboundDialogOpen(true);
   };
@@ -501,7 +560,7 @@ export default function RulesPage() {
 
   const persistOutbound = async () => {
     if (!outboundRecognitionID || !outboundGroupID) {
-      toast.error("请选择识别规则和节点组合");
+      toast.error("请选择识别规则和出站目标");
       return;
     }
     const next: OutboundRule = {
@@ -553,6 +612,8 @@ export default function RulesPage() {
             mappedRecognitionIDs={mappedRecognitionIDs}
             onAdd={openAddRecognition}
             onImport={openRecognitionImport}
+            onGenerateGeo={openGeoPresetGenerator}
+            geoLoading={loadGeoPresets.isPending}
             onEdit={openEditRecognition}
             onToggle={toggleRecognition}
             onDelete={deleteRecognition}
@@ -656,12 +717,51 @@ export default function RulesPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={geoPresetDialogOpen} onOpenChange={setGeoPresetDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>根据 Geo 自动生成识别规则</DialogTitle>
+            <DialogDescription>仅根据本地已拉取且可解析的 Geo 数据生成规则。生成后还需在“出站映射”中绑定节点组合，当前流量不会因此改变。</DialogDescription>
+          </DialogHeader>
+          {!geoPresetCatalog?.available ? (
+            <div className="space-y-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">{geoPresetCatalog?.message || "未检测到可用 Geo 数据"}</p>
+              <p className="text-xs text-muted-foreground">请先在 Geo 数据页面启用 Geo 数据、应用配置并手动更新，然后再回来生成识别规则。</p>
+              <Button size="sm" onClick={() => { setGeoPresetDialogOpen(false); navigate("/geo"); }}><WandSparkles className="h-4 w-4" />前往 Geo 数据</Button>
+            </div>
+          ) : (
+            <div className="space-y-4 py-2">
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">已默认选中当前数据中可用的日常规则。所有新规则均启用，优先级为 1；已存在相同条件或名称冲突的规则会在生成时自动跳过。</div>
+              {(["GEOIP", "GEOSITE"] as const).map((kind) => {
+                const presets = geoPresetCatalog.presets.filter((preset) => preset.kind === kind);
+                return <div key={kind} className="space-y-2">
+                  <div className="text-xs font-semibold">{kindLabel(kind)}</div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {presets.map((preset) => {
+                      const checked = selectedGeoPresetIDs.includes(preset.id);
+                      return <label key={preset.id} className={cn("flex cursor-pointer items-start gap-2 rounded-xl border p-3 transition-colors", preset.available ? "border-border/60 bg-muted/35 hover:border-primary/40" : "cursor-not-allowed border-border/40 bg-muted/20 opacity-55")}>
+                        <input type="checkbox" className="mt-0.5 h-4 w-4 accent-primary" checked={checked} disabled={!preset.available} onChange={(event) => toggleGeoPreset(preset.id, event.target.checked)} />
+                        <span className="min-w-0"><span className="block text-xs font-semibold">{preset.name}</span><span className="mt-0.5 block font-mono text-[11px] text-muted-foreground">{preset.kind},{preset.condition}</span>{!preset.available && <span className="mt-1 block text-[11px] text-amber-700 dark:text-amber-300">{preset.reason}</span>}</span>
+                      </label>;
+                    })}
+                  </div>
+                </div>;
+              })}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setGeoPresetDialogOpen(false)}>取消</Button>
+            {geoPresetCatalog?.available && <Button size="sm" onClick={() => generateGeoRecognition.mutate()} disabled={selectedGeoPresetIDs.length === 0 || generateGeoRecognition.isPending}>{generateGeoRecognition.isPending ? "生成中…" : `生成 ${selectedGeoPresetIDs.length} 条规则`}</Button>}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={outboundDialogOpen} onOpenChange={setOutboundDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>{editingOutbound ? "编辑出站映射" : "新建出站映射"}</DialogTitle><DialogDescription>将一条识别规则交给一个节点组合，由它决定最终出站节点。</DialogDescription></DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5"><Label>识别规则</Label><Select value={String(outboundRecognitionID)} onChange={(event) => setOutboundRecognitionID(Number(event.target.value))}><option value="0">请选择识别规则</option>{availableRecognitionRules.map((rule) => <option key={rule.id} value={rule.id}>{rule.name}（{rule.kind}，优先级 {rule.priority}）</option>)}</Select></div>
-            <div className="space-y-1.5"><Label>节点组合</Label><Select value={String(outboundGroupID)} onChange={(event) => setOutboundGroupID(Number(event.target.value))}><option value="0">请选择节点组合</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}（{proxyGroupTypeLabel(group.type)}{group.enabled ? "" : "，已禁用"}）</option>)}</Select></div>
+            <div className="space-y-1.5"><Label>出站目标</Label><Select value={String(outboundGroupID)} onChange={(event) => setOutboundGroupID(Number(event.target.value))}><option value="0">请选择出站目标</option><optgroup label="内置出站目标">{BUILTIN_OUTBOUND_TARGETS.map((target) => <option key={target.id} value={target.id}>{target.name}（{target.target}）</option>)}</optgroup><optgroup label="节点组合">{groups.map((group) => <option key={group.id} value={group.id}>{group.name}（{proxyGroupTypeLabel(group.type)}{group.enabled ? "" : "，已禁用"}）</option>)}</optgroup></Select></div>
             <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/40 p-3"><div><div className="text-xs font-semibold">启用此出站映射</div><div className="text-[11px] text-muted-foreground">关闭后该识别规则不参与路由。</div></div><Switch checked={outboundEnabled} onCheckedChange={setOutboundEnabled} /></div>
           </div>
           <DialogFooter><Button variant="outline" size="sm" onClick={() => setOutboundDialogOpen(false)}>取消</Button><Button size="sm" onClick={persistOutbound} disabled={saveOutbound.isPending}>{saveOutbound.isPending ? "保存中…" : "保存出站映射"}</Button></DialogFooter>

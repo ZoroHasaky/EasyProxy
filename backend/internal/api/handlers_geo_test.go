@@ -32,17 +32,18 @@ func TestGeoDataStatusHandlerReportsLocalDatabase(t *testing.T) {
 	}
 	var result struct {
 		Items []struct {
-			Key        string `json:"key"`
-			File       string `json:"file"`
-			State      string `json:"state"`
-			GroupCount int    `json:"group_count"`
-			EntryCount int    `json:"entry_count"`
+			Key             string `json:"key"`
+			File            string `json:"file"`
+			State           string `json:"state"`
+			CountsAvailable bool   `json:"counts_available"`
+			GroupCount      int    `json:"group_count"`
+			EntryCount      int    `json:"entry_count"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Items) != 2 || result.Items[0].Key != "geoip" || result.Items[0].File != "GeoIP.dat" || result.Items[0].State != "ready" || result.Items[0].GroupCount != 1 || result.Items[0].EntryCount != 1 {
+	if len(result.Items) != 2 || result.Items[0].Key != "geoip" || result.Items[0].File != "GeoIP.dat" || result.Items[0].State != "ready" || !result.Items[0].CountsAvailable || result.Items[0].GroupCount != 1 || result.Items[0].EntryCount != 1 {
 		t.Fatalf("unexpected status: %#v", result.Items)
 	}
 }
