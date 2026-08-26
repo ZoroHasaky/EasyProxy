@@ -26,6 +26,11 @@ type RuleProviderRuntime struct {
 	VehicleType string `json:"vehicleType"`
 }
 
+// ProxyRuntime 是 Mihomo 当前代理或策略组的运行时选择状态。
+type ProxyRuntime struct {
+	Now string `json:"now"`
+}
+
 func NewClient(port int, secret string) *Client {
 	return &Client{
 		base:   fmt.Sprintf("http://127.0.0.1:%d", port),
@@ -100,6 +105,20 @@ func (c *Client) GetRuleProviders() (map[string]RuleProviderRuntime, error) {
 		out.Providers = map[string]RuleProviderRuntime{}
 	}
 	return out.Providers, nil
+}
+
+// GetProxies 读取策略组当前选中的下一级目标；只查询本机 external-controller。
+func (c *Client) GetProxies() (map[string]ProxyRuntime, error) {
+	var out struct {
+		Proxies map[string]ProxyRuntime `json:"proxies"`
+	}
+	if err := c.do(http.MethodGet, "/proxies", nil, &out); err != nil {
+		return nil, err
+	}
+	if out.Proxies == nil {
+		out.Proxies = map[string]ProxyRuntime{}
+	}
+	return out.Proxies, nil
 }
 
 // UpdateRuleProvider 请求 Mihomo 立即下载并加载指定的远程规则源。

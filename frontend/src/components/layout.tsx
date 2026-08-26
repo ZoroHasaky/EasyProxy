@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Cable,
   ChevronLeft,
-  ChevronRight,
   Cpu,
   Globe2,
   LayoutDashboard,
@@ -83,16 +82,14 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
   return (
     <div className="flex flex-col h-full">
       {/* 品牌区 */}
-      <div className={cn("flex h-16 items-center gap-3 border-b border-border/60 px-4", collapsed && "justify-center px-2")}>
+      <div className={cn("flex h-16 items-center gap-3 border-b border-border/60 transition-[padding] duration-300 ease-in-out", collapsed ? "justify-center px-2" : "px-4")}>
         <img src="/easyproxy-logo.svg" alt="EasyProxy" className="h-10 w-10 shrink-0 rounded-2xl shadow-md shadow-primary/25" />
-        {!collapsed && (
-          <div className="flex flex-col">
-            <span className="font-bold text-base tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-              EasyProxy
-            </span>
-            <span className="text-[11px] text-muted-foreground font-mono font-medium">{displayVersion}</span>
-          </div>
-        )}
+        <div className={cn("flex min-w-0 flex-col overflow-hidden whitespace-nowrap transition-[max-width,opacity,transform] duration-200 ease-out", collapsed ? "max-w-0 -translate-x-2 opacity-0" : "max-w-32 translate-x-0 opacity-100")}>
+          <span className="font-bold text-base tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+            EasyProxy
+          </span>
+          <span className="text-[11px] text-muted-foreground font-mono font-medium">{displayVersion}</span>
+        </div>
       </div>
 
       {/* 导航项 */}
@@ -115,11 +112,9 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
             }
           >
             <item.icon className="h-4.5 w-4.5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
-            {!collapsed && (
-              <div className="flex flex-col text-left">
-                <span className="leading-tight">{item.label}</span>
-              </div>
-            )}
+            <div className={cn("flex min-w-0 flex-col overflow-hidden whitespace-nowrap text-left transition-[max-width,opacity,transform] duration-200 ease-out", collapsed ? "max-w-0 -translate-x-2 opacity-0" : "max-w-32 translate-x-0 opacity-100")}>
+              <span className="leading-tight">{item.label}</span>
+            </div>
           </NavLink>
         ))}
       </nav>
@@ -215,8 +210,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* 桌面端侧边栏 */}
       <aside
         className={cn(
-          "hidden md:flex flex-col border-r border-border/60 bg-card/60 backdrop-blur-xl transition-all duration-300 relative z-30 shrink-0",
-          collapsed ? "w-18" : "w-60"
+          "relative z-30 hidden shrink-0 flex-col overflow-hidden border-r border-border/60 bg-card/60 backdrop-blur-xl transition-[width] duration-300 ease-in-out md:flex",
+          collapsed ? "w-[4.5rem]" : "w-60"
         )}
       >
         <SidebarContent
@@ -229,9 +224,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {/* 折叠切换按钮 */}
         <button
           onClick={toggleCollapsed}
-          className="absolute -right-3.5 top-[50px] z-40 flex h-7 w-7 items-center justify-center rounded-full border border-border/80 bg-card shadow-md hover:bg-accent text-muted-foreground transition-all duration-150"
+          className="absolute -right-3.5 top-[50px] z-40 flex h-7 w-7 items-center justify-center rounded-full border border-border/80 bg-card text-muted-foreground shadow-md transition-[transform,background-color] duration-200 hover:scale-105 hover:bg-accent active:scale-95"
         >
-          {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
+          <ChevronLeft className={cn("h-3.5 w-3.5 transition-transform duration-300 ease-in-out", collapsed && "rotate-180")} />
         </button>
       </aside>
 

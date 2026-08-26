@@ -13,11 +13,12 @@ import {
   Pencil,
   Plus,
   Radio,
+  Route,
   ScrollText,
   Trash2,
   WandSparkles,
 } from "lucide-react";
-import { api, autoApplyResultMessage, AutoApplyResponse, GenResult, GeoRecognitionGenerationResponse, GeoRecognitionPresetCatalog, mihomo, OutboundRule, proxyGroupTypeLabel, ProxyGroup, RecognitionRule, RecognitionRuleImportResponse } from "@/lib/api";
+import { api, autoApplyResultMessage, AutoApplyResponse, GenResult, GeoRecognitionGenerationResponse, GeoRecognitionPresetCatalog, mihomo, OutboundRule, OutboundSimulation, proxyGroupTypeLabel, ProxyGroup, RecognitionRule, RecognitionRuleImportResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -213,6 +214,7 @@ function OutboundRulesPanel({
   onToggle,
   onDelete,
   onPreview,
+  onTest,
   proxySelection,
 }: {
   rules: OutboundRule[];
@@ -223,6 +225,7 @@ function OutboundRulesPanel({
   onToggle: (id: number, enabled: boolean) => void;
   onDelete: (rule: OutboundRule) => void;
   onPreview: () => void;
+  onTest: () => void;
   proxySelection?: string;
 }) {
   const recognitionByID = new Map(recognitionRules.map((rule) => [rule.id, rule]));
@@ -241,6 +244,10 @@ function OutboundRulesPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={onTest}>
+            <Route className="h-3.5 w-3.5" />
+            出站测试
+          </Button>
           <Button variant="outline" size="sm" onClick={onPreview}>
             <Eye className="h-3.5 w-3.5" />
             预览 YAML
@@ -349,10 +356,12 @@ export default function RulesPage() {
 
   const [outboundDialogOpen, setOutboundDialogOpen] = useState(false);
   const [editingOutbound, setEditingOutbound] = useState<OutboundRule | null>(null);
-  const [outboundRecognitionID, setOutboundRecognitionID] = useState(0);
+  const [outboundRecognitionIDs, setOutboundRecognitionIDs] = useState<number[]>([]);
   const [outboundGroupID, setOutboundGroupID] = useState(0);
   const [outboundEnabled, setOutboundEnabled] = useState(true);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [outboundTestOpen, setOutboundTestOpen] = useState(false);
+  const [outboundTestTarget, setOutboundTestTarget] = useState("");
 
   const previewQuery = useQuery({
     queryKey: ["configPreview"],
@@ -388,6 +397,10 @@ export default function RulesPage() {
       qc.invalidateQueries({ queryKey: ["outboundRules"] });
       setOutboundDialogOpen(false);
     },
+    onError: (error: any) => toast.error(error.message),
+  });
+  const simulateOutbound = useMutation({
+    mutationFn: (target: string) => api.post<OutboundSimulation>("/api/outbound-rules/simulate", { target }),
     onError: (error: any) => toast.error(error.message),
   });
   const previewRecognitionImport = useMutation({
@@ -550,9 +563,8 @@ export default function RulesPage() {
   };
 
   const openAddOutbound = () => {
-    const available = recognitionRules.find((rule) => !mappedRecognitionIDs.has(rule.id));
     setEditingOutbound(null);
-    setOutboundRecognitionID(available?.id ?? 0);
+    setOutboundRecognitionIDs([]);
     setOutboundGroupID(0);
     setOutboundEnabled(true);
     setOutboundDialogOpen(true);
@@ -560,7 +572,7 @@ export default function RulesPage() {
 
   const openEditOutbound = (rule: OutboundRule) => {
     setEditingOutbound(rule);
-    setOutboundRecognitionID(rule.recognition_id);
+    setOutboundRecognitionIDs([rule.recognition_id]);
     setOutboundGroupID(rule.group_id);
     setOutboundEnabled(rule.enabled);
     setOutboundDialogOpen(true);
@@ -571,21 +583,22 @@ export default function RulesPage() {
   );
 
   const persistOutbound = async () => {
-    if (!outboundRecognitionID || !outboundGroupID) {
+    if (outboundRecognitionIDs.length === 0 || !outboundGroupID) {
       toast.error("请选择识别规则和出站目标");
       return;
     }
-    const next: OutboundRule = {
-      id: editingOutbound?.id ?? -Date.now(),
-      recognition_id: outboundRecognitionID,
+    const selectedIDs = editingOutbound ? [outboundRecognitionIDs[0]] : outboundRecognitionIDs;
+    const next = selectedIDs.map((recognitionID, index): OutboundRule => ({
+      id: editingOutbound?.id ?? -Date.now() - index,
+      recognition_id: recognitionID,
       group_id: outboundGroupID,
       enabled: outboundEnabled,
-    };
+    }));
     const rules = editingOutbound
-      ? outboundRules.map((rule) => (rule.id === editingOutbound.id ? next : rule))
-      : [...outboundRules, next];
+      ? outboundRules.map((rule) => (rule.id === editingOutbound.id ? next[0] : rule))
+      : [...outboundRules, ...next];
     const result = await saveOutbound.mutateAsync(rules);
-    reportAutoApply(editingOutbound ? "出站映射已更新" : "出站映射已创建", result);
+    reportAutoApply(editingOutbound ? "出站映射已更新" : `已创建 ${next.length} 条出站映射`, result);
   };
 
   const deleteOutbound = async (rule: OutboundRule) => {
@@ -599,6 +612,12 @@ export default function RulesPage() {
     void saveOutbound.mutateAsync(rules)
       .then((result) => reportAutoApply(enabled ? "出站映射已启用" : "出站映射已禁用", result))
       .catch(() => undefined);
+  };
+
+  const toggleOutboundRecognition = (id: number, checked: boolean) => {
+    setOutboundRecognitionIDs((current) => checked
+      ? [...current, id]
+      : current.filter((item) => item !== id));
   };
 
   return (
@@ -634,6 +653,7 @@ export default function RulesPage() {
             onToggle={toggleOutbound}
             onDelete={deleteOutbound}
             onPreview={() => setPreviewOpen(true)}
+            onTest={() => { simulateOutbound.reset(); setOutboundTestOpen(true); }}
             proxySelection={proxiesQuery.data?.proxies?.PROXY?.now}
           />
         </TabsContent>
@@ -762,14 +782,72 @@ export default function RulesPage() {
       </Dialog>
 
       <Dialog open={outboundDialogOpen} onOpenChange={setOutboundDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>{editingOutbound ? "编辑出站映射" : "新建出站映射"}</DialogTitle><DialogDescription>将一条识别规则交给内置出站目标或节点组合，决定最终的流量处理方式。</DialogDescription></DialogHeader>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>{editingOutbound ? "编辑出站映射" : "新建出站映射"}</DialogTitle><DialogDescription>{editingOutbound ? "调整这条识别规则的出站目标。" : "可一次选择多条尚未绑定的识别规则，并将它们绑定到同一个出站目标。"}</DialogDescription></DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-1.5"><Label>识别规则</Label><Select value={String(outboundRecognitionID)} onChange={(event) => setOutboundRecognitionID(Number(event.target.value))}><option value="0">请选择识别规则</option>{availableRecognitionRules.map((rule) => <option key={rule.id} value={rule.id}>{rule.name}（{rule.kind}，优先级 {rule.priority}）</option>)}</Select></div>
+            <div className="space-y-1.5">
+              <Label>识别规则</Label>
+              {editingOutbound ? (
+                <Select value={String(outboundRecognitionIDs[0] ?? 0)} onChange={(event) => setOutboundRecognitionIDs([Number(event.target.value)])}>
+                  <option value="0">请选择识别规则</option>
+                  {availableRecognitionRules.map((rule) => <option key={rule.id} value={rule.id}>{rule.name}（{rule.kind}，优先级 {rule.priority}）</option>)}
+                </Select>
+              ) : (
+                <div className="max-h-52 space-y-2 overflow-y-auto rounded-xl border border-border/60 bg-muted/25 p-2.5">
+                  {availableRecognitionRules.map((rule) => {
+                    const checked = outboundRecognitionIDs.includes(rule.id);
+                    return <label key={rule.id} className={cn("flex cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 transition-colors", checked ? "border-primary/40 bg-primary/8" : "border-transparent hover:bg-muted/60")}>
+                      <input type="checkbox" className="mt-0.5 h-4 w-4 accent-primary" checked={checked} onChange={(event) => toggleOutboundRecognition(rule.id, event.target.checked)} />
+                      <span className="min-w-0"><span className="block truncate text-xs font-semibold">{rule.name}</span><span className="mt-0.5 block text-[11px] text-muted-foreground">{kindLabel(rule.kind)} · 优先级 {rule.priority}</span></span>
+                    </label>;
+                  })}
+                  {availableRecognitionRules.length === 0 && <div className="p-3 text-center text-xs text-muted-foreground">没有尚未绑定的识别规则</div>}
+                </div>
+              )}
+              {!editingOutbound && <p className="text-[11px] text-muted-foreground">已选择 {outboundRecognitionIDs.length} 条识别规则。</p>}
+            </div>
             <div className="space-y-1.5"><Label>出站目标</Label><Select value={String(outboundGroupID)} onChange={(event) => setOutboundGroupID(Number(event.target.value))}><option value="0">请选择出站目标</option><optgroup label="内置出站目标">{BUILTIN_OUTBOUND_TARGETS.map((target) => <option key={target.id} value={target.id}>{target.name}（{target.target}）</option>)}</optgroup><optgroup label="节点组合">{groups.map((group) => <option key={group.id} value={group.id}>{group.name}（{proxyGroupTypeLabel(group.type)}{group.enabled ? "" : "，已禁用"}）</option>)}</optgroup></Select></div>
             <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/40 p-3"><div><div className="text-xs font-semibold">启用此出站映射</div><div className="text-[11px] text-muted-foreground">关闭后该识别规则不参与路由。</div></div><Switch checked={outboundEnabled} onCheckedChange={setOutboundEnabled} /></div>
           </div>
           <DialogFooter><Button variant="outline" size="sm" onClick={() => setOutboundDialogOpen(false)}>取消</Button><Button size="sm" onClick={persistOutbound} disabled={saveOutbound.isPending}>{saveOutbound.isPending ? "保存中…" : "保存出站映射"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={outboundTestOpen} onOpenChange={(open) => { setOutboundTestOpen(open); if (!open) simulateOutbound.reset(); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>出站测试</DialogTitle>
+            <DialogDescription>仅根据当前已保存的规则与出站映射推演链路；不会解析 DNS、访问目标或下载远程规则。</DialogDescription>
+          </DialogHeader>
+          <form className="space-y-4 py-2" onSubmit={(event) => { event.preventDefault(); if (!outboundTestTarget.trim()) { toast.error("请输入域名或 IP 地址"); return; } simulateOutbound.mutate(outboundTestTarget); }}>
+            <div className="space-y-1.5">
+              <Label htmlFor="outbound-test-target">访问目标</Label>
+              <Input id="outbound-test-target" value={outboundTestTarget} onChange={(event) => setOutboundTestTarget(event.target.value)} placeholder="例如 github.com 或 1.1.1.1" autoFocus />
+            </div>
+            {simulateOutbound.data && (
+              <div className="space-y-3 rounded-xl border border-primary/25 bg-primary/5 p-4 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-mono font-semibold text-foreground">{simulateOutbound.data.target}</span>
+                  <Badge variant={simulateOutbound.data.certain ? "success" : "warning"}>{simulateOutbound.data.certain ? "可确定" : "存在待确认规则"}</Badge>
+                </div>
+                <div className="grid gap-2 border-y border-primary/15 py-3 sm:grid-cols-[76px_minmax(0,1fr)]">
+                  <span className="text-muted-foreground">命中规则</span>
+                  <span className="min-w-0 font-medium text-foreground">{simulateOutbound.data.rule_name}<span className="ml-1 text-muted-foreground">（{simulateOutbound.data.rule_kind}，优先级 {simulateOutbound.data.rule_priority}）</span>{simulateOutbound.data.rule_condition && <span className="mt-1 block break-all font-mono text-[11px] text-muted-foreground">条件：{simulateOutbound.data.rule_condition}</span>}</span>
+                  <span className="text-muted-foreground">出站目标</span>
+                  <span className="break-all font-medium text-primary">{simulateOutbound.data.outbound_target}</span>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="text-muted-foreground">模拟链路</div>
+                  <div className="flex flex-wrap items-center gap-1.5 font-mono text-primary">{simulateOutbound.data.chain.map((item, index) => <span key={`${item}-${index}`} className="contents">{index > 0 && <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />}<span className="rounded-md bg-card/70 px-2 py-1">{item}</span></span>)}</div>
+                </div>
+                {simulateOutbound.data.limitations.length > 0 && <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 p-2.5 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">{simulateOutbound.data.limitations.map((item) => <div key={item}>· {item}</div>)}</div>}
+              </div>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" size="sm" onClick={() => setOutboundTestOpen(false)}>关闭</Button>
+              <Button type="submit" size="sm" disabled={simulateOutbound.isPending}>{simulateOutbound.isPending ? "推演中…" : "开始测试"}</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

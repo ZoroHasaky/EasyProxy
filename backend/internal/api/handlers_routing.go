@@ -444,6 +444,48 @@ func (s *Server) handlePutOutboundRules(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(rules), "apply_result": result, "apply_error": applyError})
 }
 
+// handleSimulateOutbound 仅根据已保存的规则与映射推演出站路径；不会请求目标地址。
+func (s *Server) handleSimulateOutbound(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Target string `json:"target"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+	result, err := service.SimulateOutbound(s.st, req.Target)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.expandSimulationRuntimeChain(result)
+	writeJSON(w, http.StatusOK, result)
+}
+
+// expandSimulationRuntimeChain 只读取本地 Mihomo 的当前策略组选择，用于把配置目标
+// 继续展开到当前实际节点；不会发起任何对用户测试目标的网络访问。
+func (s *Server) expandSimulationRuntimeChain(result *service.OutboundSimulationResult) {
+	if result.OutboundTarget == model.BuiltinDirect || result.OutboundTarget == model.BuiltinReject || s.mgr.Status().State != core.StateRunning {
+		return
+	}
+	proxies, err := s.client.GetProxies()
+	if err != nil {
+		result.Limitations = append(result.Limitations, "无法读取内核当前选择，链路仅展示到配置出站目标")
+		return
+	}
+	current := result.OutboundTarget
+	seen := map[string]bool{current: true}
+	for range 8 { // 防止异常配置形成循环引用。
+		next := strings.TrimSpace(proxies[current].Now)
+		if next == "" || seen[next] {
+			return
+		}
+		result.Chain = append(result.Chain, next)
+		seen[next] = true
+		current = next
+	}
+}
+
 // refreshActiveRecognitionRuleProviders 强制更新所有已启用且已映射的远程规则源。
 // Mihomo 在 Provider 尚未下载完成时会跳过 RULE-SET 并继续匹配后续 MATCH，因此保存
 // 识别规则后必须主动触发更新，不能只等待最长 24 小时的更新周期。

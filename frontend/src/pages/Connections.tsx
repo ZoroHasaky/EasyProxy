@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -32,12 +32,18 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { formatBytes } from "@/lib/utils";
+import { formatSpeed } from "@/lib/utils";
+
+type ConnectionSpeed = { up: number; down: number };
+type ConnectionSample = ConnectionSpeed & { at: number };
+const EMPTY_CONNECTIONS: MihomoConnection[] = [];
 
 export default function ConnectionsPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<"speed" | "traffic">("speed");
+  const [sortBy, setSortBy] = useState<"speed" | "time">("speed");
+  const [connectionSpeeds, setConnectionSpeeds] = useState<Record<string, ConnectionSpeed>>({});
+  const speedSamplesRef = useRef<Map<string, ConnectionSample>>(new Map());
 
   const connsQuery = useQuery({
     queryKey: ["connections"],
@@ -51,7 +57,31 @@ export default function ConnectionsPage() {
     refetchInterval: 2000,
   });
 
-  const rawConns = connsQuery.data?.connections ?? [];
+  const rawConns = connsQuery.data?.connections ?? EMPTY_CONNECTIONS;
+
+  useEffect(() => {
+    const now = Date.now();
+    const previousSamples = speedSamplesRef.current;
+    const nextSamples = new Map<string, ConnectionSample>();
+    const nextSpeeds: Record<string, ConnectionSpeed> = {};
+
+    for (const connection of rawConns) {
+      const up = Math.max(0, Number(connection.upload) || 0);
+      const down = Math.max(0, Number(connection.download) || 0);
+      const previous = previousSamples.get(connection.id);
+      const elapsedSeconds = previous ? Math.max((now - previous.at) / 1000, 0.001) : 0;
+      nextSpeeds[connection.id] = previous
+        ? {
+            up: Math.max(0, (up - previous.up) / elapsedSeconds),
+            down: Math.max(0, (down - previous.down) / elapsedSeconds),
+          }
+        : { up: 0, down: 0 };
+      nextSamples.set(connection.id, { up, down, at: now });
+    }
+
+    speedSamplesRef.current = nextSamples;
+    setConnectionSpeeds(nextSpeeds);
+  }, [rawConns]);
 
   const closeOne = async (id: string) => {
     try {
@@ -93,16 +123,18 @@ export default function ConnectionsPage() {
         const sb = (b.download || 0) + (b.upload || 0);
         return sb - sa;
       }
-      if (sortBy === "traffic") {
-        const ta = (a.download || 0) + (a.upload || 0);
-        const tb = (b.download || 0) + (b.upload || 0);
-        return tb - ta;
+      if (sortBy === "time") {
+        return new Date(b.start).getTime() - new Date(a.start).getTime();
       }
-      return 0;
+      const speedA = connectionSpeeds[a.id];
+      const speedB = connectionSpeeds[b.id];
+      const sa = speedA ? speedA.down + speedA.up : 0;
+      const sb = speedB ? speedB.down + speedB.up : 0;
+      return sb - sa;
     });
 
     return list;
-  }, [rawConns, search, sortBy]);
+  }, [connectionSpeeds, rawConns, search, sortBy]);
 
   return (
     <div className="space-y-4">
@@ -149,7 +181,7 @@ export default function ConnectionsPage() {
             className="h-9 text-xs"
           >
             <option value="speed">按实时速度降序</option>
-            <option value="traffic">按传输流量降序</option>
+            <option value="time">按开始时间降序</option>
           </Select>
         </div>
       </div>
@@ -163,7 +195,7 @@ export default function ConnectionsPage() {
             <TableHead className="w-24">协议/网络</TableHead>
             <TableHead className="w-36">分流规则</TableHead>
             <TableHead>代理链路</TableHead>
-            <TableHead className="w-32">传输总量</TableHead>
+            <TableHead className="w-32">传输速度</TableHead>
             <TableHead className="w-16 text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
@@ -178,6 +210,7 @@ export default function ConnectionsPage() {
             const chainItems = (conn.chains || []).filter(Boolean);
             const chain = chainItems.join(" → ") || "直连";
             const proxyNode = chainItems[chainItems.length - 1] || "直连";
+            const speed = connectionSpeeds[conn.id] ?? { up: 0, down: 0 };
             return (
               <TableRow key={conn.id}>
                 <TableCell>
@@ -213,15 +246,21 @@ export default function ConnectionsPage() {
                     <div className="truncate text-xs font-medium text-foreground/90" title={proxyNode}>
                       {proxyNode}
                     </div>
-                    <div className="mt-1 truncate font-mono text-[10px] text-primary" title={chain}>
-                      链路：{chain}
+                    <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground" title={chain}>
+                      {chain}
                     </div>
                   </div>
                 </TableCell>
-                <TableCell>
-                  <div className="text-xs font-mono">
-                    <div className="text-emerald-500">↓ {formatBytes(conn.download)}</div>
-                    <div className="text-sky-500">↑ {formatBytes(conn.upload)}</div>
+                <TableCell className="whitespace-nowrap">
+                  <div className="space-y-0.5 font-mono text-xs leading-4">
+                    <div className="flex items-center gap-1 whitespace-nowrap text-emerald-500">
+                      <ArrowDown className="h-3 w-3 shrink-0" />
+                      {formatSpeed(speed.down)}
+                    </div>
+                    <div className="flex items-center gap-1 whitespace-nowrap text-sky-500">
+                      <ArrowUp className="h-3 w-3 shrink-0" />
+                      {formatSpeed(speed.up)}
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell className="text-right">

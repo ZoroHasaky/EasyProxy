@@ -215,6 +215,19 @@ export interface OutboundRule {
   enabled: boolean;
 }
 
+export interface OutboundSimulation {
+  target: string;
+  target_type: "domain" | "ip";
+  certain: boolean;
+  rule_name: string;
+  rule_kind: string;
+  rule_condition?: string;
+  rule_priority: number;
+  outbound_target: string;
+  chain: string[];
+  limitations: string[];
+}
+
 export interface ProxyGroup {
   id: number;
   name: string;

@@ -36,6 +36,51 @@ func TestOutboundRulesAcceptBuiltinTargets(t *testing.T) {
 	}
 }
 
+func TestOutboundRulesCanBindMultipleRecognitionsToSameTarget(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	if err := st.ReplaceRecognitionRules([]model.RecognitionRule{
+		{Name: "规则一", Kind: "DOMAIN-SUFFIX", Conditions: []string{"one.example"}, Enabled: true},
+		{Name: "规则二", Kind: "DOMAIN-SUFFIX", Conditions: []string{"two.example"}, Enabled: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recognitions, err := st.ListRecognitionRules()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := st.ReplaceOutboundRules([]model.OutboundRule{
+		{RecognitionID: recognitions[0].ID, GroupID: model.OutboundTargetDirectID, Enabled: true},
+		{RecognitionID: recognitions[1].ID, GroupID: model.OutboundTargetDirectID, Enabled: true},
+	}); err != nil {
+		t.Fatalf("multiple recognition rules should share one target: %v", err)
+	}
+	outbounds, err := st.ListOutboundRules()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outbounds) != 2 {
+		t.Fatalf("outbound mappings=%#v, want 2", outbounds)
+	}
+	for _, outbound := range outbounds {
+		if outbound.GroupID != model.OutboundTargetDirectID {
+			t.Fatalf("mapping %#v did not use direct target", outbound)
+		}
+	}
+
+	if err := st.ReplaceOutboundRules([]model.OutboundRule{
+		{RecognitionID: recognitions[0].ID, GroupID: model.OutboundTargetDirectID, Enabled: true},
+		{RecognitionID: recognitions[0].ID, GroupID: model.OutboundTargetRejectID, Enabled: true},
+	}); err == nil {
+		t.Fatal("one recognition rule must not be bound twice")
+	}
+}
+
 func TestOpenMigratesOutboundRulesForBuiltinTargets(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.ToSlash(filepath.Join(dir, "state.db"))
