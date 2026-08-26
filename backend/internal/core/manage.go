@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -49,12 +50,13 @@ func InstalledCoreVersion(dataDir string) string {
 	return ver
 }
 
-// CoreDownloadMirrors 内置内核下载镜像（形如 ghproxy 的 GitHub 加速前缀，按序自动尝试；空串=直连）
+// CoreDownloadMirrors 内置内核下载镜像（形如 ghproxy 的 GitHub 加速前缀，按序自动尝试；空串=官方直连）。
+// 加速镜像无需面板内核代理即可访问，优先于 GitHub 官方源。
 var CoreDownloadMirrors = []string{
-	"",
 	"https://ghproxy.net/https://github.com",
 	"https://gh-proxy.com/https://github.com",
 	"https://ghfast.top/https://github.com",
+	"",
 }
 
 // mirrorProxyPrefix 由镜像前缀推导通用 URL 代理前缀（如 https://ghproxy.net/）
@@ -62,17 +64,13 @@ func mirrorProxyPrefix(mirror string) string {
 	return strings.TrimSuffix(strings.TrimRight(mirror, "/"), GitHubRelease)
 }
 
-// LatestCoreVersion 查询 mihomo 最新版本 tag：直连失败时依次尝试内置镜像
+// LatestCoreVersion 查询 mihomo 最新版本 tag：按内置下载源顺序依次尝试。
 func LatestCoreVersion() (string, error) {
-	prefixes := []string{""}
-	for _, m := range CoreDownloadMirrors[1:] {
-		prefixes = append(prefixes, mirrorProxyPrefix(m))
-	}
 	var lastErr error
-	for _, prefix := range prefixes {
+	for _, source := range coreDownloadSources("") {
 		api := GitHubAPI
-		if prefix != "" {
-			api = prefix + "/" + GitHubAPI
+		if source.base != GitHubRelease {
+			api = strings.TrimRight(mirrorProxyPrefix(source.base), "/") + "/" + GitHubAPI
 		}
 		if v, err := latestVersionFrom(api); err == nil {
 			return v, nil
@@ -129,21 +127,79 @@ type DownloadProgress struct {
 	Err     error
 }
 
+// CoreValidationError 保留内核可执行校验的诊断信息。它会被写入内核日志，
+// 用于区分架构、CPU 指令集、动态库和数据目录执行权限等问题。
+type CoreValidationError struct {
+	OS       string
+	Arch     string
+	FileSize int
+	Cause    error
+	Output   string
+	Hint     string
+}
+
+func (e *CoreValidationError) Error() string {
+	message := fmt.Sprintf("内核校验失败（运行环境 %s/%s，文件大小 %.1f MiB）", e.OS, e.Arch, float64(e.FileSize)/(1<<20))
+	if e.Hint != "" {
+		message += "：" + e.Hint
+	}
+	if e.Cause != nil {
+		message += "；执行错误：" + e.Cause.Error()
+	}
+	if e.Output != "" {
+		message += "；内核输出：" + e.Output
+	}
+	return message
+}
+
+func (e *CoreValidationError) Unwrap() error { return e.Cause }
+
+func compactCoreDiagnostic(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	const limit = 500
+	if len(value) > limit {
+		return value[:limit] + "…"
+	}
+	return value
+}
+
+func coreValidationHint(cause error, output string) string {
+	message := strings.ToLower(compactCoreDiagnostic(fmt.Sprintf("%v %s", cause, output)))
+	switch {
+	case errors.Is(cause, context.DeadlineExceeded):
+		return "执行内核版本检查超时"
+	case strings.Contains(message, "illegal instruction"):
+		return "CPU 指令集不兼容，可尝试 linux-amd64-compatible 内核"
+	case strings.Contains(message, "exec format error"):
+		return "二进制架构或文件格式不匹配"
+	case strings.Contains(message, "permission denied") || strings.Contains(message, "operation not permitted"):
+		return "数据目录无执行权限，或宿主机以 noexec 方式挂载"
+	case strings.Contains(message, "no such file or directory") || strings.Contains(message, "not found"):
+		return "可能缺少动态库或二进制解释器"
+	case cause == nil:
+		return "版本输出未识别为 Mihomo"
+	default:
+		return "无法执行为 Mihomo 内核"
+	}
+}
+
 type coreDownloadSource struct {
 	base  string
 	label string
 }
 
-// coreDownloadSources 按自定义镜像、GitHub 官方源、内置镜像的顺序整理下载源。
+// coreDownloadSources 按自定义镜像、内置加速镜像、GitHub 官方源的顺序整理下载源。
 func coreDownloadSources(mirror string) []coreDownloadSource {
 	candidates := make([]coreDownloadSource, 0, len(CoreDownloadMirrors)+1)
 	if m := strings.TrimSpace(mirror); m != "" {
 		candidates = append(candidates, coreDownloadSource{base: strings.TrimRight(m, "/"), label: "自定义镜像"})
 	}
-	for i, base := range CoreDownloadMirrors {
+	mirrorNumber := 0
+	for _, base := range CoreDownloadMirrors {
 		label := "GitHub 官方源"
-		if i > 0 {
-			label = fmt.Sprintf("内置镜像 %d", i)
+		if base != "" {
+			mirrorNumber++
+			label = fmt.Sprintf("内置镜像 %d", mirrorNumber)
 		}
 		candidates = append(candidates, coreDownloadSource{base: base, label: label})
 	}
@@ -171,7 +227,7 @@ func reportDownloadProgress(progress func(DownloadProgress), update DownloadProg
 	}
 }
 
-// DownloadCore 下载并安装内核。多个下载源按序自动尝试：用户镜像（若有）→ 官方源 → 内置镜像；
+// DownloadCore 下载并安装内核。多个下载源按序自动尝试：用户镜像（若有）→ 内置镜像 → 官方源；
 // mirror 为 GitHub 下载前缀（如 https://ghproxy.net/https://github.com），空则不额外优先。
 func DownloadCore(dataDir, version, mirror string) error {
 	return DownloadCoreWithProgress(dataDir, version, mirror, nil)
@@ -218,7 +274,9 @@ func DownloadCoreWithProgress(dataDir, version, mirror string, progress func(Dow
 			continue
 		}
 		if err := installCoreBytes(dataDir, data); err != nil {
-			return err
+			update.Stage, update.Err = "verification_failed", err
+			reportDownloadProgress(progress, update)
+			return fmt.Errorf("%s 返回的内核无法通过校验: %w", source.label, err)
 		}
 		update.Stage = "completed"
 		reportDownloadProgress(progress, update)
@@ -302,10 +360,17 @@ func installCoreBytes(dataDir string, data []byte) error {
 	if runtime.GOOS == "linux" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		out, err := exec.CommandContext(ctx, tmp, "-v").Output()
+		out, err := exec.CommandContext(ctx, tmp, "-v").CombinedOutput()
 		if err != nil || !bytes.Contains(out, []byte("Mihomo")) {
 			os.Remove(tmp)
-			return fmt.Errorf("内核校验失败，文件可能不适用于当前平台")
+			return &CoreValidationError{
+				OS:       runtime.GOOS,
+				Arch:     runtime.GOARCH,
+				FileSize: len(data),
+				Cause:    err,
+				Output:   compactCoreDiagnostic(string(out)),
+				Hint:     coreValidationHint(err, string(out)),
+			}
 		}
 	}
 	final := CorePath(dataDir)

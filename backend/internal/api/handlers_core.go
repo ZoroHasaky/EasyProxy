@@ -161,7 +161,7 @@ func (s *Server) coreDownloadProgress(eventPrefix string) func(core.DownloadProg
 			details["total"] = update.Total
 		}
 		if update.Err != nil {
-			details["error"] = safeAuditError(update.Err)
+			details["error"] = safeCoreAuditError(update.Err)
 		}
 
 		event := eventPrefix + "." + update.Stage
@@ -177,6 +177,8 @@ func (s *Server) coreDownloadProgress(eventPrefix string) func(core.DownloadProg
 			summary = fmt.Sprintf("正在尝试下载 Mihomo 内核（%s，%d/%d）", update.Source, update.Attempt, update.Total)
 		case "failed":
 			summary, level = fmt.Sprintf("Mihomo 内核下载源失败，准备切换下一源（%s，%d/%d）", update.Source, update.Attempt, update.Total), "warning"
+		case "verification_failed":
+			summary, level = fmt.Sprintf("Mihomo 内核校验失败（%s，%d/%d）", update.Source, update.Attempt, update.Total), "error"
 		case "completed":
 			summary, level = "Mihomo 内核下载并校验完成", "success"
 		default:
@@ -217,7 +219,7 @@ func (s *Server) handleCoreDownload(w http.ResponseWriter, r *http.Request) {
 			s.dlErr = err.Error()
 			s.dlMu.Unlock()
 			log.Printf("[core] 内核下载失败: %v", err)
-			s.audit("core", "core.download", "error", "Mihomo 内核下载失败", map[string]any{"version": strings.TrimSpace(ver), "error": safeAuditError(err)})
+			s.audit("core", "core.download", "error", "Mihomo 内核下载失败", map[string]any{"version": strings.TrimSpace(ver), "error": safeCoreAuditError(err)})
 			return
 		}
 		log.Printf("[core] 内核下载完成，重启内核")
@@ -246,7 +248,7 @@ func (s *Server) handleCoreUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 	if err := core.InstallCoreFromUpload(s.dataDir, hdr.Filename, file); err != nil {
-		s.audit("core", "core.upload", "error", "内核文件安装失败", map[string]any{"file": hdr.Filename, "error": safeAuditError(err)})
+		s.audit("core", "core.upload", "error", "内核文件安装失败", map[string]any{"file": hdr.Filename, "error": safeCoreAuditError(err)})
 		writeErr(w, http.StatusBadRequest, "安装失败: "+err.Error())
 		return
 	}

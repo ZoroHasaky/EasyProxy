@@ -123,6 +123,21 @@ func safeAuditError(err error) string {
 	return truncateAuditText(auditURLPattern.ReplaceAllString(err.Error(), "[地址已隐藏]"))
 }
 
+// safeCoreAuditError 为内核安装与校验保留更长的诊断信息。执行输出可能是判断
+// 指令集、动态库或 noexec 挂载问题的唯一依据，仍会移除 URL 与敏感参数。
+func safeCoreAuditError(err error) string {
+	if err == nil {
+		return ""
+	}
+	value := auditURLPattern.ReplaceAllString(err.Error(), "[地址已隐藏]")
+	value = auditSensitiveValuePattern.ReplaceAllString(value, "$1[已隐藏]")
+	const limit = 1200
+	if len(value) > limit {
+		return value[:limit] + "…"
+	}
+	return value
+}
+
 func auditRoute(pattern, method string) (category, event, summary string, ok bool) {
 	switch pattern {
 	case "/api/subscriptions":

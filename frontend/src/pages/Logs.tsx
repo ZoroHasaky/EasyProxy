@@ -232,6 +232,12 @@ export default function LogsPage() {
                   </div>
                 );
               })()}
+              {selectedEntry.category !== "traffic" && asString(selectedEntry.details?.error) && (
+                <div className="grid gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-3 sm:grid-cols-[96px_minmax(0,1fr)]">
+                  <span className="text-muted-foreground">失败详情</span>
+                  <span className="whitespace-pre-wrap break-words font-mono text-destructive/90">{asString(selectedEntry.details?.error)}</span>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
