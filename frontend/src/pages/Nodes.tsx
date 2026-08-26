@@ -13,7 +13,6 @@ import {
   Pencil,
   Plus,
   Radio,
-  RefreshCw,
   Search,
   Server,
   Trash2,
@@ -48,12 +47,11 @@ import { SubscriptionsPanel } from "@/pages/Subscriptions";
 import { cn } from "@/lib/utils";
 
 function LatencyBadge({ node }: { node: ProxyNode }) {
-  if (!node.latency_at) return <span className="text-muted-foreground text-xs font-mono">未测速</span>;
-  if (!node.alive || node.latency === 0) return <Badge variant="destructive">超时</Badge>;
+  if (!node.latency_at) return <span className="whitespace-nowrap text-xs font-mono text-muted-foreground">未测速</span>;
+  if (!node.alive || node.latency === 0) return <Badge variant="destructive" className="whitespace-nowrap">超时</Badge>;
   const variant = node.latency < 200 ? "success" : node.latency < 600 ? "warning" : "secondary";
   return (
-    <Badge variant={variant as any} className="font-mono text-[11px]">
-      <Zap className="h-2.5 w-2.5" />
+    <Badge variant={variant as any} className="whitespace-nowrap font-mono text-[11px]">
       {node.latency} ms
     </Badge>
   );
@@ -341,7 +339,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
                       className="p-1 rounded-md text-muted-foreground hover:text-primary hover:bg-accent transition-colors"
                       title="单独测速"
                     >
-                      <RefreshCw className={cn("h-3 w-3", isTesting && "animate-spin text-primary")} />
+                      <Zap className={cn("h-3 w-3", isTesting && "animate-pulse text-primary")} />
                     </button>
                   </div>
                 </TableCell>

@@ -16,7 +16,6 @@ import {
 import { api, mihomo, MihomoConnection } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
 import {
   Table,
@@ -112,7 +111,7 @@ export default function ConnectionsPage() {
         <div>
           <h3 className="text-base font-bold tracking-tight text-foreground flex items-center gap-2">
             <Cable className="h-4.5 w-4.5 text-primary" />
-            活动连接监控 (Active Connections)
+            活动连接监控
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             当前活跃会话: {rawConns.length} 个 · 实时监视目标主机、分流规则与链路
@@ -164,7 +163,7 @@ export default function ConnectionsPage() {
             <TableHead className="w-36">来源地址</TableHead>
             <TableHead className="w-24">协议/网络</TableHead>
             <TableHead className="w-36">分流规则</TableHead>
-            <TableHead>代理链路 (Chains)</TableHead>
+            <TableHead>代理链路</TableHead>
             <TableHead className="w-32">传输总量</TableHead>
             <TableHead className="w-28">连接时长</TableHead>
             <TableHead className="w-16 text-right">操作</TableHead>
@@ -174,30 +173,30 @@ export default function ConnectionsPage() {
           {filtered.map((conn) => {
             const host = conn.metadata?.host || conn.metadata?.destinationIP;
             const sourceIP = conn.metadata?.sourceIP || "未知";
+            const destinationPort = conn.metadata?.destinationPort || "未知";
+            const sourcePort = conn.metadata?.sourcePort || "未知";
+            const network = conn.metadata?.network || "未知";
+            const protocol = conn.metadata?.type || "未知";
+            const chain = (conn.chains || []).join(" → ");
             return (
               <TableRow key={conn.id}>
                 <TableCell>
-                  <div className="font-semibold text-xs text-foreground/90 max-w-[260px] truncate">
-                    {host}:{conn.metadata?.destinationPort}
+                  <div className="font-semibold text-xs text-foreground/90 max-w-[260px] truncate" title={host}>
+                    {host || "未知"}
                   </div>
-                  {conn.metadata?.process && (
-                    <div className="text-[10px] text-muted-foreground truncate">
-                      进程: {conn.metadata.process}
-                    </div>
-                  )}
+                  <div className="mt-1 text-[10px] text-muted-foreground">端口: {destinationPort}</div>
                 </TableCell>
                 <TableCell>
                   <div className="max-w-[150px] truncate font-mono text-xs text-foreground/90" title={sourceIP}>
                     {sourceIP}
                   </div>
-                  {conn.metadata?.sourcePort && (
-                    <div className="text-[10px] text-muted-foreground">端口: {conn.metadata.sourcePort}</div>
-                  )}
+                  <div className="mt-1 text-[10px] text-muted-foreground">端口: {sourcePort}</div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline" className="text-[10px] font-mono uppercase">
-                    {conn.metadata?.network}/{conn.metadata?.type}
-                  </Badge>
+                  <div className="space-y-1 font-mono uppercase">
+                    <div className="text-xs font-medium text-foreground/90">{network}</div>
+                    <div className="text-[10px] text-muted-foreground">{protocol}</div>
+                  </div>
                 </TableCell>
                 <TableCell>
                   <div className="text-xs font-medium text-foreground/85 truncate max-w-[130px]" title={conn.rule}>
@@ -210,8 +209,8 @@ export default function ConnectionsPage() {
                   )}
                 </TableCell>
                 <TableCell>
-                  <div className="text-xs font-mono text-primary font-medium truncate max-w-[200px]" title={(conn.chains || []).join(" -> ")}>
-                    {(conn.chains || []).join(" → ")}
+                  <div className="text-xs font-mono text-primary font-medium truncate max-w-[200px]" title={chain}>
+                    {chain}
                   </div>
                 </TableCell>
                 <TableCell>

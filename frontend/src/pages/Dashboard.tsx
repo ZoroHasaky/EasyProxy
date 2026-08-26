@@ -122,7 +122,7 @@ export default function DashboardPage() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <CardTitle className="text-base">主代理出口（PROXY）</CardTitle>
+                  <CardTitle className="text-base">主代理出口</CardTitle>
                   <Badge variant="purple" className="text-xs">
                     当前使用: {proxyGroup.now ?? "-"}
                   </Badge>
@@ -255,7 +255,7 @@ export default function DashboardPage() {
       <Dialog open={nodeDialogOpen} onOpenChange={setNodeDialogOpen}>
         <DialogContent className="sm:max-w-xl max-h-[85vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>选择单节点直出 (PROXY)</DialogTitle>
+            <DialogTitle>选择单节点直出</DialogTitle>
             <DialogDescription>
               从全量代理节点中直接挑选作为 PROXY 出口
             </DialogDescription>

@@ -331,7 +331,7 @@ export default function KernelPage() {
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Mihomo 实时生成配置 (config.yaml)</DialogTitle>
+            <DialogTitle>实时生成配置</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-hidden rounded-xl border border-border/80 my-2">
             {preview.data ? (

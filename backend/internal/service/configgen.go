@@ -74,10 +74,12 @@ func DefaultGeoxURLs() map[string]string {
 
 // GeoxSources 读取 Geo 数据源，并兼容旧版 map[string]string 存储格式。
 func GeoxSources(st *store.Store) map[string][]string {
-	return geoxSourcesFromRaw(st.GetSetting("geox_urls", ""))
+	return GeoxSourcesFromRaw(st.GetSetting("geox_urls", ""))
 }
 
-func geoxSourcesFromRaw(raw string) map[string][]string {
+// GeoxSourcesFromRaw 将保存的 Geo 数据源 JSON 转为实际使用的候选地址列表，
+// 并兼容旧版 map[string]string 格式。
+func GeoxSourcesFromRaw(raw string) map[string][]string {
 	var sources map[string][]string
 	if raw != "" && json.Unmarshal([]byte(raw), &sources) == nil && len(sources) > 0 {
 		return normalizeGeoxSources(sources)
@@ -242,7 +244,7 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 	fmt.Fprintf(&sb, "external-controller: 127.0.0.1:%d\nsecret: %s\n\n", controllerPort, quote(secret))
 
 	if settings.getBool("geo_enabled", true) {
-		geox := activeGeoxURLs(geoxSourcesFromRaw(settings.get("geox_urls", "")))
+		geox := activeGeoxURLs(GeoxSourcesFromRaw(settings.get("geox_urls", "")))
 		if len(geox) > 0 {
 			sb.WriteString("geox-url:\n")
 			for _, k := range sortedKeys(geox) {
@@ -251,6 +253,9 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 		}
 		fmt.Fprintf(&sb, "geo-auto-update: %t\n", settings.getBool("geo_auto_update", false))
 		fmt.Fprintf(&sb, "geo-update-interval: %d\n", settings.getInt("geo_update_interval", 24))
+		// Geo 数据页管理的是 GeoIP.dat / GeoSite.dat；显式启用 dat 模式，
+		// 避免 Mihomo 默认改用 geoip.metadb，导致页面状态和实际路由数据不一致。
+		sb.WriteString("geodata-mode: true\n")
 		sb.WriteString("\n")
 	}
 

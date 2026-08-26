@@ -75,7 +75,7 @@ export default function TransparentProxyPage() {
         <div>
           <h3 className="text-base font-bold tracking-tight text-foreground flex items-center gap-2">
             <Network className="h-4.5 w-4.5 text-primary" />
-            透明代理与软路由模式 (TUN Mode)
+            透明代理与软路由模式
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             开启 auto-route 与 auto-redirect 接管全部系统及局域网流量，免客户端配置走代理

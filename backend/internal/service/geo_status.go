@@ -151,13 +151,19 @@ func geoDataFileMetadata(path string) (int, int, map[string]string, error) {
 	if err != nil {
 		return 0, 0, nil, err
 	}
+	return geoDataBytesMetadata(data)
+}
+
+// geoDataBytesMetadata 校验并统计已下载但尚未落盘的 Geo 数据，用于避免把
+// HTML 错误页或截断响应写入 GeoIP.dat / GeoSite.dat。
+func geoDataBytesMetadata(data []byte) (int, int, map[string]string, error) {
 	if len(data) == 0 {
 		return 0, 0, nil, fmt.Errorf("文件为空")
 	}
 	groups, entries := 0, 0
 	categories := map[string]string{}
 	var nestedErr error
-	err = scanProtoFields(data, func(field int, wire int, value []byte) {
+	err := scanProtoFields(data, func(field int, wire int, value []byte) {
 		if field != 1 || wire != 2 || nestedErr != nil {
 			return
 		}

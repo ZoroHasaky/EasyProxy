@@ -15,7 +15,10 @@ import (
 
 const auditLogLimit = 100
 
-var auditURLPattern = regexp.MustCompile(`https?://[^\s"']+`)
+var (
+	auditURLPattern            = regexp.MustCompile(`https?://[^\s"']+`)
+	auditSensitiveValuePattern = regexp.MustCompile(`(?i)(\b(?:password|passwd|token|secret|authorization)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)`)
+)
 
 type auditResponseWriter struct {
 	http.ResponseWriter
@@ -72,6 +75,45 @@ func truncateAuditText(value string) string {
 		return value
 	}
 	return value[:300] + "…"
+}
+
+// sanitizeCoreOutput 对 Mihomo 原始输出进行持久化前的脱敏。运行日志可能包含
+// 远程地址或认证字段，历史日志不应保留这些信息。
+func sanitizeCoreOutput(value string) string {
+	value = auditURLPattern.ReplaceAllString(strings.TrimSpace(value), "[地址已隐藏]")
+	value = auditSensitiveValuePattern.ReplaceAllString(value, "$1[已隐藏]")
+	return truncateAuditText(value)
+}
+
+func coreOutputLevel(value string) string {
+	upper := strings.ToUpper(value)
+	switch {
+	case strings.Contains(upper, "FATAL"), strings.Contains(upper, "PANIC"), strings.Contains(upper, "ERROR"), strings.Contains(upper, "FAIL"):
+		return "error"
+	case strings.Contains(upper, "WARN"):
+		return "warning"
+	default:
+		return "info"
+	}
+}
+
+func (s *Server) recordCoreOutput(line string) {
+	summary := sanitizeCoreOutput(line)
+	if summary == "" {
+		return
+	}
+	event := "core.output"
+	level := coreOutputLevel(summary)
+	upper := strings.ToUpper(line)
+	switch {
+	case strings.Contains(upper, "[GEO]"):
+		event = "core.geo"
+	case strings.Contains(line, "[easyproxy] 内核异常退出"):
+		event, level = "core.auto_restart", "warning"
+	case strings.Contains(line, "[easyproxy] 内核重启失败"):
+		event, level = "core.auto_restart", "error"
+	}
+	s.audit("core", event, level, summary, nil)
 }
 
 func safeAuditError(err error) string {

@@ -56,6 +56,7 @@ func TestGenerateConfigGeoSettings(t *testing.T) {
 		`geoip: "https://first.example/geoip.dat"`,
 		"geo-auto-update: true",
 		"geo-update-interval: 12",
+		"geodata-mode: true",
 	} {
 		if !strings.Contains(gen.YAML, want) {
 			t.Fatalf("config missing %q:\n%s", want, gen.YAML)

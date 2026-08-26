@@ -340,24 +340,117 @@ type settingsPayload struct {
 
 func (s *Server) handleGeoDataStatus(w http.ResponseWriter, r *http.Request) {
 	coreRunning := s.mgr.Status().State == core.StateRunning
+	sources, enabled, err := s.appliedGeoSettings()
+	if err != nil {
+		// 状态查询不能因已应用快照读取异常而整体失败；降级展示已保存设置，
+		// 但手动刷新仍会拒绝使用这份不确定的配置。
+		sources = service.GeoxSources(s.st)
+		enabled = s.st.GetSettingBool("geo_enabled", true)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"enabled":      s.st.GetSettingBool("geo_enabled", true),
+		"enabled":      enabled,
 		"core_running": coreRunning,
 		"items": service.GeoDataStatuses(
 			s.dataDir,
-			service.GeoxSources(s.st),
-			s.st.GetSettingBool("geo_enabled", true),
+			sources,
+			enabled,
 			coreRunning,
 		),
 	})
 }
 
-// handleRefreshGeoData 只请求运行中的 mihomo 刷新当前已应用配置对应的 Geo 数据。
+func (s *Server) appliedGeoSettings() (map[string][]string, bool, error) {
+	values, err := s.st.AppliedConfigSettings()
+	if err != nil {
+		return nil, false, err
+	}
+	return service.GeoxSourcesFromRaw(values["geox_urls"]), configBool(values, "geo_enabled", true), nil
+}
+
+// geoDataKindsWithoutActiveRules 找出当前内核配置不会自动初始化的 Geo 数据类型。
+// Mihomo 只有在实际配置中出现 GEOIP/GEOSITE 规则时才会下载对应数据；这里让
+// 用户主动点击“手动更新”时仍能把两个数据库完整落盘。
+func (s *Server) geoDataKindsWithoutActiveRules() ([]string, error) {
+	recognitionRules, err := s.st.ListRecognitionRules()
+	if err != nil {
+		return nil, err
+	}
+	outboundRules, err := s.st.ListOutboundRules()
+	if err != nil {
+		return nil, err
+	}
+	outboundEnabled := make(map[int64]bool, len(outboundRules))
+	for _, outbound := range outboundRules {
+		outboundEnabled[outbound.RecognitionID] = outbound.Enabled
+	}
+	active := map[string]bool{}
+	for _, rule := range recognitionRules {
+		if !rule.Enabled || !outboundEnabled[rule.ID] {
+			continue
+		}
+		switch strings.ToUpper(rule.Kind) {
+		case "GEOIP":
+			active["geoip"] = true
+		case "GEOSITE":
+			active["geosite"] = true
+		}
+	}
+	keys := make([]string, 0, 2)
+	for _, key := range []string{"geoip", "geosite"} {
+		if !active[key] {
+			keys = append(keys, key)
+		}
+	}
+	return keys, nil
+}
+
+func missingGeoDataKinds(items []service.GeoDataStatus) []string {
+	byKey := make(map[string]service.GeoDataStatus, len(items))
+	for _, item := range items {
+		byKey[item.Key] = item
+	}
+	missing := make([]string, 0, 2)
+	for _, key := range []string{"geoip", "geosite"} {
+		item, ok := byKey[key]
+		if !ok || (item.State != "loaded" && item.State != "ready") {
+			missing = append(missing, key)
+		}
+	}
+	return missing
+}
+
+func appendUniqueStrings(values []string, candidates ...string) []string {
+	seen := make(map[string]bool, len(values)+len(candidates))
+	for _, value := range values {
+		seen[value] = true
+	}
+	for _, value := range candidates {
+		if !seen[value] {
+			values = append(values, value)
+			seen[value] = true
+		}
+	}
+	return values
+}
+
+// handleRefreshGeoData 先请求运行中的 Mihomo 刷新已启用数据库；若配置中没有
+// GEOIP/GEOSITE 规则，Mihomo 会成功返回但不下载文件，因此再由面板按同一份
+// 已应用数据源补齐缺失或未初始化的数据库。
 // 未应用的 Geo 数据源仍保留在顶栏待应用清单中，不会被此次刷新提前使用。
 func (s *Server) handleRefreshGeoData(w http.ResponseWriter, r *http.Request) {
 	if !s.st.GetSettingBool("geo_enabled", true) {
 		s.audit("operation", "geo.refresh", "warning", "Geo 数据库刷新未执行：功能已禁用", nil)
 		writeErr(w, http.StatusBadRequest, "Geo 数据库已禁用，请先启用并应用配置")
+		return
+	}
+	sources, enabled, err := s.appliedGeoSettings()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "读取当前生效 Geo 配置失败: "+err.Error())
+		return
+	}
+	if !enabled {
+		s.audit("operation", "geo.refresh", "warning", "Geo 数据库刷新未执行：当前生效配置未启用", nil)
+		writeErr(w, http.StatusConflict, "当前生效配置未启用 Geo 数据，请先应用设置")
 		return
 	}
 	if s.mgr.Status().State != core.StateRunning {
@@ -370,8 +463,38 @@ func (s *Server) handleRefreshGeoData(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "刷新 Geo 数据库失败: "+err.Error())
 		return
 	}
-	s.audit("operation", "geo.refresh", "success", "Geo 数据库已刷新", nil)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Geo 数据库已按当前生效配置刷新"})
+
+	keys, err := s.geoDataKindsWithoutActiveRules()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "读取 Geo 识别规则失败: "+err.Error())
+		return
+	}
+	statuses := service.GeoDataStatuses(s.dataDir, sources, enabled, true)
+	keys = appendUniqueStrings(keys, missingGeoDataKinds(statuses)...)
+	downloaded, err := service.RefreshGeoDataFiles(s.dataDir, sources, keys, s.runningCoreProxyAddr())
+	if err != nil {
+		s.audit("operation", "geo.refresh", "error", "Geo 数据库刷新失败", map[string]any{"error": safeAuditError(err)})
+		writeErr(w, http.StatusBadGateway, "刷新 Geo 数据库失败: "+err.Error())
+		return
+	}
+
+	statuses = service.GeoDataStatuses(s.dataDir, sources, enabled, true)
+	if missing := missingGeoDataKinds(statuses); len(missing) > 0 {
+		err := fmt.Errorf("%s 文件未就绪", strings.Join(missing, "、"))
+		s.audit("operation", "geo.refresh", "error", "Geo 数据库刷新后文件仍未就绪", map[string]any{"error": safeAuditError(err)})
+		writeErr(w, http.StatusBadGateway, "刷新 Geo 数据库失败: "+err.Error())
+		return
+	}
+	refreshed := make([]string, 0, len(downloaded))
+	for _, item := range downloaded {
+		refreshed = append(refreshed, item.Name)
+	}
+	message := "Geo 数据库已按当前生效配置刷新"
+	if len(refreshed) > 0 {
+		message += "，已补齐 " + strings.Join(refreshed, "、")
+	}
+	s.audit("operation", "geo.refresh", "success", "Geo 数据库已刷新", map[string]any{"files": refreshed})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": message})
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {

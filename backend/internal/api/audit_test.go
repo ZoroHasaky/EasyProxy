@@ -85,4 +85,23 @@ func TestConnectionTraceIsDeduplicatedAndSanitized(t *testing.T) {
 	}
 }
 
+func TestCoreOutputIsPersistedAndSanitized(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	srv := New(st, t.TempDir(), "test")
+	srv.recordCoreOutput(`WARN downloading https://example.com/geo.dat?token=secret password=hunter2`)
+
+	items, _, err := st.ListAuditLogs(model.AuditLogFilter{Category: "core"})
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items=%#v err=%v", items, err)
+	}
+	entry := items[0]
+	if entry.Event != "core.output" || entry.Level != "warning" || strings.Contains(entry.Summary, "example.com") || strings.Contains(entry.Summary, "hunter2") || strings.Contains(entry.Summary, "secret") {
+		t.Fatalf("unexpected persisted core output=%#v", entry)
+	}
+}
+
 func modelAuditTraffic() model.AuditLogFilter { return model.AuditLogFilter{Category: "traffic"} }

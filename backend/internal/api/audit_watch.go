@@ -69,19 +69,8 @@ func (s *Server) watchCoreOutput(ctx context.Context) {
 			if !ok {
 				return
 			}
-			upper := strings.ToUpper(line)
-			switch {
-			case strings.Contains(upper, "[GEO]"):
-				level := "info"
-				if strings.Contains(upper, "FAIL") || strings.Contains(upper, "ERROR") {
-					level = "error"
-				}
-				s.audit("core", "core.geo", level, "Mihomo Geo 数据更新: "+truncateAuditText(line), nil)
-			case strings.Contains(line, "[easyproxy] 内核异常退出"):
-				s.audit("core", "core.auto_restart", "warning", truncateAuditText(line), nil)
-			case strings.Contains(line, "[easyproxy] 内核重启失败"):
-				s.audit("core", "core.auto_restart", "error", truncateAuditText(line), nil)
-			}
+			// 原始输出也进入持久化内核日志，日志页不再维护一套仅浏览器可见的输出框。
+			s.recordCoreOutput(line)
 		}
 	}
 }
