@@ -294,6 +294,17 @@ export interface CoreStatus {
   downloading: boolean;
   download_error: string;
   latest_version: string;
+  download_asset: CoreDownloadAsset;
+}
+
+export interface CoreDownloadAsset {
+  os: string;
+  architecture: string;
+  asset_arch: string;
+  variant: "standard" | "compatible" | "unsupported";
+  label: string;
+  reason: string;
+  missing_features?: string[];
 }
 
 export interface Settings {

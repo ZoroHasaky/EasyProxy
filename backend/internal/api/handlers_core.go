@@ -140,6 +140,7 @@ func (s *Server) handleCoreStatus(w http.ResponseWriter, r *http.Request) {
 		"downloading":       dlRunning,
 		"download_error":    dlErr,
 		"latest_version":    latest,
+		"download_asset":    core.RecommendedCoreDownloadAsset(),
 	})
 }
 

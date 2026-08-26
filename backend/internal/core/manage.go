@@ -116,6 +116,110 @@ func assetArch(goarch string) (string, error) {
 	return "", fmt.Errorf("不支持的架构: %s", goarch)
 }
 
+// CoreDownloadAsset 是当前运行环境适用的 Mihomo 下载文件类型。
+type CoreDownloadAsset struct {
+	OS              string   `json:"os"`
+	Architecture    string   `json:"architecture"`
+	AssetArch       string   `json:"asset_arch"`
+	Variant         string   `json:"variant"`
+	Label           string   `json:"label"`
+	Reason          string   `json:"reason"`
+	MissingFeatures []string `json:"missing_features,omitempty"`
+}
+
+var amd64V3Features = []struct {
+	label string
+	flags []string
+}{
+	{label: "AVX", flags: []string{"avx"}},
+	{label: "AVX2", flags: []string{"avx2"}},
+	{label: "BMI1", flags: []string{"bmi1"}},
+	{label: "BMI2", flags: []string{"bmi2"}},
+	{label: "F16C", flags: []string{"f16c"}},
+	{label: "FMA", flags: []string{"fma"}},
+	{label: "LZCNT", flags: []string{"lzcnt", "abm"}},
+	{label: "MOVBE", flags: []string{"movbe"}},
+}
+
+func cpuFlags(cpuInfo string) map[string]bool {
+	flags := map[string]bool{}
+	for _, line := range strings.Split(cpuInfo, "\n") {
+		parts := strings.Fields(line)
+		if len(parts) < 3 || !strings.EqualFold(parts[0], "flags") {
+			continue
+		}
+		for _, flag := range parts[2:] {
+			flags[strings.ToLower(flag)] = true
+		}
+	}
+	return flags
+}
+
+func missingAMD64V3Features(flags map[string]bool) []string {
+	missing := make([]string, 0)
+	for _, feature := range amd64V3Features {
+		supported := false
+		for _, flag := range feature.flags {
+			if flags[flag] {
+				supported = true
+				break
+			}
+		}
+		if !supported {
+			missing = append(missing, feature.label)
+		}
+	}
+	return missing
+}
+
+func recommendedCoreDownloadAsset(goos, goarch, cpuInfo string) CoreDownloadAsset {
+	assetArch, err := assetArch(goarch)
+	if err != nil {
+		return CoreDownloadAsset{
+			OS:           goos,
+			Architecture: goarch,
+			Variant:      "unsupported",
+			Label:        "不支持的架构",
+			Reason:       err.Error(),
+		}
+	}
+	asset := CoreDownloadAsset{
+		OS:           goos,
+		Architecture: goarch,
+		AssetArch:    assetArch,
+		Variant:      "standard",
+		Label:        "标准版",
+		Reason:       fmt.Sprintf("当前环境为 %s/%s，将使用标准内核", goos, goarch),
+	}
+	if goos != "linux" || goarch != "amd64" {
+		return asset
+	}
+
+	flags := cpuFlags(cpuInfo)
+	missing := missingAMD64V3Features(flags)
+	if len(missing) == 0 {
+		asset.Reason = "已检测到 AMD64 v3 指令集，将使用标准 AMD64 内核"
+		return asset
+	}
+	asset.AssetArch = "amd64-compatible"
+	asset.Variant = "compatible"
+	asset.Label = "兼容版"
+	asset.MissingFeatures = missing
+	if len(flags) == 0 {
+		asset.Reason = "无法读取 CPU 指令集，为保证可运行性将使用 AMD64 兼容版内核"
+	} else {
+		asset.Reason = fmt.Sprintf("CPU 缺少 AMD64 v3 指令集（%s），将使用 AMD64 兼容版内核", strings.Join(missing, "、"))
+	}
+	return asset
+}
+
+// RecommendedCoreDownloadAsset 检测当前 CPU 指令集并选择可运行的 Mihomo 内核文件。
+// 普通 amd64 版本要求 AMD64 v3；不满足或无法检测时选择兼容版以避免下载后无法运行。
+func RecommendedCoreDownloadAsset() CoreDownloadAsset {
+	cpuInfo, _ := os.ReadFile("/proc/cpuinfo")
+	return recommendedCoreDownloadAsset(runtime.GOOS, runtime.GOARCH, string(cpuInfo))
+}
+
 // DownloadProgress 是下载内核时的非敏感进度信息。Source 仅为显示名称，不包含完整 URL，
 // 以避免自定义镜像地址中的认证参数写入操作日志。
 type DownloadProgress struct {
@@ -247,9 +351,9 @@ func DownloadCoreWithProgress(dataDir, version, mirror string, progress func(Dow
 		}
 		version = v
 	}
-	arch, err := assetArch(runtime.GOARCH)
-	if err != nil {
-		return err
+	asset := RecommendedCoreDownloadAsset()
+	if asset.Variant == "unsupported" {
+		return fmt.Errorf("%s", asset.Reason)
 	}
 
 	sources := coreDownloadSources(mirror)
@@ -261,7 +365,7 @@ func DownloadCoreWithProgress(dataDir, version, mirror string, progress func(Dow
 			break
 		}
 		u := fmt.Sprintf("%s/%s/releases/download/%s/mihomo-linux-%s-%s.gz",
-			source.base, CoreRepo, version, arch, version)
+			source.base, CoreRepo, version, asset.AssetArch, version)
 		update := DownloadProgress{Source: source.label, Attempt: i + 1, Total: len(sources), Version: version}
 		reportDownloadProgress(progress, DownloadProgress{Stage: "attempt", Source: update.Source, Attempt: update.Attempt, Total: update.Total, Version: update.Version})
 		log.Printf("[core] 尝试下载源: %s", u)

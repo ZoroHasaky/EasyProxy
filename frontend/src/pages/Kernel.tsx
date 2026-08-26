@@ -213,6 +213,20 @@ export default function KernelPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            {core.data?.download_asset && (
+              <div className={cn(
+                "flex gap-2.5 rounded-xl border p-2.5 text-xs",
+                core.data.download_asset.variant === "compatible"
+                  ? "border-amber-500/25 bg-amber-500/5 text-amber-700 dark:text-amber-300"
+                  : "border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
+              )}>
+                {core.data.download_asset.variant === "compatible" ? <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
+                <div className="min-w-0 space-y-0.5">
+                  <div className="font-semibold">在线下载将使用：{core.data.download_asset.label}（linux-{core.data.download_asset.asset_arch}）</div>
+                  <p className="leading-relaxed opacity-85">{core.data.download_asset.reason}</p>
+                </div>
+              </div>
+            )}
             <div className="flex gap-2">
               <Input
                 placeholder="内核版本 (留空默认 latest)"
@@ -233,7 +247,7 @@ export default function KernelPage() {
             </div>
 
             <div className="pt-2 border-t border-border/50 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">或者手动上传内核:</span>
+              <span className="text-xs text-muted-foreground">或者手动上传内核（建议 linux-{core.data?.download_asset?.asset_arch || "amd64"}）:</span>
               <input
                 ref={coreFileInputRef}
                 type="file"

@@ -75,3 +75,21 @@ func TestCoreValidationErrorIncludesDiagnostics(t *testing.T) {
 		}
 	}
 }
+
+func TestRecommendedCoreDownloadAsset(t *testing.T) {
+	v3CPUInfo := "flags\t\t: fpu avx avx2 bmi1 bmi2 f16c fma lzcnt movbe\n"
+	standard := recommendedCoreDownloadAsset("linux", "amd64", v3CPUInfo)
+	if standard.Variant != "standard" || standard.AssetArch != "amd64" {
+		t.Fatalf("v3 asset = %#v", standard)
+	}
+
+	compatible := recommendedCoreDownloadAsset("linux", "amd64", "flags : fpu sse2\n")
+	if compatible.Variant != "compatible" || compatible.AssetArch != "amd64-compatible" || len(compatible.MissingFeatures) == 0 {
+		t.Fatalf("compatible asset = %#v", compatible)
+	}
+
+	arm64 := recommendedCoreDownloadAsset("linux", "arm64", "")
+	if arm64.Variant != "standard" || arm64.AssetArch != "arm64" {
+		t.Fatalf("arm64 asset = %#v", arm64)
+	}
+}
