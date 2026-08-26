@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="easyproxy-brand" x1="8" y1="5" x2="57" y2="61" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8488FF"/>
+      <stop offset="1" stop-color="#5456E9"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="18" fill="url(#easyproxy-brand)"/>
+  <path fill="#fff" d="M37.1 11.5 17 35.2h13.4L26.9 52.5 47 28.8H33.6z"/>
+</svg>

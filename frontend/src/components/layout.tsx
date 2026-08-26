@@ -20,7 +20,6 @@ import {
   Sun,
   Terminal,
   X,
-  Zap,
   Sparkles,
   Wrench,
   ArrowUp,
@@ -85,9 +84,7 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
     <div className="flex flex-col h-full">
       {/* 品牌区 */}
       <div className={cn("flex h-16 items-center gap-3 border-b border-border/60 px-4", collapsed && "justify-center px-2")}>
-        <div className="relative flex items-center justify-center h-10 w-10 rounded-2xl bg-gradient-to-tr from-primary to-indigo-400 text-white shadow-md shadow-primary/25">
-          <Zap className="h-5 w-5 fill-white" />
-        </div>
+        <img src="/easyproxy-logo.svg" alt="EasyProxy" className="h-10 w-10 shrink-0 rounded-2xl shadow-md shadow-primary/25" />
         {!collapsed && (
           <div className="flex flex-col">
             <span className="font-bold text-base tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">

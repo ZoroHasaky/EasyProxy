@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { KeyRound, Lock, ArrowRight, Zap, ShieldCheck } from "lucide-react";
+import { KeyRound, Lock, ArrowRight, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
 export default function LoginPage({ onDone }: { onDone: () => void }) {
@@ -34,23 +33,19 @@ export default function LoginPage({ onDone }: { onDone: () => void }) {
 
       <Card className="w-full max-w-md border-border/80 bg-card/75 backdrop-blur-2xl shadow-2xl z-10">
         <CardHeader className="text-center pb-2 pt-8">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-primary to-indigo-400 text-white shadow-lg shadow-primary/30 mb-3">
-            <Zap className="h-7 w-7 fill-white" />
-          </div>
+          <img src="/easyproxy-logo.svg" alt="EasyProxy" className="mx-auto mb-3 h-14 w-14 rounded-2xl shadow-lg shadow-primary/30" />
           <CardTitle className="text-2xl font-black tracking-tight">EasyProxy</CardTitle>
           <CardDescription className="text-xs text-muted-foreground mt-1">
-            请输入管理密码以进入控制面板
+            即刻连接世界
           </CardDescription>
         </CardHeader>
         <CardContent className="p-8 pt-4">
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs">访问密码</Label>
+            <div>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   type="password"
-                  placeholder="输入管理密码（初次部署见 docker logs）"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-10"

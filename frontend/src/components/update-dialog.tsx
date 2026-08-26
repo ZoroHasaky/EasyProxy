@@ -12,6 +12,17 @@ import { useUpdate } from "@/contexts/update-state";
 import { ArrowUpCircle, CheckCircle2, Loader2, Sparkles } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
 
+const UPDATE_STATUS_LABELS = {
+  idle: "等待更新",
+  checking: "检查更新",
+  downloading: "下载更新",
+  verifying: "校验更新包",
+  installing: "安装更新",
+  restarting: "重启服务",
+  ready: "更新已就绪",
+  error: "更新失败",
+} as const;
+
 export function UpdateDialog() {
   const {
     dialogOpen,
@@ -31,6 +42,7 @@ export function UpdateDialog() {
   const checkFailed = Boolean(checkError || checkData?.error);
   const current = checkData?.current || "未知";
   const latest = checkData?.latest || "未知";
+  const statusLabel = status ? UPDATE_STATUS_LABELS[status.state] : "";
 
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -84,7 +96,7 @@ export function UpdateDialog() {
               <div className="flex items-center justify-between text-xs font-medium">
                 <span className="flex items-center gap-1.5 text-primary">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  状态: {status.state}
+                  状态: {statusLabel}
                 </span>
                 <span>{status.percent}%</span>
               </div>
