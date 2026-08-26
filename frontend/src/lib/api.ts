@@ -250,6 +250,16 @@ export interface GenResult {
 
 export interface MetaInfo {
   version: string;
+  system: {
+    release_repo: string;
+    commit: string;
+    build_type: string;
+    build_time: string;
+    deployment: string;
+    go_version: string;
+    architecture: string;
+    timezone: string;
+  };
   core: {
     installed: boolean;
     version: string;
@@ -288,8 +298,6 @@ export interface Settings {
   geo_update_interval: number;
   geox_urls: Record<string, string[]>;
   default_geox_urls: Record<string, string[]>;
-  update_repo: string;
-  update_via_proxy: boolean;
   core_mirror: string;
 }
 

@@ -1,81 +1,126 @@
-import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Sparkles, Zap } from "lucide-react";
+import { useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Clock, KeyRound, Lock, Server, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import { api, Settings as SettingsType } from "@/lib/api";
+import { api, MetaInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { useUpdate } from "@/contexts/update-state";
+
+function formatTime(value?: string) {
+  if (!value) return "未记录";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "未记录" : date.toLocaleString("zh-CN", { hour12: false });
+}
 
 export default function SettingsPage() {
-  const qc = useQueryClient();
-  const { setDialogOpen } = useUpdate();
-  const [form, setForm] = useState<SettingsType | null>(null);
-  const settingsQuery = useQuery({
-    queryKey: ["settings"],
-    queryFn: () => api.get<SettingsType>("/api/settings"),
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const metaQuery = useQuery({
+    queryKey: ["meta"],
+    queryFn: () => api.get<MetaInfo>("/api/meta"),
+    refetchInterval: 30_000,
   });
-
-  useEffect(() => {
-    if (!form && settingsQuery.data) setForm({ ...settingsQuery.data });
-  }, [settingsQuery.data, form]);
-
-  const patch = (payload: Partial<SettingsType>) => setForm((current) => (current ? { ...current, ...payload } : current));
-  const saveMutation = useMutation({
-    mutationFn: (payload: Partial<SettingsType>) => api.put("/api/settings", payload),
+  const passwordMutation = useMutation({
+    mutationFn: () => api.post<{ ok: boolean }>("/api/password", { old_password: oldPassword, new_password: newPassword }),
     onSuccess: () => {
-      toast.success("面板更新设置已保存并生效");
-      qc.invalidateQueries({ queryKey: ["settings"] });
+      setOldPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      toast.success("管理密码已修改");
     },
     onError: (error: any) => toast.error(error.message),
   });
 
-  if (!form) return <div className="p-8 text-center text-xs text-muted-foreground">加载设置中…</div>;
+  const submitPassword = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (newPassword.length < 8) {
+      toast.error("新密码至少 8 位");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("两次输入的新密码不一致");
+      return;
+    }
+    passwordMutation.mutate();
+  };
+
+  const meta = metaQuery.data;
+  const system = meta?.system;
+  const version = meta?.version ? (meta.version.startsWith("v") ? meta.version : `v${meta.version}`) : "读取中…";
+  const details = [
+    { label: "版本", value: version, hint: system?.build_type || "" },
+    { label: "提交", value: system?.commit || "未嵌入", mono: true },
+    { label: "构建时间", value: formatTime(system?.build_time) },
+    { label: "更新仓库", value: system?.release_repo || "zorohasaky/easyproxy", mono: true },
+    { label: "部署方式", value: system?.deployment || "读取中…" },
+    { label: "Go 版本", value: system?.go_version || "读取中…", mono: true },
+    { label: "系统 / 架构", value: system?.architecture || "读取中…", mono: true },
+    { label: "服务时区", value: system?.timezone || "读取中…", mono: true },
+  ];
 
   return (
     <div className="space-y-6">
-      <div className="relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-r from-primary/15 via-indigo-500/10 to-purple-500/15 p-8 shadow-sm">
-        <div className="relative z-10 flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-white shadow-xl shadow-primary/30">
-              <Zap className="h-8 w-8 fill-white" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-black tracking-tight text-foreground">EasyProxy</h2>
-              <p className="mt-1 text-xs text-muted-foreground">现代化节点聚合 · 可视化分流规则 · Mihomo 内核面板</p>
-            </div>
+      <section className="relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-r from-primary/15 via-indigo-500/10 to-purple-500/15 p-6 shadow-sm sm:p-8">
+        <div className="relative z-10 flex items-start gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary text-white shadow-xl shadow-primary/30">
+            <Server className="h-7 w-7" />
           </div>
-          <Button variant="gradient" onClick={() => setDialogOpen(true)} className="shrink-0">
-            <Sparkles className="h-4 w-4" />
-            检查系统更新
-          </Button>
+          <div>
+            <h2 className="text-xl font-black tracking-tight text-foreground">系统信息</h2>
+            <p className="mt-1 text-xs text-muted-foreground">当前 EasyProxy 服务的构建与运行环境</p>
+          </div>
         </div>
-      </div>
-      <Card>
+
+        <div className="relative z-10 mt-6 grid grid-cols-1 gap-x-10 gap-y-5 border-t border-primary/15 pt-5 sm:grid-cols-2 lg:grid-cols-3">
+          {details.map((item) => (
+            <div key={item.label} className="min-w-0">
+              <div className="text-xs text-muted-foreground">{item.label}</div>
+              <div className={`mt-1 truncate text-sm font-semibold text-foreground ${item.mono ? "font-mono" : ""}`} title={item.value}>
+                {item.value}
+              </div>
+              {item.hint && <div className="mt-1 inline-flex rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">{item.hint}</div>}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <Card className="border-border/80">
         <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-primary/10 p-2 text-primary"><KeyRound className="h-4.5 w-4.5" /></div>
             <div>
-              <CardTitle className="text-base font-bold">面板自更新与仓库地址</CardTitle>
-              <CardDescription>支持绑定官方仓库或个人 fork 的 release 发布地址</CardDescription>
+              <CardTitle className="text-base font-bold">修改管理密码</CardTitle>
+              <CardDescription>新密码至少 8 位；修改后会立即生效。</CardDescription>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>GitHub Release 仓库（owner/repo）</Label>
-            <Input value={form.update_repo || ""} placeholder="例如 ZoroHasaky/EasyProxy" onChange={(event) => patch({ update_repo: event.target.value })} onBlur={() => saveMutation.mutate({ update_repo: form.update_repo })} />
-          </div>
-          <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/40 p-3.5">
-            <div className="space-y-0.5">
-              <div className="text-xs font-semibold">通过本地代理拉取面板更新</div>
-              <div className="text-[11px] text-muted-foreground">当直连 GitHub 较慢时建议开启此项</div>
+        <CardContent>
+          <form className="space-y-4" onSubmit={submitPassword}>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="current-password">当前密码</Label>
+                <Input id="current-password" type="password" autoComplete="current-password" value={oldPassword} onChange={(event) => setOldPassword(event.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="new-password">新密码</Label>
+                <Input id="new-password" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="confirm-password">确认新密码</Label>
+                <Input id="confirm-password" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+              </div>
             </div>
-            <Switch checked={form.update_via_proxy} onCheckedChange={(value) => { patch({ update_via_proxy: value }); saveMutation.mutate({ update_via_proxy: value }); }} />
-          </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />密码仅以加密摘要形式保存</div>
+              <Button type="submit" size="sm" disabled={passwordMutation.isPending || !oldPassword || !newPassword || !confirmPassword}>
+                {passwordMutation.isPending ? <Clock className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />}
+                {passwordMutation.isPending ? "修改中…" : "确认修改"}
+              </Button>
+            </div>
+          </form>
         </CardContent>
       </Card>
     </div>

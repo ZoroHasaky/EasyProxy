@@ -32,12 +32,12 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { formatBytes, formatSpeed, formatDuration, cn } from "@/lib/utils";
+import { formatBytes } from "@/lib/utils";
 
 export default function ConnectionsPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<"speed" | "time" | "traffic">("speed");
+  const [sortBy, setSortBy] = useState<"speed" | "traffic">("speed");
 
   const connsQuery = useQuery({
     queryKey: ["connections"],
@@ -98,7 +98,7 @@ export default function ConnectionsPage() {
         const tb = (b.download || 0) + (b.upload || 0);
         return tb - ta;
       }
-      return new Date(b.start).getTime() - new Date(a.start).getTime();
+      return 0;
     });
 
     return list;
@@ -149,7 +149,6 @@ export default function ConnectionsPage() {
             className="h-9 text-xs"
           >
             <option value="speed">按实时速度降序</option>
-            <option value="time">按连接时长降序</option>
             <option value="traffic">按传输流量降序</option>
           </Select>
         </div>
@@ -159,13 +158,12 @@ export default function ConnectionsPage() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>目标地址 / 端口</TableHead>
+            <TableHead>目标地址</TableHead>
             <TableHead className="w-36">来源地址</TableHead>
             <TableHead className="w-24">协议/网络</TableHead>
             <TableHead className="w-36">分流规则</TableHead>
             <TableHead>代理链路</TableHead>
             <TableHead className="w-32">传输总量</TableHead>
-            <TableHead className="w-28">连接时长</TableHead>
             <TableHead className="w-16 text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
@@ -177,7 +175,9 @@ export default function ConnectionsPage() {
             const sourcePort = conn.metadata?.sourcePort || "未知";
             const network = conn.metadata?.network || "未知";
             const protocol = conn.metadata?.type || "未知";
-            const chain = (conn.chains || []).join(" → ");
+            const chainItems = (conn.chains || []).filter(Boolean);
+            const chain = chainItems.join(" → ") || "直连";
+            const proxyNode = chainItems[chainItems.length - 1] || "直连";
             return (
               <TableRow key={conn.id}>
                 <TableCell>
@@ -209,8 +209,13 @@ export default function ConnectionsPage() {
                   )}
                 </TableCell>
                 <TableCell>
-                  <div className="text-xs font-mono text-primary font-medium truncate max-w-[200px]" title={chain}>
-                    {chain}
+                  <div className="max-w-[220px]">
+                    <div className="truncate text-xs font-medium text-foreground/90" title={proxyNode}>
+                      {proxyNode}
+                    </div>
+                    <div className="mt-1 truncate font-mono text-[10px] text-primary" title={chain}>
+                      链路：{chain}
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell>
@@ -218,9 +223,6 @@ export default function ConnectionsPage() {
                     <div className="text-emerald-500">↓ {formatBytes(conn.download)}</div>
                     <div className="text-sky-500">↑ {formatBytes(conn.upload)}</div>
                   </div>
-                </TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {formatDuration(conn.start)}
                 </TableCell>
                 <TableCell className="text-right">
                   <Button

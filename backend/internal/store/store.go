@@ -216,6 +216,9 @@ func (s *Store) migrate() error {
 	if err := s.removeImplicitGeoIPRuleFromAppliedConfig(); err != nil {
 		return fmt.Errorf("remove implicit GeoIP rule from applied config: %w", err)
 	}
+	if err := s.removeObsoletePanelUpdateSettings(); err != nil {
+		return fmt.Errorf("remove obsolete panel update settings: %w", err)
+	}
 	if err := s.initializeAppliedConfigSettings(); err != nil {
 		return fmt.Errorf("initialize applied config settings: %w", err)
 	}
@@ -223,6 +226,13 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("prune audit logs: %w", err)
 	}
 	return nil
+}
+
+// removeObsoletePanelUpdateSettings 移除旧版可配置更新源。面板更新现在固定使用
+// 官方仓库并直连下载，旧值不应继续留在持久化设置中造成误导。
+func (s *Store) removeObsoletePanelUpdateSettings() error {
+	_, err := s.db.Exec(`DELETE FROM settings WHERE key IN ('update_repo', 'update_via_proxy')`)
+	return err
 }
 
 // migrateOutboundRulesBuiltinTargets 移除旧表对 proxy_groups 的外键约束，使

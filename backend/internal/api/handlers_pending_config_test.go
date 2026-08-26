@@ -29,7 +29,7 @@ func TestSettingsPutReturnsAndMaintainsPendingConfigChanges(t *testing.T) {
 		srv.handlePutSettings(rec, req)
 		return rec
 	}
-	rec := put(`{"mixed_port":18080,"update_repo":"owner/repo"}`)
+	rec := put(`{"mixed_port":18080,"update_repo":"owner/repo","update_via_proxy":true}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT status=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -53,8 +53,17 @@ func TestSettingsPutReturnsAndMaintainsPendingConfigChanges(t *testing.T) {
 		updated.Pending.Items[0].Fields[0] != "mixed_port" || updated.Pending.Items[0].Status != store.PendingConfigStatusPending {
 		t.Fatalf("unexpected PUT response: %s", rec.Body.String())
 	}
-	if got := st.GetSetting("update_repo", ""); got != "owner/repo" {
-		t.Fatalf("panel-only setting was not saved: %q", got)
+	if got := st.GetSetting("update_repo", ""); got != "" {
+		t.Fatalf("deprecated update repo must not be saved: %q", got)
+	}
+	if got := st.GetSetting("update_via_proxy", ""); got != "" {
+		t.Fatalf("deprecated update proxy setting must not be saved: %q", got)
+	}
+	if got := srv.updateRepo(); got != DefaultUpdateRepo {
+		t.Fatalf("update repo=%q, want fixed %q", got, DefaultUpdateRepo)
+	}
+	if proxy := srv.updateProxyAddr(); proxy != "" {
+		t.Fatalf("panel update must use direct connection, got proxy %q", proxy)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config/pending", nil)
@@ -207,5 +216,38 @@ func TestLatencyChecksDoNotApplyPendingSystemConfig(t *testing.T) {
 	changes, err := st.ListPendingConfigChanges()
 	if err != nil || len(changes) != 2 {
 		t.Fatalf("latency checks changed pending settings: %#v, %v", changes, err)
+	}
+}
+
+func TestMetaIncludesSystemInformation(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	srv := New(st, t.TempDir(), "1.2.3")
+	req := httptest.NewRequest(http.MethodGet, "/api/meta", nil)
+	rec := httptest.NewRecorder()
+	srv.handleMeta(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("meta status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var meta struct {
+		Version string `json:"version"`
+		System  struct {
+			ReleaseRepo  string `json:"release_repo"`
+			Commit       string `json:"commit"`
+			BuildType    string `json:"build_type"`
+			Architecture string `json:"architecture"`
+			GoVersion    string `json:"go_version"`
+			Timezone     string `json:"timezone"`
+		} `json:"system"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta.Version != "1.2.3" || meta.System.ReleaseRepo != DefaultUpdateRepo || meta.System.BuildType != "正式发布" ||
+		meta.System.Architecture == "" || meta.System.GoVersion == "" || meta.System.Timezone == "" {
+		t.Fatalf("unexpected meta response: %s", rec.Body.String())
 	}
 }

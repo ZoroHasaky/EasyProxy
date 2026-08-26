@@ -4,6 +4,7 @@ import {
   Activity,
   Cable,
   Download,
+  Eye,
   Filter,
   RefreshCw,
   Search,
@@ -15,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type CategoryFilter = "all" | AuditLogCategory;
 type LevelFilter = "all" | AuditLogLevel;
@@ -52,6 +54,15 @@ function asStringList(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function formatDetails(details?: Record<string, unknown>) {
+  try {
+    const text = JSON.stringify(details ?? {}, null, 2);
+    return text === "{}" ? "无附加字段" : text;
+  } catch {
+    return "附加字段无法显示";
+  }
+}
+
 function AuditLogDetails({ entry }: { entry: AuditLog }) {
   // 兼容旧版服务端曾省略 details 字段的历史日志，避免单条日志导致整页渲染失败。
   const details = entry.details ?? {};
@@ -62,13 +73,13 @@ function AuditLogDetails({ entry }: { entry: AuditLog }) {
     const route = chains.join(" → ");
     return (
       <>
-        {rule && <span className="shrink-0 text-muted-foreground">命中规则：<span className="font-mono text-foreground/80">{rule}</span></span>}
-        {route && <span className="shrink-0 text-muted-foreground" title={route}>代理链路：<span className="font-mono text-primary">{route}</span></span>}
+        {rule && <span className="text-muted-foreground"> · 命中规则：<span className="font-mono text-foreground/80">{rule}</span></span>}
+        {route && <span className="text-muted-foreground"> · 代理链路：<span className="font-mono text-primary">{route}</span></span>}
       </>
     );
   }
   const error = asString(details.error);
-  if (error) return <span className="shrink-0 text-destructive/90">原因：{error}</span>;
+  if (error) return <span className="text-destructive/90"> · 原因：{error}</span>;
   return null;
 }
 
@@ -76,6 +87,7 @@ export default function LogsPage() {
   const [category, setCategory] = useState<CategoryFilter>("all");
   const [level, setLevel] = useState<LevelFilter>("all");
   const [search, setSearch] = useState("");
+  const [selectedEntry, setSelectedEntry] = useState<AuditLog | null>(null);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -158,13 +170,25 @@ export default function LogsPage() {
         </div>
         <div className="divide-y divide-border/60">
           {entries.map((entry) => (
-            <div key={entry.id} className="flex items-center gap-2 overflow-x-auto whitespace-nowrap px-4 py-2.5 text-xs transition-colors hover:bg-muted/30">
+            <div key={entry.id} className="flex min-w-0 items-center gap-2 overflow-hidden px-4 py-2.5 text-xs transition-colors hover:bg-muted/30">
+              <Button
+                variant="ghost"
+                size="iconSm"
+                className="shrink-0 text-muted-foreground hover:text-primary"
+                title="查看完整日志"
+                onClick={() => setSelectedEntry(entry)}
+              >
+                <Eye className="h-3.5 w-3.5" />
+                <span className="sr-only">查看完整日志</span>
+              </Button>
               <span className="shrink-0 font-mono text-muted-foreground">{formatTime(entry.created_at)}</span>
               <Badge variant={categoryVariant(entry.category) as any} className="shrink-0 text-[10px]">{CATEGORY_LABELS[entry.category]}</Badge>
               <Badge variant={levelVariant(entry.level) as any} className="shrink-0 text-[10px] uppercase">{entry.level}</Badge>
               {entry.category === "traffic" ? <Cable className="h-3.5 w-3.5 shrink-0 text-purple-500" /> : <Activity className="h-3.5 w-3.5 shrink-0 text-primary" />}
-              <span className="shrink-0 font-medium text-foreground/90">{entry.summary}</span>
-              <AuditLogDetails entry={entry} />
+              <div className="min-w-0 flex-1 truncate whitespace-nowrap" title={entry.summary}>
+                <span className="font-medium text-foreground/90">{entry.summary}</span>
+                <AuditLogDetails entry={entry} />
+              </div>
             </div>
           ))}
           {auditLogs.isLoading && <div className="p-10 text-center text-xs text-muted-foreground">正在读取日志…</div>}
@@ -180,6 +204,36 @@ export default function LogsPage() {
           </div>
         )}
       </Card>
+
+      <Dialog open={Boolean(selectedEntry)} onOpenChange={(open) => !open && setSelectedEntry(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>日志详情</DialogTitle>
+            <DialogDescription>查看该条日志的完整内容与附加字段。</DialogDescription>
+          </DialogHeader>
+          {selectedEntry && (
+            <div className="space-y-4 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={categoryVariant(selectedEntry.category) as any}>{CATEGORY_LABELS[selectedEntry.category]}</Badge>
+                <Badge variant={levelVariant(selectedEntry.level) as any} className="uppercase">{selectedEntry.level}</Badge>
+                <span className="font-mono text-muted-foreground">{formatTime(selectedEntry.created_at)}</span>
+              </div>
+              <div className="grid gap-3 rounded-xl border border-border/70 bg-muted/20 p-3 sm:grid-cols-[96px_minmax(0,1fr)]">
+                <span className="text-muted-foreground">事件编码</span>
+                <span className="break-all font-mono text-foreground/90">{selectedEntry.event}</span>
+                <span className="text-muted-foreground">日志摘要</span>
+                <span className="whitespace-pre-wrap break-words font-medium text-foreground/90">{selectedEntry.summary}</span>
+              </div>
+              <div>
+                <div className="mb-1.5 text-xs font-semibold text-muted-foreground">附加字段</div>
+                <pre className="max-h-[45vh] overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-xl border border-border/70 bg-muted/30 p-3 font-mono text-[11px] leading-relaxed text-foreground/85">
+                  {formatDetails(selectedEntry.details)}
+                </pre>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

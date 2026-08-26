@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +26,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	st := s.mgr.Status()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version": s.version,
+		"system":  s.systemInfo(),
 		"core": map[string]any{
 			"installed":    s.coreInstalled(),
 			"version":      core.InstalledCoreVersion(s.dataDir),
@@ -34,6 +37,63 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 			"last_error":   st.LastError,
 		},
 	})
+}
+
+func (s *Server) systemInfo() map[string]any {
+	commit, buildTime := buildMetadata()
+	buildType := "正式发布"
+	if strings.TrimSpace(s.version) == "" || s.version == "dev" {
+		buildType = "开发构建"
+	}
+	return map[string]any{
+		"release_repo": DefaultUpdateRepo,
+		"commit":       commit,
+		"build_type":   buildType,
+		"build_time":   buildTime,
+		"deployment":   deploymentMode(),
+		"go_version":   runtime.Version(),
+		"architecture": runtime.GOOS + "/" + runtime.GOARCH,
+		"timezone":     time.Now().Location().String(),
+	}
+}
+
+func buildMetadata() (commit, buildTime string) {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range info.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				commit = setting.Value
+				if len(commit) > 7 {
+					commit = commit[:7]
+				}
+			case "vcs.time":
+				buildTime = setting.Value
+			}
+		}
+	}
+	if buildTime == "" {
+		if executable, err := os.Executable(); err == nil {
+			if info, err := os.Stat(executable); err == nil {
+				buildTime = info.ModTime().UTC().Format(time.RFC3339)
+			}
+		}
+	}
+	return commit, buildTime
+}
+
+func deploymentMode() string {
+	if runtime.GOOS == "linux" {
+		if _, err := os.Stat("/.dockerenv"); err == nil {
+			return "Docker 容器"
+		}
+		if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
+			cgroup := strings.ToLower(string(data))
+			if strings.Contains(cgroup, "docker") || strings.Contains(cgroup, "containerd") || strings.Contains(cgroup, "kubepods") {
+				return "容器环境"
+			}
+		}
+	}
+	return "本地运行"
 }
 
 func (s *Server) coreInstalled() bool {
@@ -188,34 +248,18 @@ func (s *Server) handleTunCheck(w http.ResponseWriter, r *http.Request) {
 // ---------- 面板自更新 ----------
 
 // DefaultUpdateRepo 内置更新源：本项目官方仓库
-const DefaultUpdateRepo = "ZoroHasaky/EasyProxy"
+const DefaultUpdateRepo = "zorohasaky/easyproxy"
 
-// updateRepo 返回生效的更新源仓库；用户配置为空时回退官方源
+// updateRepo 始终使用项目官方发布仓库，避免面板升级被自定义来源劫持。
 func (s *Server) updateRepo() string {
-	if repo := strings.TrimSpace(s.st.GetSetting("update_repo", "")); repo != "" {
-		return repo
-	}
 	return DefaultUpdateRepo
 }
 
-func (s *Server) updateProxyAddr() (string, error) {
-	if !s.st.GetSettingBool("update_via_proxy", false) {
-		return "", nil
-	}
-	addr := s.runningCoreProxyAddr()
-	if addr == "" {
-		return "", fmt.Errorf("已启用通过本地代理更新，但 Mihomo 内核未运行")
-	}
-	return addr, nil
-}
+// updateProxyAddr 面板更新固定直连，不再支持经本地 Mihomo 代理下载。
+func (s *Server) updateProxyAddr() string { return "" }
 
 func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
-	proxy, err := s.updateProxyAddr()
-	if err != nil {
-		writeJSON(w, http.StatusOK, &update.CheckResult{Current: s.version, Error: err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, update.Check(s.updateRepo(), s.version, proxy))
+	writeJSON(w, http.StatusOK, update.Check(s.updateRepo(), s.version, s.updateProxyAddr()))
 }
 
 func (s *Server) setUpdateProgress(stage string, completed, total int64) {
@@ -244,12 +288,7 @@ func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
-	proxy, err := s.updateProxyAddr()
-	if err != nil {
-		s.audit("operation", "panel.update", "error", "面板版本升级未启动", map[string]any{"error": safeAuditError(err)})
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
+	proxy := s.updateProxyAddr()
 	s.updateMu.Lock()
 	if s.updateTask.Running {
 		s.updateMu.Unlock()
@@ -333,8 +372,6 @@ type settingsPayload struct {
 	GeoAutoUpdate     *bool               `json:"geo_auto_update"`
 	GeoUpdateInterval *int                `json:"geo_update_interval"`
 	GeoxUrls          map[string][]string `json:"geox_urls"`
-	UpdateRepo        *string             `json:"update_repo"`
-	UpdateViaProxy    *bool               `json:"update_via_proxy"`
 	CoreMirror        *string             `json:"core_mirror"`
 }
 
@@ -522,8 +559,6 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"geo_update_interval": s.st.GetSettingInt("geo_update_interval", 24),
 		"geox_urls":           geox,
 		"default_geox_urls":   service.DefaultGeoxSources(),
-		"update_repo":         s.updateRepo(),
-		"update_via_proxy":    s.st.GetSettingBool("update_via_proxy", false),
 		"core_mirror":         s.st.GetSetting("core_mirror", ""),
 	})
 }
@@ -627,18 +662,6 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	set := func(k, v string) error { return s.st.SetSetting(k, v) }
-	if p.UpdateRepo != nil {
-		if err := set("update_repo", strings.TrimSpace(*p.UpdateRepo)); err != nil {
-			writeErr(w, http.StatusInternalServerError, "保存设置失败: "+err.Error())
-			return
-		}
-	}
-	if p.UpdateViaProxy != nil {
-		if err := set("update_via_proxy", boolStr(*p.UpdateViaProxy)); err != nil {
-			writeErr(w, http.StatusInternalServerError, "保存设置失败: "+err.Error())
-			return
-		}
-	}
 	if p.CoreMirror != nil {
 		if err := set("core_mirror", strings.TrimSpace(*p.CoreMirror)); err != nil {
 			writeErr(w, http.StatusInternalServerError, "保存设置失败: "+err.Error())

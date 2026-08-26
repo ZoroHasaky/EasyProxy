@@ -603,14 +603,6 @@ export default function RulesPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="flex items-center gap-2 text-xl font-bold tracking-tight">
-          <ScrollText className="h-5 w-5 text-primary" />
-          规则体系
-        </h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">识别流量，再交由节点组合决定实际使用的节点。</p>
-      </div>
-
       <Tabs value={activeTab} onValueChange={(tab) => setSearchParams({ tab }, { replace: true })}>
         <TabsList className="grid h-auto w-full grid-cols-3 p-1">
           <TabsTrigger value="recognition" className="gap-2"><ScrollText className="h-4 w-4" />识别规则（{recognitionRules.length}）</TabsTrigger>
