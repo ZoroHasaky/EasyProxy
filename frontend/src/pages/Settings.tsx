@@ -74,8 +74,22 @@ export default function SettingsPage() {
     window.location.assign("/api/clash-config/download");
   };
   const copyConfigLink = async () => {
+    if (!subscriptionURL) return;
     try {
-      await navigator.clipboard.writeText(subscriptionURL);
+      if (window.isSecureContext && navigator.clipboard) {
+        await navigator.clipboard.writeText(subscriptionURL);
+      } else {
+        const fallback = document.createElement("textarea");
+        fallback.value = subscriptionURL;
+        fallback.setAttribute("readonly", "");
+        fallback.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+        document.body.appendChild(fallback);
+        fallback.select();
+        fallback.setSelectionRange(0, fallback.value.length);
+        const copied = document.execCommand("copy");
+        fallback.remove();
+        if (!copied) throw new Error("clipboard unavailable");
+      }
       toast.success("配置链接已复制");
     } catch {
       toast.error("复制失败，请手动复制链接");
