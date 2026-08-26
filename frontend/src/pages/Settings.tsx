@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Clock, KeyRound, Lock, Server, ShieldCheck } from "lucide-react";
+import { Clock, KeyRound, Loader2, Lock, RefreshCw, Server, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { api, MetaInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useUpdate } from "@/contexts/update-state";
 
 function formatTime(value?: string) {
   if (!value) return "未记录";
@@ -18,6 +19,7 @@ export default function SettingsPage() {
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const { checkForUpdates, isChecking, setDialogOpen } = useUpdate();
   const metaQuery = useQuery({
     queryKey: ["meta"],
     queryFn: () => api.get<MetaInfo>("/api/meta"),
@@ -47,6 +49,11 @@ export default function SettingsPage() {
     passwordMutation.mutate();
   };
 
+  const openUpdateDialog = () => {
+    setDialogOpen(true);
+    void checkForUpdates();
+  };
+
   const meta = metaQuery.data;
   const system = meta?.system;
   const version = meta?.version ? (meta.version.startsWith("v") ? meta.version : `v${meta.version}`) : "读取中…";
@@ -64,14 +71,20 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <section className="relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-r from-primary/15 via-indigo-500/10 to-purple-500/15 p-6 shadow-sm sm:p-8">
-        <div className="relative z-10 flex items-start gap-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary text-white shadow-xl shadow-primary/30">
-            <Server className="h-7 w-7" />
+        <div className="relative z-10 flex items-start justify-between gap-4">
+          <div className="flex min-w-0 items-start gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary text-white shadow-xl shadow-primary/30">
+              <Server className="h-7 w-7" />
+            </div>
+            <div>
+              <h2 className="text-xl font-black tracking-tight text-foreground">系统信息</h2>
+              <p className="mt-1 text-xs text-muted-foreground">当前 EasyProxy 服务的构建与运行环境</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-xl font-black tracking-tight text-foreground">系统信息</h2>
-            <p className="mt-1 text-xs text-muted-foreground">当前 EasyProxy 服务的构建与运行环境</p>
-          </div>
+          <Button type="button" variant="outline" size="sm" className="shrink-0 border-primary/25 bg-card/70" onClick={openUpdateDialog} disabled={isChecking}>
+            {isChecking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {isChecking ? "检查中…" : "检查更新"}
+          </Button>
         </div>
 
         <div className="relative z-10 mt-6 grid grid-cols-1 gap-x-10 gap-y-5 border-t border-primary/15 pt-5 sm:grid-cols-2 lg:grid-cols-3">
