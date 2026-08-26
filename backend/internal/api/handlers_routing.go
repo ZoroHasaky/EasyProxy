@@ -444,7 +444,7 @@ func (s *Server) handlePutOutboundRules(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(rules), "apply_result": result, "apply_error": applyError})
 }
 
-// handleSimulateOutbound 仅根据已保存的规则与映射推演出站路径；不会请求目标地址。
+// handleSimulateOutbound 使用已保存规则和本机已下载数据推演出站路径；不会请求目标地址。
 func (s *Server) handleSimulateOutbound(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Target string `json:"target"`
@@ -453,7 +453,7 @@ func (s *Server) handleSimulateOutbound(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
-	result, err := service.SimulateOutbound(s.st, req.Target)
+	result, err := service.SimulateOutbound(s.st, s.dataDir, req.Target)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return

@@ -10,7 +10,7 @@ import (
 	"easyproxy/internal/store"
 )
 
-// OutboundSimulationResult 是根据已保存配置得到的离线出站推演结果。
+// OutboundSimulationResult 是根据本地已保存配置与已下载数据得到的出站推演结果。
 // 它不会解析 DNS、访问目标地址或下载远程规则源。
 type OutboundSimulationResult struct {
 	Target         string   `json:"target"`
@@ -26,8 +26,9 @@ type OutboundSimulationResult struct {
 }
 
 // SimulateOutbound 根据当前的识别规则、出站映射及有效节点组合推演目标流量的出站。
-// 仅对可由目标域名或 IP 本地判断的规则给出确定性匹配。
-func SimulateOutbound(st *store.Store, rawTarget string) (*OutboundSimulationResult, error) {
+// 它会读取本机已有的 Geo 数据和 Mihomo 已下载的 YAML 规则集缓存，但不会对目标
+// 发起 DNS 或 HTTP 请求，也不会为了测试而下载任何新规则。
+func SimulateOutbound(st *store.Store, dataDir, rawTarget string) (*OutboundSimulationResult, error) {
 	target, targetType, address, err := normalizeSimulationTarget(rawTarget)
 	if err != nil {
 		return nil, err
@@ -57,6 +58,7 @@ func SimulateOutbound(st *store.Store, rawTarget string) (*OutboundSimulationRes
 		}
 	}
 	resolver := newRuleTargetResolver(nodes, groups)
+	localData := newSimulationLocalData(dataDir)
 	limitations := []string{}
 	for _, recognition := range recognitions {
 		if !recognition.Enabled {
@@ -66,9 +68,9 @@ func SimulateOutbound(st *store.Store, rawTarget string) (*OutboundSimulationRes
 		if !mapped {
 			continue
 		}
-		matched, evaluable, condition := simulationRuleMatches(recognition, target, targetType, address)
+		matched, evaluable, condition, limitation := simulationRuleMatches(localData, recognition, target, targetType, address)
 		if !evaluable {
-			limitations = append(limitations, simulationLimitation(recognition))
+			limitations = appendSimulationLimitation(limitations, limitation)
 			continue
 		}
 		if !matched {
@@ -149,13 +151,16 @@ func validSimulationDomain(domain string) bool {
 	return true
 }
 
-func simulationRuleMatches(rule model.RecognitionRule, target, targetType string, address netip.Addr) (matched, evaluable bool, condition string) {
+func simulationRuleMatches(localData *simulationLocalData, rule model.RecognitionRule, target, targetType string, address netip.Addr) (matched, evaluable bool, condition, limitation string) {
 	kind := strings.ToUpper(strings.TrimSpace(rule.Kind))
 	if kind == "MATCH" {
-		return true, true, ""
+		return true, true, "", ""
 	}
-	if rule.SourceURL != "" || kind == "RULE-SET" || kind == "GEOIP" || kind == "GEOSITE" {
-		return false, false, ""
+	if rule.SourceURL != "" || kind == "RULE-SET" {
+		return localData.remoteRuleMatches(rule, target, targetType, address)
+	}
+	if kind == "GEOIP" || kind == "GEOSITE" {
+		return localData.geoRuleMatches(kind, rule, target, targetType, address)
 	}
 	for _, value := range rule.Conditions {
 		condition := strings.TrimSpace(value)
@@ -165,36 +170,49 @@ func simulationRuleMatches(rule model.RecognitionRule, target, targetType string
 		switch kind {
 		case "DOMAIN":
 			if targetType == "domain" && target == strings.TrimSuffix(strings.ToLower(condition), ".") {
-				return true, true, condition
+				return true, true, condition, ""
 			}
 		case "DOMAIN-SUFFIX":
 			if targetType == "domain" {
 				suffix := strings.TrimPrefix(strings.TrimSuffix(strings.ToLower(condition), "."), ".")
 				if target == suffix || strings.HasSuffix(target, "."+suffix) {
-					return true, true, condition
+					return true, true, condition, ""
 				}
 			}
 		case "DOMAIN-KEYWORD":
 			if targetType == "domain" && strings.Contains(target, strings.ToLower(condition)) {
-				return true, true, condition
+				return true, true, condition, ""
 			}
 		case "DOMAIN-REGEX":
 			if targetType == "domain" {
 				if expression, err := regexp.Compile(condition); err == nil && expression.MatchString(target) {
-					return true, true, condition
+					return true, true, condition, ""
 				}
 			}
 		case "IP-CIDR", "IP-CIDR6":
 			if targetType == "ip" {
 				if prefix, err := netip.ParsePrefix(condition); err == nil && prefix.Contains(address) {
-					return true, true, condition
+					return true, true, condition, ""
 				}
 			}
 		default:
-			return false, false, ""
+			return false, false, "", simulationLimitation(rule)
 		}
 	}
-	return false, true, ""
+	return false, true, "", ""
+}
+
+func appendSimulationLimitation(limitations []string, limitation string) []string {
+	limitation = strings.TrimSpace(limitation)
+	if limitation == "" {
+		return limitations
+	}
+	for _, item := range limitations {
+		if item == limitation {
+			return limitations
+		}
+	}
+	return append(limitations, limitation)
 }
 
 func simulationLimitation(rule model.RecognitionRule) string {

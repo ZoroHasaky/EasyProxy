@@ -817,7 +817,7 @@ export default function RulesPage() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>出站测试</DialogTitle>
-            <DialogDescription>仅根据当前已保存的规则与出站映射推演链路；不会解析 DNS、访问目标或下载远程规则。</DialogDescription>
+            <DialogDescription>不会访问目标或解析 DNS；会使用本机已下载的 Geo 数据和 YAML 规则集缓存推演链路，不会下载远程规则。</DialogDescription>
           </DialogHeader>
           <form className="space-y-4 py-2" onSubmit={(event) => { event.preventDefault(); if (!outboundTestTarget.trim()) { toast.error("请输入域名或 IP 地址"); return; } simulateOutbound.mutate(outboundTestTarget); }}>
             <div className="space-y-1.5">
