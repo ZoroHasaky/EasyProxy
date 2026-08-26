@@ -46,9 +46,9 @@ const nav = [
   { to: "/rules", label: "规则集", icon: ScrollText, desc: "分流与策略" },
   { to: "/connections", label: "连接监控", icon: Cable, desc: "实时会话" },
   { to: "/kernel", label: "内核管理", icon: Cpu, desc: "Mihomo 内核" },
+  { to: "/geo", label: "Geo 数据", icon: Globe2, desc: "规则数据库" },
   { to: "/tun", label: "透明代理", icon: Network, desc: "TUN 软路由" },
   { to: "/logs", label: "实时日志", icon: Terminal, desc: "系统输出" },
-  { to: "/geo", label: "Geo 数据", icon: Globe2, desc: "规则数据库" },
   { to: "/settings", label: "系统设置", icon: Settings, desc: "基础配置" },
 ];
 
