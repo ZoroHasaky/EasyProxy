@@ -84,7 +84,7 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
       {/* 品牌区 */}
       <div className={cn("flex h-16 items-center gap-3 border-b border-border/60 transition-[padding] duration-300 ease-in-out", collapsed ? "justify-center px-2" : "px-4")}>
         <img src="/easyproxy-logo.svg" alt="EasyProxy" className="h-10 w-10 shrink-0 rounded-2xl shadow-md shadow-primary/25" />
-        <div className={cn("flex min-w-0 flex-col overflow-hidden whitespace-nowrap transition-[max-width,opacity,transform] duration-200 ease-out", collapsed ? "max-w-0 -translate-x-2 opacity-0" : "max-w-32 translate-x-0 opacity-100")}>
+        <div className={cn("flex min-w-0 flex-col overflow-hidden whitespace-nowrap transition-[max-width,opacity,transform] duration-200 ease-out", collapsed ? "delay-100 max-w-0 -translate-x-2 opacity-0" : "delay-0 max-w-32 translate-x-0 opacity-100")}>
           <span className="font-bold text-base tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
             EasyProxy
           </span>
@@ -112,7 +112,7 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
             }
           >
             <item.icon className="h-4.5 w-4.5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
-            <div className={cn("flex min-w-0 flex-col overflow-hidden whitespace-nowrap text-left transition-[max-width,opacity,transform] duration-200 ease-out", collapsed ? "max-w-0 -translate-x-2 opacity-0" : "max-w-32 translate-x-0 opacity-100")}>
+            <div className={cn("flex min-w-0 flex-col overflow-hidden whitespace-nowrap text-left transition-[max-width,opacity,transform] duration-200 ease-out", collapsed ? "delay-100 max-w-0 -translate-x-2 opacity-0" : "delay-0 max-w-32 translate-x-0 opacity-100")}>
               <span className="leading-tight">{item.label}</span>
             </div>
           </NavLink>
@@ -210,16 +210,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* 桌面端侧边栏 */}
       <aside
         className={cn(
-          "relative z-30 hidden shrink-0 flex-col overflow-hidden border-r border-border/60 bg-card/60 backdrop-blur-xl transition-[width] duration-300 ease-in-out md:flex",
+          "relative z-30 hidden shrink-0 flex-col overflow-visible transition-[width] duration-300 ease-in-out md:flex",
           collapsed ? "w-[4.5rem]" : "w-60"
         )}
       >
-        <SidebarContent
-          collapsed={collapsed}
-          coreState={meta.data?.core?.state ?? "unknown"}
-          version={meta.data?.version ?? ""}
-          onLogout={logout}
-        />
+        <div className="flex h-full min-w-0 flex-col overflow-hidden border-r border-border/60 bg-card/60 backdrop-blur-xl">
+          <SidebarContent
+            collapsed={collapsed}
+            coreState={meta.data?.core?.state ?? "unknown"}
+            version={meta.data?.version ?? ""}
+            onLogout={logout}
+          />
+        </div>
 
         {/* 折叠切换按钮 */}
         <button

@@ -54,23 +54,19 @@ function asStringList(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-function formatDetails(details?: Record<string, unknown>) {
-  try {
-    const text = JSON.stringify(details ?? {}, null, 2);
-    return text === "{}" ? "无附加字段" : text;
-  } catch {
-    return "附加字段无法显示";
-  }
+function getTrafficTrace(details?: Record<string, unknown>) {
+  const safeDetails = details ?? {};
+  return {
+    rule: [asString(safeDetails.rule), asString(safeDetails.rule_payload)].filter(Boolean).join(", "),
+    route: asStringList(safeDetails.chains).join(" → "),
+  };
 }
 
 function AuditLogDetails({ entry }: { entry: AuditLog }) {
   // 兼容旧版服务端曾省略 details 字段的历史日志，避免单条日志导致整页渲染失败。
   const details = entry.details ?? {};
   if (entry.category === "traffic") {
-    const rule = [asString(details.rule), asString(details.rule_payload)].filter(Boolean).join(", ");
-    const chains = asStringList(details.chains);
-    // Mihomo 的 Chains 已按入口策略组到实际出站节点的顺序返回，直接展示即可。
-    const route = chains.join(" → ");
+    const { rule, route } = getTrafficTrace(details);
     return (
       <>
         {rule && <span className="text-muted-foreground"> · 命中规则：<span className="font-mono text-foreground/80">{rule}</span></span>}
@@ -209,7 +205,7 @@ export default function LogsPage() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>日志详情</DialogTitle>
-            <DialogDescription>查看该条日志的完整内容与附加字段。</DialogDescription>
+            <DialogDescription>查看该条日志的完整内容。</DialogDescription>
           </DialogHeader>
           {selectedEntry && (
             <div className="space-y-4 text-xs">
@@ -224,12 +220,17 @@ export default function LogsPage() {
                 <span className="text-muted-foreground">日志摘要</span>
                 <span className="whitespace-pre-wrap break-words font-medium text-foreground/90">{selectedEntry.summary}</span>
               </div>
-              <div>
-                <div className="mb-1.5 text-xs font-semibold text-muted-foreground">附加字段</div>
-                <pre className="max-h-[45vh] overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-xl border border-border/70 bg-muted/30 p-3 font-mono text-[11px] leading-relaxed text-foreground/85">
-                  {formatDetails(selectedEntry.details)}
-                </pre>
-              </div>
+              {selectedEntry.category === "traffic" && (() => {
+                const { rule, route } = getTrafficTrace(selectedEntry.details);
+                return (
+                  <div className="grid gap-3 rounded-xl border border-border/70 bg-muted/20 p-3 sm:grid-cols-[96px_minmax(0,1fr)]">
+                    <span className="text-muted-foreground">命中规则</span>
+                    <span className="whitespace-pre-wrap break-all font-mono text-foreground/90">{rule || "未记录"}</span>
+                    <span className="text-muted-foreground">代理链路</span>
+                    <span className="whitespace-pre-wrap break-all font-mono text-primary">{route || "未记录"}</span>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </DialogContent>

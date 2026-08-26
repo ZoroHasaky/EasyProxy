@@ -5,6 +5,6 @@
       <stop offset="1" stop-color="#5456E9"/>
     </linearGradient>
   </defs>
-  <rect x="2" y="2" width="60" height="60" rx="18" fill="url(#easyproxy-brand)"/>
+  <rect width="64" height="64" rx="19.2" fill="url(#easyproxy-brand)"/>
   <path fill="#fff" d="M37.1 11.5 17 35.2h13.4L26.9 52.5 47 28.8H33.6z"/>
 </svg>
