@@ -6,7 +6,6 @@ import { yaml } from "@codemirror/lang-yaml";
 import { oneDark } from "@codemirror/theme-one-dark";
 import {
   Cpu,
-  Download,
   Eye,
   RotateCw,
   ShieldAlert,
@@ -50,7 +49,6 @@ export default function KernelPage() {
   const qc = useQueryClient();
   const [form, setForm] = useState<Settings | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [coreURL, setCoreURL] = useState("");
   const [uploading, setUploading] = useState(false);
   const coreFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -84,15 +82,6 @@ export default function KernelPage() {
       toast.success(requiresApply ? "基础设置已保存，等待应用" : "内核下载设置已保存并生效");
       qc.invalidateQueries({ queryKey: ["settings"] });
       qc.invalidateQueries({ queryKey: ["config-pending"] });
-    },
-    onError: (e: any) => toast.error(e.message),
-  });
-
-  const downloadCoreMutation = useMutation({
-    mutationFn: () => api.post("/api/core/download", { url: coreURL.trim() }),
-    onSuccess: () => {
-      toast.success("已触发内核下载任务（下载完成后将自动启动）");
-      qc.invalidateQueries({ queryKey: ["core"] });
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -234,7 +223,7 @@ export default function KernelPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-bold">下载或手动上传内核</CardTitle>
             <CardDescription>
-              填写 Mihomo 官方 Release 下载链接，或上传本地二进制文件
+              可手动下载 Mihomo 官方内核，或上传本地二进制文件
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -245,40 +234,22 @@ export default function KernelPage() {
                   <div className="font-semibold">
                     本机适用内核：Mihomo {core.data.latest_version || "最新稳定版"}（linux-{core.data.download_asset.asset_arch}，{core.data.download_asset.label}）
                   </div>
-                  <p className="leading-relaxed opacity-85">{core.data.download_asset.reason}</p>
-                  <a
-                    href={officialCoreDownloadURL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:opacity-80"
-                  >
-                    下载本机适用的官方内核
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
                 </div>
               </div>
             )}
-            <div className="flex gap-2">
-              <Input
-                placeholder="https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-amd64-v1.19.30.gz"
-                value={coreURL}
-                onChange={(e) => setCoreURL(e.target.value)}
-                className="h-9 text-xs"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() => downloadCoreMutation.mutate()}
-                disabled={!coreURL.trim() || downloadCoreMutation.isPending || core.data?.downloading}
-              >
-                <Download className={cn("h-3.5 w-3.5", downloadCoreMutation.isPending && "animate-spin")} />
-                从链接下载
-              </Button>
-            </div>
-
             <div className="pt-2 border-t border-border/50 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">或者手动上传内核：</span>
+              <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                <span className="shrink-0">或者手动上传内核：</span>
+                <a
+                  href={officialCoreDownloadURL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 truncate font-medium text-primary underline underline-offset-2 hover:opacity-80"
+                >
+                  下载本机适用的官方内核
+                  <ExternalLink className="h-3 w-3 shrink-0" />
+                </a>
+              </div>
               <input
                 ref={coreFileInputRef}
                 type="file"
