@@ -25,7 +25,8 @@ func CheckTun() TunCheckResult {
 	if !ok {
 		return res
 	}
-	res.Warnings = evaluateDeps(probeIPtables(), hasNftablesModule())
+	iptPath, iptProbeErr := probeIPtables()
+	res.Warnings = evaluateDeps(iptPath, iptProbeErr, hasNftablesModule())
 	if len(res.Warnings) == 0 {
 		res.Detail = "TUN 可用，auto-redirect 依赖正常"
 	}
