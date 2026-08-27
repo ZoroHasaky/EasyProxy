@@ -28,6 +28,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { defineMessages, useLanguage, useMessages } from "@/contexts/language";
+
+const messages = defineMessages({
+  outletChanged: "出口已切换为", groupChanged: "分组已切换", mainOutlet: "主代理出口", currentUse: "当前使用",
+  currentNode: "当前节点", untested: "未测速", description: "控制默认分流出口。支持快速切换到地区节点组合或单个指定节点。",
+  chooseAll: "从全量节点自选", selectedNode: "指定单节点", groupStatus: "所有节点组合状态", activeGroups: "个活跃分组",
+  current: "当前", dialogTitle: "选择单节点直出", dialogDescription: "从全量代理节点中直接挑选作为 PROXY 出口",
+  search: "搜索节点名称 / 关键词…", empty: "未找到匹配的节点",
+}, {
+  outletChanged: "Outbound changed to", groupChanged: "Group selection changed", mainOutlet: "Primary Outbound", currentUse: "Current",
+  currentNode: "Active node", untested: "Not tested", description: "Controls the default routed outbound. Quickly select a regional group or an individual node.",
+  chooseAll: "Choose from all nodes", selectedNode: "Selected node", groupStatus: "Node Group Status", activeGroups: "active groups",
+  current: "Current", dialogTitle: "Select an Individual Node", dialogDescription: "Choose any proxy node directly as the PROXY outbound",
+  search: "Search node name or keyword…", empty: "No matching nodes found",
+});
 
 function activeLeafNode(proxies: Record<string, MihomoProxy>, name?: string): string {
   const visited = new Set<string>();
@@ -49,6 +64,8 @@ function latestDelay(proxy?: MihomoProxy): number | null {
 }
 
 export default function DashboardPage() {
+  const text = useMessages(messages);
+  const { language } = useLanguage();
   const qc = useQueryClient();
   const [nodeDialogOpen, setNodeDialogOpen] = useState(false);
   const [nodeSearch, setNodeSearch] = useState("");
@@ -94,7 +111,7 @@ export default function DashboardPage() {
     try {
       await mihomo.select("PROXY", name);
       await qc.invalidateQueries({ queryKey: ["proxies"] });
-      toast.success(`出口已切换为「${name}」`);
+      toast.success(`${text.outletChanged} “${name}”`);
       setNodeDialogOpen(false);
     } catch (e: any) {
       toast.error(e.message);
@@ -107,7 +124,7 @@ export default function DashboardPage() {
     try {
       await mihomo.select(groupName, targetName);
       await qc.invalidateQueries({ queryKey: ["proxies"] });
-      toast.success(`分组 [${groupName}] 已切换为「${targetName}」`);
+      toast.success(`${text.groupChanged}: [${groupName}] → “${targetName}”`);
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -122,19 +139,19 @@ export default function DashboardPage() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <CardTitle className="text-base">主代理出口</CardTitle>
+                  <CardTitle className="text-base">{text.mainOutlet}</CardTitle>
                   <Badge variant="purple" className="text-xs">
-                    当前使用: {proxyGroup.now ?? "-"}
+                    {text.currentUse}: {proxyGroup.now ?? "-"}
                   </Badge>
                   {currentNode && (
                     <Badge variant="outline" className="gap-1 text-xs font-mono">
                       <Zap className="h-3 w-3 text-primary" />
-                      当前节点: {currentNode} · {currentNodeDelay === null ? "未测速" : `${currentNodeDelay} ms`}
+                      {text.currentNode}: {currentNode} · {currentNodeDelay === null ? text.untested : `${currentNodeDelay} ms`}
                     </Badge>
                   )}
                 </div>
                 <CardDescription className="mt-1">
-                  控制默认分流出口。支持快速切换到地区节点组合或单个指定节点。
+                  {text.description}
                 </CardDescription>
               </div>
 
@@ -146,7 +163,7 @@ export default function DashboardPage() {
                   className="shrink-0"
                 >
                   <Server className="h-3.5 w-3.5" />
-                  从全量节点自选 ({nodeOptions.length})
+                  {text.chooseAll} ({nodeOptions.length})
                 </Button>
               )}
             </div>
@@ -186,7 +203,7 @@ export default function DashboardPage() {
                   className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-primary text-primary-foreground border border-primary shadow-glow shadow-primary/25"
                 >
                   <Server className="h-3.5 w-3.5" />
-                  <span>指定单节点: {selectedNode}</span>
+                  <span>{text.selectedNode}: {selectedNode}</span>
                   <Check className="h-3.5 w-3.5 stroke-[3]" />
                 </button>
               )}
@@ -200,10 +217,10 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold tracking-tight text-foreground/90 flex items-center gap-2">
             <Radio className="h-4.5 w-4.5 text-primary" />
-            所有节点组合状态
+            {text.groupStatus}
           </h2>
           <span className="text-xs text-muted-foreground">
-            共 {groups.length} 个活跃分组
+            {groups.length} {text.activeGroups}
           </span>
         </div>
 
@@ -217,11 +234,11 @@ export default function DashboardPage() {
                       {group.name}
                     </CardTitle>
                     <Badge variant="outline" className="text-[10px] uppercase font-mono">
-                      {proxyGroupTypeLabel(group.type)}
+                      {proxyGroupTypeLabel(group.type, language)}
                     </Badge>
                   </div>
                   <CardDescription className="truncate font-mono text-primary font-medium text-xs">
-                    当前: {group.now || "-"}
+                    {text.current}: {group.now || "-"}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="pt-2">
@@ -255,16 +272,16 @@ export default function DashboardPage() {
       <Dialog open={nodeDialogOpen} onOpenChange={setNodeDialogOpen}>
         <DialogContent className="sm:max-w-xl max-h-[85vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>选择单节点直出</DialogTitle>
+            <DialogTitle>{text.dialogTitle}</DialogTitle>
             <DialogDescription>
-              从全量代理节点中直接挑选作为 PROXY 出口
+              {text.dialogDescription}
             </DialogDescription>
           </DialogHeader>
 
           <div className="relative my-2">
             <Search className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="搜索节点名称 / 关键词…"
+              placeholder={text.search}
               value={nodeSearch}
               onChange={(e) => setNodeSearch(e.target.value)}
               className="pl-9"
@@ -295,7 +312,7 @@ export default function DashboardPage() {
             })}
             {visibleNodes.length === 0 && (
               <div className="text-center py-8 text-xs text-muted-foreground">
-                未找到匹配的节点
+                {text.empty}
               </div>
             )}
           </div>

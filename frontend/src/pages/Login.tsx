@@ -1,12 +1,29 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { KeyRound, Lock, ArrowRight, ShieldCheck } from "lucide-react";
+import { Lock, ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { LanguageToggle } from "@/components/language-toggle";
+import { defineMessages, useMessages } from "@/contexts/language";
+
+const messages = defineMessages({
+  welcome: "即刻连接世界",
+  success: "登录成功，欢迎使用 EasyProxy",
+  failed: "登录失败",
+  validating: "正在验证…",
+  enter: "进入管理面板",
+}, {
+  welcome: "Connect to the world",
+  success: "Signed in successfully. Welcome to EasyProxy",
+  failed: "Sign-in failed",
+  validating: "Verifying…",
+  enter: "Open Dashboard",
+});
 
 export default function LoginPage({ onDone }: { onDone: () => void }) {
+  const text = useMessages(messages);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -16,10 +33,10 @@ export default function LoginPage({ onDone }: { onDone: () => void }) {
     setLoading(true);
     try {
       await api.post("/api/login", { password });
-      toast.success("登录成功，欢迎使用 EasyProxy");
+      toast.success(text.success);
       onDone();
     } catch (e: any) {
-      toast.error(`登录失败: ${e.message}`);
+      toast.error(`${text.failed}: ${e.message}`);
     } finally {
       setLoading(false);
     }
@@ -27,6 +44,7 @@ export default function LoginPage({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="flex min-h-screen w-screen items-center justify-center bg-background px-4 relative overflow-hidden">
+      <LanguageToggle className="absolute right-4 top-4 z-20" />
       {/* 背景动态光晕 */}
       <div className="absolute top-1/4 -left-20 h-96 w-96 rounded-full bg-primary/20 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-1/4 -right-20 h-96 w-96 rounded-full bg-indigo-500/20 blur-[120px] pointer-events-none" />
@@ -36,7 +54,7 @@ export default function LoginPage({ onDone }: { onDone: () => void }) {
           <img src="/easyproxy-logo.svg" alt="EasyProxy" className="mx-auto mb-3 h-14 w-14 rounded-2xl shadow-lg shadow-primary/30" />
           <CardTitle className="text-2xl font-black tracking-tight">EasyProxy</CardTitle>
           <CardDescription className="text-xs text-muted-foreground mt-1">
-            即刻连接世界
+            {text.welcome}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-8 pt-4">
@@ -59,7 +77,7 @@ export default function LoginPage({ onDone }: { onDone: () => void }) {
               className="w-full h-11 text-sm font-bold shadow-md shadow-primary/25"
               disabled={loading || !password}
             >
-              {loading ? "正在验证…" : "进入管理面板"}
+              {loading ? text.validating : text.enter}
               <ArrowRight className="h-4 w-4" />
             </Button>
           </form>

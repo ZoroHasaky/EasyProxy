@@ -1,4 +1,5 @@
 // 后端 API 客户端与完整类型定义
+import { getCurrentLanguage, type Language } from "@/contexts/language";
 
 export class ApiError extends Error {
   status: number;
@@ -19,7 +20,7 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new ApiError("无法连接后端服务", 0);
+    throw new ApiError(getCurrentLanguage() === "zh-CN" ? "无法连接后端服务" : "Unable to connect to the backend service", 0);
   }
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => undefined);
@@ -46,7 +47,7 @@ export const api = {
         credentials: "same-origin",
       });
     } catch {
-      throw new ApiError("无法连接后端服务", 0);
+      throw new ApiError(getCurrentLanguage() === "zh-CN" ? "无法连接后端服务" : "Unable to connect to the backend service", 0);
     }
     const data = await res.json().catch(() => undefined);
     if (!res.ok)
@@ -255,9 +256,9 @@ export interface ProxyGroup {
 }
 
 // 仅用于界面展示；内核配置和 API 仍使用 Mihomo 原始类型值。
-export function proxyGroupTypeLabel(type: string) {
+export function proxyGroupTypeLabel(type: string, language: Language = "zh-CN") {
   const normalized = type.toLowerCase().replace(/[_\s]/g, "-");
-  return normalized === "url-test" || normalized === "urltest" ? "自动测速" : type;
+  return normalized === "url-test" || normalized === "urltest" ? (language === "zh-CN" ? "自动测速" : "Auto Test") : type;
 }
 
 export interface RulesPayload {
@@ -366,18 +367,19 @@ export interface AutoApplyResponse {
   apply_error?: string;
 }
 
-export function autoApplyResultMessage(result?: AutoApplyResult) {
+export function autoApplyResultMessage(result?: AutoApplyResult, language: Language = "zh-CN") {
+  const en = language === "en";
   switch (result) {
     case "reloaded":
-      return "已热重载生效";
+      return en ? "applied by hot reload" : "已热重载生效";
     case "restarted":
-      return "已重启内核生效";
+      return en ? "applied after restarting the kernel" : "已重启内核生效";
     case "started":
-      return "已启动内核生效";
+      return en ? "applied after starting the kernel" : "已启动内核生效";
     case "saved":
-      return "配置已保存，内核安装后生效";
+      return en ? "saved and will apply after the kernel is installed" : "配置已保存，内核安装后生效";
     default:
-      return "已保存";
+      return en ? "saved" : "已保存";
   }
 }
 

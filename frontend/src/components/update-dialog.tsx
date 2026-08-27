@@ -11,19 +11,31 @@ import { Badge } from "@/components/ui/badge";
 import { useUpdate } from "@/contexts/update-state";
 import { ArrowUpCircle, CheckCircle2, Loader2, Sparkles } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
+import { defineMessages, useMessages } from "@/contexts/language";
 
 const UPDATE_STATUS_LABELS = {
-  idle: "等待更新",
-  checking: "检查更新",
-  downloading: "下载更新",
-  verifying: "校验更新包",
-  installing: "安装更新",
-  restarting: "重启服务",
-  ready: "更新已就绪",
-  error: "更新失败",
+  idle: "statusIdle", checking: "statusChecking", downloading: "statusDownloading", verifying: "statusVerifying",
+  installing: "statusInstalling", restarting: "statusRestarting", ready: "statusReady", error: "statusError",
 } as const;
 
+const messages = defineMessages({
+  statusIdle: "等待更新", statusChecking: "检查更新", statusDownloading: "下载更新", statusVerifying: "校验更新包",
+  statusInstalling: "安装更新", statusRestarting: "重启服务", statusReady: "更新已就绪", statusError: "更新失败",
+  unknown: "未知", title: "系统更新与版本", description: "检测并升级 EasyProxy 面板至最新稳定版",
+  current: "当前运行版本", latest: "最新可用版本", newVersion: "新版本", notes: "版本更新日志", status: "状态",
+  checkFailed: "检查更新失败", upToDate: "当前已是最新版本，无需更新", recheck: "重新检查",
+  restarting: "正在重启…", restart: "重启并完成更新", updating: "正在更新…", updateTo: "一键更新到",
+}, {
+  statusIdle: "Waiting", statusChecking: "Checking", statusDownloading: "Downloading", statusVerifying: "Verifying Package",
+  statusInstalling: "Installing", statusRestarting: "Restarting Service", statusReady: "Update Ready", statusError: "Update Failed",
+  unknown: "Unknown", title: "System Update & Version", description: "Check for and install the latest stable EasyProxy release",
+  current: "Current Version", latest: "Latest Version", newVersion: "New", notes: "Release Notes", status: "Status",
+  checkFailed: "Update check failed", upToDate: "EasyProxy is up to date", recheck: "Check Again",
+  restarting: "Restarting…", restart: "Restart to Finish", updating: "Updating…", updateTo: "Update to",
+});
+
 export function UpdateDialog() {
+  const text = useMessages(messages);
   const {
     dialogOpen,
     setDialogOpen,
@@ -40,9 +52,9 @@ export function UpdateDialog() {
 
   const hasUpdate = checkData?.has_update;
   const checkFailed = Boolean(checkError || checkData?.error);
-  const current = checkData?.current || "未知";
-  const latest = checkData?.latest || "未知";
-  const statusLabel = status ? UPDATE_STATUS_LABELS[status.state] : "";
+  const current = checkData?.current || text.unknown;
+  const latest = checkData?.latest || text.unknown;
+  const statusLabel = status ? text[UPDATE_STATUS_LABELS[status.state]] : "";
 
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -53,9 +65,9 @@ export function UpdateDialog() {
               <Sparkles className="h-5 w-5" />
             </div>
             <div>
-              <DialogTitle>系统更新与版本</DialogTitle>
+              <DialogTitle>{text.title}</DialogTitle>
               <DialogDescription>
-                检测并升级 EasyProxy 面板至最新稳定版
+                {text.description}
               </DialogDescription>
             </div>
           </div>
@@ -64,16 +76,16 @@ export function UpdateDialog() {
         <div className="space-y-4 py-2">
           <div className="flex items-center justify-between p-3.5 rounded-xl bg-muted/40 border border-border/60">
             <div className="space-y-0.5">
-              <div className="text-xs text-muted-foreground">当前运行版本</div>
+              <div className="text-xs text-muted-foreground">{text.current}</div>
               <div className="font-semibold text-sm">{current}</div>
             </div>
             <div className="space-y-0.5 text-right">
-              <div className="text-xs text-muted-foreground">最新可用版本</div>
+              <div className="text-xs text-muted-foreground">{text.latest}</div>
               <div className="font-semibold text-sm flex items-center gap-1.5 justify-end">
                 {latest}
                 {hasUpdate && (
                   <Badge variant="success" className="text-[10px] px-1.5 py-0">
-                    新版本
+                    {text.newVersion}
                   </Badge>
                 )}
               </div>
@@ -83,7 +95,7 @@ export function UpdateDialog() {
           {checkData?.notes && (
             <div className="space-y-1.5">
               <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                版本更新日志
+                {text.notes}
               </div>
               <div className="max-h-40 overflow-y-auto rounded-xl bg-background/50 border border-border/60 p-3 text-xs leading-relaxed whitespace-pre-wrap">
                 {checkData.notes}
@@ -96,7 +108,7 @@ export function UpdateDialog() {
               <div className="flex items-center justify-between text-xs font-medium">
                 <span className="flex items-center gap-1.5 text-primary">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  状态: {statusLabel}
+                  {text.status}: {statusLabel}
                 </span>
                 <span>{status.percent}%</span>
               </div>
@@ -116,14 +128,14 @@ export function UpdateDialog() {
 
           {checkFailed && (
             <div className="rounded-xl bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive">
-              检查更新失败: {checkData?.error || checkError?.message}
+              {text.checkFailed}: {checkData?.error || checkError?.message}
             </div>
           )}
 
           {!hasUpdate && !isChecking && !checkFailed && (
             <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-medium">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
-              当前已是最新版本，无需更新
+              {text.upToDate}
             </div>
           )}
         </div>
@@ -135,19 +147,19 @@ export function UpdateDialog() {
             onClick={() => checkForUpdates()}
             disabled={isChecking || isUpdating}
           >
-            {isChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : "重新检查"}
+            {isChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : text.recheck}
           </Button>
           {status?.state === "ready" ? (
             <Button size="sm" onClick={() => restartUpdate()} disabled={isRestarting}>
               {isRestarting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  正在重启…
+                  {text.restarting}
                 </>
               ) : (
                 <>
                   <ArrowUpCircle className="h-4 w-4" />
-                  重启并完成更新
+                  {text.restart}
                 </>
               )}
             </Button>
@@ -160,12 +172,12 @@ export function UpdateDialog() {
               {isUpdating ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  正在更新…
+                  {text.updating}
                 </>
               ) : (
                 <>
                   <ArrowUpCircle className="h-4 w-4" />
-                  一键更新到 {latest}
+                  {text.updateTo} {latest}
                 </>
               )}
             </Button>

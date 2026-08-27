@@ -123,10 +123,7 @@ jobs:
           pattern: easyproxy-linux-*
       - name: Generate docker-compose.yml
         run: |
-          VERSION="${{ needs.gate.outputs.version }}"
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
-          sed -e "s|__IMAGE__|${IMAGE}|" -e "s|__VERSION__|v${VERSION}|" \
-            deploy/docker-compose.release.yml > docker-compose.yml
+          cp deploy/docker-compose.release.yml docker-compose.yml
           cat docker-compose.yml
       - name: Create release
         env:

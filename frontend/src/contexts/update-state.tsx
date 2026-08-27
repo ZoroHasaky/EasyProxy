@@ -9,6 +9,21 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api, UpdateCheck, UpdateStatus } from "@/lib/api";
+import { defineMessages, useMessages } from "@/contexts/language";
+
+const messages = defineMessages({
+  started: "已开始更新 EasyProxy…",
+  startFailed: "更新启动失败",
+  restarting: "更新已准备完成，正在重启 EasyProxy…",
+  restartFailed: "重启更新失败",
+  completed: "更新已完成，面板正在重新加载…",
+}, {
+  started: "EasyProxy update started…",
+  startFailed: "Failed to start the update",
+  restarting: "Update is ready. Restarting EasyProxy…",
+  restartFailed: "Failed to restart after the update",
+  completed: "Update completed. Reloading the panel…",
+});
 
 interface UpdateContextState {
   checkData?: UpdateCheck;
@@ -27,6 +42,7 @@ interface UpdateContextState {
 const UpdateContext = createContext<UpdateContextState | null>(null);
 
 export function UpdateProvider({ children }: { children: ReactNode }) {
+  const text = useMessages(messages);
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -46,29 +62,29 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const doUpdate = useMutation({
     mutationFn: () => api.post<{ ok: boolean }>("/api/update/apply"),
     onSuccess: () => {
-      toast.info("已开始更新 EasyProxy…");
+      toast.info(text.started);
       qc.invalidateQueries({ queryKey: ["updateStatus"] });
     },
-    onError: (e: any) => toast.error(`更新启动失败: ${e.message}`),
+    onError: (e: any) => toast.error(`${text.startFailed}: ${e.message}`),
   });
 
   const restart = useMutation({
     mutationFn: () => api.post<{ ok: boolean }>("/api/update/restart"),
     onSuccess: () => {
-      toast.info("更新已准备完成，正在重启 EasyProxy…");
+      toast.info(text.restarting);
       qc.invalidateQueries({ queryKey: ["updateStatus"] });
     },
-    onError: (e: any) => toast.error(`重启更新失败: ${e.message}`),
+    onError: (e: any) => toast.error(`${text.restartFailed}: ${e.message}`),
   });
 
   useEffect(() => {
     if (status.data?.state === "restarting") {
-      toast.success("更新已完成，面板正在重新加载…");
+      toast.success(text.completed);
       setTimeout(() => {
         window.location.reload();
       }, 3000);
     }
-  }, [status.data?.state]);
+  }, [status.data?.state, text.completed]);
 
   const value = useMemo<UpdateContextState>(
     () => ({

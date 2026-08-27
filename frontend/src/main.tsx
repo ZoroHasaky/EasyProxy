@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import App from "./App";
 import { ThemeProvider } from "./contexts/app-state";
+import { LanguageProvider } from "./contexts/language";
 import { ErrorBoundary } from "./components/error-boundary";
 import "./index.css";
 
@@ -19,15 +20,17 @@ const queryClient = new QueryClient({
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <BrowserRouter>
-            <App />
-            <Toaster richColors position="bottom-right" />
-          </BrowserRouter>
-        </ThemeProvider>
-      </QueryClientProvider>
-    </ErrorBoundary>
+    <LanguageProvider>
+      <ErrorBoundary>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <BrowserRouter>
+              <App />
+              <Toaster richColors position="bottom-right" />
+            </BrowserRouter>
+          </ThemeProvider>
+        </QueryClientProvider>
+      </ErrorBoundary>
+    </LanguageProvider>
   </React.StrictMode>
 );

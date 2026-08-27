@@ -9,6 +9,35 @@ import { api, Settings } from "@/lib/api";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select } from "@/components/ui/select";
+import { defineMessages, useMessages } from "@/contexts/language";
+
+const messages = defineMessages({
+  saved: "透明代理设置已保存，等待应用", cannotEnable: "TUN 无法启用", checkFailed: "无法完成 TUN 环境预检，已取消启用",
+  loading: "正在加载设置…", title: "透明代理与软路由模式",
+  description: "开启 auto-route 与 auto-redirect 接管全部系统及局域网流量，免客户端配置走代理",
+  tunTitle: "TUN 虚拟网卡配置", tunOn: "TUN 已开启", tunOff: "TUN 已关闭", riskTitle: "局域网转发风险提示",
+  tunDescription: "软路由/网关场景下开启。需要容器具备 NET_ADMIN 权限与 /dev/net/tun 设备挂载。",
+  enableTun: "启用 TUN 透明代理", enableTunHint: "系统将自动创建虚拟网卡并拦截路由所有流量", stack: "TUN 协议栈 (Stack)",
+  stackMixed: "mixed（推荐，兼顾性能与兼容性）", stackSystem: "system（原生系统协议栈）", stackGvisor: "gVisor（纯用户态协议栈）",
+  lanRisk: "局域网转发风险", dnsTitle: "内置智能 DNS 与防污染解析",
+  dnsDescription: "配合 TUN 模式实现国内分流与海外域名 Fake-IP 防污染解析", enableDNS: "启用内置 DNS 服务",
+  enableDNSHint: "接管系统 DNS 请求并实现 Fake-IP / REDIR-HOST", dnsMode: "DNS 模式",
+  fakeIP: "fake-ip（速度极快，推荐）", redirHost: "redir-host（真实解析回退）",
+  primaryNS: "主 Nameserver（每行一个）", fallbackNS: "备用 Nameserver（每行一个）",
+}, {
+  saved: "Transparent proxy settings saved and waiting to be applied", cannotEnable: "Unable to enable TUN", checkFailed: "TUN environment check failed; enabling was cancelled",
+  loading: "Loading settings…", title: "Transparent Proxy & Router Mode",
+  description: "Use auto-route and auto-redirect to handle system and LAN traffic without per-device proxy configuration",
+  tunTitle: "TUN Virtual Interface", tunOn: "TUN Enabled", tunOff: "TUN Disabled", riskTitle: "LAN forwarding risk",
+  tunDescription: "Enable for router or gateway use. The container requires NET_ADMIN and access to /dev/net/tun.",
+  enableTun: "Enable TUN Transparent Proxy", enableTunHint: "Automatically create a virtual interface and route intercepted traffic", stack: "TUN Stack",
+  stackMixed: "mixed (recommended for performance and compatibility)", stackSystem: "system (native system stack)", stackGvisor: "gVisor (userspace stack)",
+  lanRisk: "LAN Forwarding Risk", dnsTitle: "Smart DNS & Anti-Pollution Resolution",
+  dnsDescription: "Use Fake-IP with TUN routing for domestic and international domain resolution", enableDNS: "Enable Built-in DNS",
+  enableDNSHint: "Handle system DNS requests with Fake-IP or REDIR-HOST", dnsMode: "DNS Mode",
+  fakeIP: "fake-ip (fast, recommended)", redirHost: "redir-host (real address fallback)",
+  primaryNS: "Primary Nameserver (one per line)", fallbackNS: "Fallback Nameserver (one per line)",
+});
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +66,7 @@ type TunCheckResponse = {
 };
 
 export default function TransparentProxyPage() {
+  const text = useMessages(messages);
   const qc = useQueryClient();
   const [form, setForm] = useState<Settings | null>(null);
   const [tunCheck, setTunCheck] = useState<TunCheckResponse | null>(null);
@@ -60,7 +90,7 @@ export default function TransparentProxyPage() {
       // 开关通过预检后静默保存，避免“成功”状态占据用户视线；其他透明代理
       // 设置仍保留原有的保存反馈。
       if (!("tun_enable" in payload)) {
-        toast.success("透明代理设置已保存，等待应用");
+        toast.success(text.saved);
       }
       qc.invalidateQueries({ queryKey: ["settings"] });
       qc.invalidateQueries({ queryKey: ["config-pending"] });
@@ -80,11 +110,11 @@ export default function TransparentProxyPage() {
       // 预检通过无需显示任何状态；只有无法启用时才保留错误并提示用户。
       setTunCheck(res.can_enable ? null : res);
       if (!res.can_enable && !silent) {
-        toast.error(`TUN 无法启用：${blockingMessage(res)}`, { duration: 7000 });
+        toast.error(`${text.cannotEnable}: ${blockingMessage(res)}`, { duration: 7000 });
       }
       return res;
     } catch {
-      if (!silent) toast.error("无法完成 TUN 环境预检，已取消启用");
+      if (!silent) toast.error(text.checkFailed);
       return null;
     }
   };
@@ -118,7 +148,7 @@ export default function TransparentProxyPage() {
     saveMutation.mutate({ [key]: servers });
   };
 
-  if (!form) return <div className="text-xs text-muted-foreground p-8 text-center">正在加载设置…</div>;
+  if (!form) return <div className="text-xs text-muted-foreground p-8 text-center">{text.loading}</div>;
 
   return (
     <div className="space-y-6">
@@ -127,10 +157,10 @@ export default function TransparentProxyPage() {
         <div>
           <h3 className="text-base font-bold tracking-tight text-foreground flex items-center gap-2">
             <Network className="h-4.5 w-4.5 text-primary" />
-            透明代理与软路由模式
+            {text.title}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            开启 auto-route 与 auto-redirect 接管全部系统及局域网流量，免客户端配置走代理
+            {text.description}
           </p>
         </div>
 
@@ -140,18 +170,18 @@ export default function TransparentProxyPage() {
       <Card className="border-primary/20 bg-gradient-to-b from-primary/5 via-card/80 to-card">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base font-bold">TUN 虚拟网卡配置</CardTitle>
+            <CardTitle className="text-base font-bold">{text.tunTitle}</CardTitle>
             <div className="flex items-center gap-2">
               <Badge variant={form.tun_enable ? "success" : "secondary"}>
-                {form.tun_enable ? "TUN 已开启" : "TUN 已关闭"}
+                {form.tun_enable ? text.tunOn : text.tunOff}
               </Badge>
               {form.tun_enable && lanForwardingWarning && (
                 <button
                   type="button"
                   onClick={() => setLanForwardingDialogOpen(true)}
                   className="rounded-full p-1 text-amber-500 transition-colors hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
-                  title="局域网转发风险提示"
-                  aria-label="查看局域网转发风险提示"
+                  title={text.riskTitle}
+                  aria-label={text.riskTitle}
                 >
                   <AlertTriangle className="h-4 w-4 fill-amber-500/15" />
                 </button>
@@ -159,15 +189,15 @@ export default function TransparentProxyPage() {
             </div>
           </div>
           <CardDescription>
-            软路由/网关场景下开启。需要容器具备 NET_ADMIN 权限与 /dev/net/tun 设备挂载。
+            {text.tunDescription}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between p-3.5 rounded-xl bg-card border border-border/60 shadow-xs">
             <div className="space-y-0.5">
-              <div className="text-xs font-semibold">启用 TUN 透明代理</div>
+              <div className="text-xs font-semibold">{text.enableTun}</div>
               <div className="text-[11px] text-muted-foreground">
-                系统将自动创建虚拟网卡并拦截路由所有流量
+                {text.enableTunHint}
               </div>
             </div>
             <Switch
@@ -186,7 +216,7 @@ export default function TransparentProxyPage() {
           )}
 
           <div className="space-y-1.5">
-            <Label>TUN 协议栈 (Stack)</Label>
+            <Label>{text.stack}</Label>
             <Select
               value={form.tun_stack}
               onChange={(e) => {
@@ -195,9 +225,9 @@ export default function TransparentProxyPage() {
                 saveMutation.mutate({ tun_stack: tunStack });
               }}
             >
-              <option value="mixed">mixed（推荐，兼顾性能与兼容性）</option>
-              <option value="system">system（原生系统协议栈）</option>
-              <option value="gvisor">gVisor（纯用户态协议栈）</option>
+              <option value="mixed">{text.stackMixed}</option>
+              <option value="system">{text.stackSystem}</option>
+              <option value="gvisor">{text.stackGvisor}</option>
             </Select>
           </div>
         </CardContent>
@@ -208,7 +238,7 @@ export default function TransparentProxyPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <AlertTriangle className="h-5 w-5" />
-              局域网转发风险
+              {text.lanRisk}
             </DialogTitle>
             <DialogDescription>{lanForwardingWarning}</DialogDescription>
           </DialogHeader>
@@ -218,17 +248,17 @@ export default function TransparentProxyPage() {
       {/* 内置 DNS 设置 */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base font-bold">内置智能 DNS 与防污染解析</CardTitle>
+          <CardTitle className="text-base font-bold">{text.dnsTitle}</CardTitle>
           <CardDescription>
-            配合 TUN 模式实现国内分流与海外域名 Fake-IP 防污染解析
+            {text.dnsDescription}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between p-3.5 rounded-xl bg-muted/40 border border-border/60">
             <div className="space-y-0.5">
-              <div className="text-xs font-semibold">启用内置 DNS 服务</div>
+              <div className="text-xs font-semibold">{text.enableDNS}</div>
               <div className="text-[11px] text-muted-foreground">
-                接管系统 DNS 请求并实现 Fake-IP / REDIR-HOST
+                {text.enableDNSHint}
               </div>
             </div>
             <Switch
@@ -241,7 +271,7 @@ export default function TransparentProxyPage() {
           </div>
 
           <div className="space-y-1.5">
-            <Label>DNS 模式</Label>
+            <Label>{text.dnsMode}</Label>
             <Select
               value={form.dns_mode}
               onChange={(e) => {
@@ -250,14 +280,14 @@ export default function TransparentProxyPage() {
                 saveMutation.mutate({ dns_mode: dnsMode });
               }}
             >
-              <option value="fake-ip">fake-ip（速度极快，推荐）</option>
-              <option value="redir-host">redir-host（真实解析回退）</option>
+              <option value="fake-ip">{text.fakeIP}</option>
+              <option value="redir-host">{text.redirHost}</option>
             </Select>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>主 Nameserver (按回车换行)</Label>
+              <Label>{text.primaryNS}</Label>
               <Textarea
                 value={(form.dns_nameserver || []).join("\n")}
                 onChange={(e) =>
@@ -276,7 +306,7 @@ export default function TransparentProxyPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>备用 Nameserver (按回车换行)</Label>
+              <Label>{text.fallbackNS}</Label>
               <Textarea
                 value={(form.dns_fallback || []).join("\n")}
                 onChange={(e) =>

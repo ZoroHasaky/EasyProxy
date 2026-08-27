@@ -35,6 +35,39 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { subscriptionUsage, timeAgo, cn } from "@/lib/utils";
+import { defineMessages, useLanguage, useMessages } from "@/contexts/language";
+
+const messages = defineMessages({
+  applyFailed: "{message}，但自动应用失败，已加入待应用清单", applied: "{message}，{result}",
+  updated: "订阅已更新", added: "订阅已添加", syncSuccess: "订阅更新成功", deleted: "已删除该订阅及其关联节点",
+  syncPartial: "已更新 {count} 个订阅；{errors}", syncApplyFailed: "已完成 {count} 个订阅的更新，但自动应用失败，已加入待应用清单",
+  syncComplete: "已完成 {count} 个订阅的更新并生效", title: "订阅源管理",
+  description: "支持 Clash YAML、Base64 与节点链接批量识别解析与定时拉取", updateAll: "更新全部", add: "添加订阅",
+  disabled: "已禁用", nodeCount: "{count} 节点", interval: "更新周期", minutes: "{count} 分钟", manualOnly: "仅手动",
+  viaProxy: "经代理拉取", yes: "是", no: "否", lastSync: "上次同步", usage: "流量使用情况",
+  edit: "编辑订阅", remove: "删除订阅", confirmRemove: "确定删除订阅「{name}」及导入的全部节点吗？", syncNow: "立即同步",
+  emptyTitle: "暂无任何订阅源", emptyDescription: "点击上方「添加订阅」按钮填入您的订阅 URL，系统将自动解析节点", addFirst: "添加第一个订阅",
+  editTitle: "编辑订阅", addTitle: "添加订阅源", dialogDescription: "配置节点订阅地址、自动同步周期与请求参数",
+  name: "订阅名称", namePlaceholder: "例如：某某机场 01", url: "订阅地址 (URL)", updateInterval: "自动更新周期 (分钟)",
+  intervalPlaceholder: "0 代表仅手动", userAgent: "自定义 User-Agent", userAgentPlaceholder: "默认 ClashMeta/mihomo",
+  proxyFetch: "经代理拉取订阅", proxyFetchHint: "当订阅域名被阻断时开启此选项走内置代理", enable: "启用此订阅",
+  enableHint: "禁用后不参与定时更新及配置生成", cancel: "取消", saving: "保存中…", save: "保存订阅",
+}, {
+  applyFailed: "{message}, but automatic apply failed and the change was added to the pending list", applied: "{message}; {result}",
+  updated: "Subscription updated", added: "Subscription added", syncSuccess: "Subscription updated successfully", deleted: "Subscription and its imported nodes deleted",
+  syncPartial: "Updated {count} subscriptions; {errors}", syncApplyFailed: "Updated {count} subscriptions, but automatic apply failed and the changes were added to the pending list",
+  syncComplete: "Updated and applied {count} subscriptions", title: "Subscriptions",
+  description: "Parse Clash YAML, Base64, and node links in bulk with scheduled updates", updateAll: "Update All", add: "Add Subscription",
+  disabled: "Disabled", nodeCount: "{count} nodes", interval: "Update Interval", minutes: "{count} min", manualOnly: "Manual Only",
+  viaProxy: "Fetch via Proxy", yes: "Yes", no: "No", lastSync: "Last Sync", usage: "Data Usage",
+  edit: "Edit Subscription", remove: "Delete Subscription", confirmRemove: "Delete subscription “{name}” and all imported nodes?", syncNow: "Sync Now",
+  emptyTitle: "No subscriptions", emptyDescription: "Click Add Subscription above and enter a subscription URL. EasyProxy will parse its nodes automatically.", addFirst: "Add First Subscription",
+  editTitle: "Edit Subscription", addTitle: "Add Subscription", dialogDescription: "Configure the subscription URL, automatic sync interval, and request settings",
+  name: "Subscription Name", namePlaceholder: "For example: Provider 01", url: "Subscription URL", updateInterval: "Automatic Update Interval (minutes)",
+  intervalPlaceholder: "0 for manual only", userAgent: "Custom User-Agent", userAgentPlaceholder: "Default: ClashMeta/mihomo",
+  proxyFetch: "Fetch Subscription via Proxy", proxyFetchHint: "Use the built-in proxy when the subscription domain is blocked", enable: "Enable Subscription",
+  enableHint: "Disabled subscriptions are excluded from scheduled updates and generated configurations", cancel: "Cancel", saving: "Saving…", save: "Save Subscription",
+});
 
 type SubscriptionApplyResponse = AutoApplyResponse & {
   subscription?: Subscription;
@@ -43,6 +76,8 @@ type SubscriptionApplyResponse = AutoApplyResponse & {
 };
 
 export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean }) {
+  const text = useMessages(messages);
+  const { language } = useLanguage();
   const qc = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSub, setEditingSub] = useState<Subscription | null>(null);
@@ -61,9 +96,9 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
 
   const reportAutoApply = (savedMessage: string, result: AutoApplyResponse) => {
     if (result.apply_error) {
-      toast.warning(`${savedMessage}，但自动应用失败，已加入待应用清单`);
+      toast.warning(text.applyFailed.replace("{message}", savedMessage));
     } else {
-      toast.success(`${savedMessage}，${autoApplyResultMessage(result.apply_result)}`);
+      toast.success(text.applied.replace("{message}", savedMessage).replace("{result}", autoApplyResultMessage(result.apply_result, language)));
     }
     qc.invalidateQueries({ queryKey: ["config-pending"] });
   };
@@ -106,7 +141,7 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
       return api.post<SubscriptionApplyResponse>("/api/subscriptions", payload);
     },
     onSuccess: (res) => {
-      reportAutoApply(editingSub ? "订阅已更新" : "订阅已添加", res);
+      reportAutoApply(editingSub ? text.updated : text.added, res);
       setModalOpen(false);
       qc.invalidateQueries({ queryKey: ["subscriptions"] });
       qc.invalidateQueries({ queryKey: ["nodes"] });
@@ -118,7 +153,7 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
   const syncMutation = useMutation({
     mutationFn: (id: number) => api.post<SubscriptionApplyResponse>(`/api/subscriptions/${id}/update`),
     onSuccess: (res) => {
-      reportAutoApply("订阅更新成功", res);
+      reportAutoApply(text.syncSuccess, res);
       qc.invalidateQueries({ queryKey: ["subscriptions"] });
       qc.invalidateQueries({ queryKey: ["nodes"] });
       qc.invalidateQueries({ queryKey: ["nodeRegions"] });
@@ -142,15 +177,15 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
         }
       }
       if (failed.length) {
-        throw new Error(`已更新 ${updated} 个订阅；${failed.join("；")}`);
+        throw new Error(text.syncPartial.replace("{count}", String(updated)).replace("{errors}", failed.join(language === "zh-CN" ? "；" : "; ")));
       }
       return { updated, autoApplyFailed };
     },
     onSuccess: ({ updated, autoApplyFailed }) => {
       if (autoApplyFailed > 0) {
-        toast.warning(`已完成 ${updated} 个订阅的更新，但自动应用失败，已加入待应用清单`);
+        toast.warning(text.syncApplyFailed.replace("{count}", String(updated)));
       } else {
-        toast.success(`已完成 ${updated} 个订阅的更新并生效`);
+        toast.success(text.syncComplete.replace("{count}", String(updated)));
       }
       qc.invalidateQueries({ queryKey: ["config-pending"] });
     },
@@ -166,7 +201,7 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.del<AutoApplyResponse>(`/api/subscriptions/${id}`),
     onSuccess: (res) => {
-      reportAutoApply("已删除该订阅及其关联节点", res);
+      reportAutoApply(text.deleted, res);
       qc.invalidateQueries({ queryKey: ["subscriptions"] });
       qc.invalidateQueries({ queryKey: ["nodes"] });
       qc.invalidateQueries({ queryKey: ["nodeRegions"] });
@@ -181,10 +216,10 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
         <div>
           <h3 className="text-base font-bold tracking-tight text-foreground flex items-center gap-2">
             <Globe className="h-4.5 w-4.5 text-primary" />
-            订阅源管理
+            {text.title}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            支持 Clash YAML、Base64 与节点链接批量识别解析与定时拉取
+            {text.description}
           </p>
         </div>
 
@@ -196,11 +231,11 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
             disabled={syncAllMutation.isPending || !subs.data?.length}
           >
             <RefreshCw className={cn("h-3.5 w-3.5", syncAllMutation.isPending && "animate-spin")} />
-            更新全部
+            {text.updateAll}
           </Button>
           <Button size="sm" onClick={openAdd}>
             <Plus className="h-4 w-4" />
-            添加订阅
+            {text.add}
           </Button>
         </div>
       </div>
@@ -216,11 +251,11 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
                   <div className="space-y-1">
                     <CardTitle className="text-base flex items-center gap-2">
                       <span className="truncate max-w-[180px]">{sub.name}</span>
-                      {!sub.enabled && <Badge variant="secondary" className="text-[10px]">已禁用</Badge>}
+                      {!sub.enabled && <Badge variant="secondary" className="text-[10px]">{text.disabled}</Badge>}
                     </CardTitle>
                   </div>
                   <Badge variant="purple" className="font-mono text-xs">
-                    {sub.node_count} 节点
+                    {text.nodeCount.replace("{count}", String(sub.node_count))}
                   </Badge>
                 </div>
               </CardHeader>
@@ -228,22 +263,22 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
               <CardContent className="p-5 pt-0 space-y-3">
                 <div className="grid grid-cols-2 gap-2 text-xs py-2 border-y border-border/50">
                   <div>
-                    <span className="text-muted-foreground">更新周期: </span>
-                    <span className="font-medium">{sub.update_interval ? `${sub.update_interval} 分钟` : "仅手动"}</span>
+                    <span className="text-muted-foreground">{text.interval}: </span>
+                    <span className="font-medium">{sub.update_interval ? text.minutes.replace("{count}", String(sub.update_interval)) : text.manualOnly}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">经代理拉取: </span>
-                    <span className="font-medium">{sub.via_proxy ? "是" : "否"}</span>
+                    <span className="text-muted-foreground">{text.viaProxy}: </span>
+                    <span className="font-medium">{sub.via_proxy ? text.yes : text.no}</span>
                   </div>
                   <div className="col-span-2 text-muted-foreground text-[11px] flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> 上次同步: {timeAgo(sub.last_update)}
+                    <Clock className="h-3 w-3" /> {text.lastSync}: {timeAgo(sub.last_update, language)}
                   </div>
                 </div>
 
                 {usage && (
                   <div className="space-y-1.5 rounded-lg bg-muted/40 p-2.5 text-[11px]">
                     <div className="flex items-center justify-between text-muted-foreground">
-                      <span>流量使用情况</span>
+                      <span>{text.usage}</span>
                       <span className="font-mono text-foreground">
                         {usage.usedGB} / {usage.totalGB} GB
                       </span>
@@ -261,7 +296,7 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
                       variant="ghost"
                       size="iconSm"
                       onClick={() => openEdit(sub)}
-                      title="编辑订阅"
+                      title={text.edit}
                     >
                       <Edit className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                     </Button>
@@ -269,11 +304,11 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
                       variant="ghost"
                       size="iconSm"
                       onClick={() => {
-                        if (confirm(`确定删除订阅「${sub.name}」及导入的全部节点吗？`)) {
+                        if (confirm(text.confirmRemove.replace("{name}", sub.name))) {
                           deleteMutation.mutate(sub.id);
                         }
                       }}
-                      title="删除订阅"
+                      title={text.remove}
                     >
                       <Trash2 className="h-3.5 w-3.5 text-rose-500 hover:text-rose-600" />
                     </Button>
@@ -287,7 +322,7 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
                     disabled={syncMutation.isPending}
                   >
                     <RefreshCw className={cn("h-3 w-3", syncMutation.isPending && "animate-spin")} />
-                    立即同步
+                    {text.syncNow}
                   </Button>
                 </div>
               </CardContent>
@@ -299,12 +334,12 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
       {subs.data?.length === 0 && (
         <div className="text-center py-12 bg-card/40 rounded-2xl border border-dashed border-border/80">
           <Globe className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
-          <h4 className="text-sm font-semibold text-foreground">暂无任何订阅源</h4>
+          <h4 className="text-sm font-semibold text-foreground">{text.emptyTitle}</h4>
           <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
-            点击上方「添加订阅」按钮填入您的订阅 URL，系统将自动解析节点
+            {text.emptyDescription}
           </p>
           <Button size="sm" onClick={openAdd} className="mt-4">
-            <Plus className="h-4 w-4" /> 添加第一个订阅
+            <Plus className="h-4 w-4" /> {text.addFirst}
           </Button>
         </div>
       )}
@@ -313,24 +348,24 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{editingSub ? "编辑订阅" : "添加订阅源"}</DialogTitle>
+            <DialogTitle>{editingSub ? text.editTitle : text.addTitle}</DialogTitle>
             <DialogDescription>
-              配置节点订阅地址、自动同步周期与请求参数
+              {text.dialogDescription}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>订阅名称</Label>
+              <Label>{text.name}</Label>
               <Input
-                placeholder="例如: 某某机场 01"
+                placeholder={text.namePlaceholder}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label>订阅地址 (URL)</Label>
+              <Label>{text.url}</Label>
               <Input
                 placeholder="https://..."
                 value={url}
@@ -340,19 +375,19 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label>自动更新周期 (分钟)</Label>
+                <Label>{text.updateInterval}</Label>
                 <Input
                   type="number"
-                  placeholder="0 代表仅手动"
+                  placeholder={text.intervalPlaceholder}
                   value={updateInterval}
                   onChange={(e) => setUpdateInterval(Number(e.target.value))}
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label>自定义 User-Agent</Label>
+                <Label>{text.userAgent}</Label>
                 <Input
-                  placeholder="默认 ClashMeta/mihomo"
+                  placeholder={text.userAgentPlaceholder}
                   value={userAgent}
                   onChange={(e) => setUserAgent(e.target.value)}
                 />
@@ -361,9 +396,9 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
 
             <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/60">
               <div className="space-y-0.5">
-                <div className="text-xs font-semibold">经代理拉取订阅</div>
+                <div className="text-xs font-semibold">{text.proxyFetch}</div>
                 <div className="text-[11px] text-muted-foreground">
-                  当订阅域名被阻断时开启此选项走内置代理
+                  {text.proxyFetchHint}
                 </div>
               </div>
               <Switch checked={viaProxy} onCheckedChange={setViaProxy} />
@@ -371,9 +406,9 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
 
             <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/60">
               <div className="space-y-0.5">
-                <div className="text-xs font-semibold">启用此订阅</div>
+                <div className="text-xs font-semibold">{text.enable}</div>
                 <div className="text-[11px] text-muted-foreground">
-                  禁用后不参与定时更新及配置生成
+                  {text.enableHint}
                 </div>
               </div>
               <Switch checked={enabled} onCheckedChange={setEnabled} />
@@ -382,14 +417,14 @@ export function SubscriptionsPanel({ embedded = false }: { embedded?: boolean })
 
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setModalOpen(false)}>
-              取消
+              {text.cancel}
             </Button>
             <Button
               size="sm"
               onClick={() => saveMutation.mutate()}
               disabled={saveMutation.isPending || !name.trim() || !url.trim()}
             >
-              {saveMutation.isPending ? "保存中…" : "保存订阅"}
+              {saveMutation.isPending ? text.saving : text.save}
             </Button>
           </DialogFooter>
         </DialogContent>

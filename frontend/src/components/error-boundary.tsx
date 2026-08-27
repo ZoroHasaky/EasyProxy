@@ -1,9 +1,15 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { defineMessages, useMessages } from "@/contexts/language";
 
 interface Props {
   children: ReactNode;
+  text: {
+    title: string;
+    unknown: string;
+    refresh: string;
+  };
 }
 
 interface State {
@@ -11,7 +17,7 @@ interface State {
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
+class ErrorBoundaryInner extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,
@@ -32,9 +38,9 @@ export class ErrorBoundary extends Component<Props, State> {
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-destructive/15 text-destructive mb-4">
             <AlertTriangle className="h-7 w-7" />
           </div>
-          <h2 className="text-xl font-bold">页面渲染遇到异常</h2>
+          <h2 className="text-xl font-bold">{this.props.text.title}</h2>
           <p className="text-xs text-muted-foreground mt-2 max-w-md text-center font-mono bg-muted/40 p-3 rounded-xl border border-border/60 break-all">
-            {this.state.error?.message || "未知组件运行时异常"}
+            {this.state.error?.message || this.props.text.unknown}
           </p>
           <Button
             className="mt-6"
@@ -45,7 +51,7 @@ export class ErrorBoundary extends Component<Props, State> {
             }}
           >
             <RotateCcw className="h-4 w-4" />
-            刷新页面
+            {this.props.text.refresh}
           </Button>
         </div>
       );
@@ -53,4 +59,19 @@ export class ErrorBoundary extends Component<Props, State> {
 
     return this.props.children;
   }
+}
+
+const messages = defineMessages({
+  title: "页面渲染遇到异常",
+  unknown: "未知组件运行时异常",
+  refresh: "刷新页面",
+}, {
+  title: "The page encountered an error",
+  unknown: "Unknown component runtime error",
+  refresh: "Reload Page",
+});
+
+export function ErrorBoundary({ children }: { children: ReactNode }) {
+  const text = useMessages(messages);
+  return <ErrorBoundaryInner text={text}>{children}</ErrorBoundaryInner>;
 }

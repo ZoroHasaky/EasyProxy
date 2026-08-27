@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner";
 import { api, mihomo } from "@/lib/api";
 import { openStream } from "@/lib/ws";
+import { defineMessages, useMessages } from "@/contexts/language";
 
 export type Theme = "dark" | "light" | "system";
 type ResolvedTheme = "dark" | "light";
@@ -81,17 +82,26 @@ interface MihomoRuntimeState {
 
 const MihomoRuntimeContext = createContext<MihomoRuntimeState | null>(null);
 
-const MODE_LABELS: Record<MihomoMode, string> = {
+const messages = defineMessages({
   rule: "规则模式",
   global: "全局模式",
   direct: "直连模式",
-};
+  switched: "运行模式已切换为",
+  failed: "切换模式失败",
+}, {
+  rule: "Rule mode",
+  global: "Global mode",
+  direct: "Direct mode",
+  switched: "Runtime mode changed to",
+  failed: "Failed to change runtime mode",
+});
 
 function isMihomoMode(value: string): value is MihomoMode {
   return value === "rule" || value === "global" || value === "direct";
 }
 
 export function MihomoRuntimeProvider({ children }: { children: ReactNode }) {
+  const text = useMessages(messages);
   const [traffic, setTraffic] = useState<{ up: number; down: number }>({
     up: 0,
     down: 0,
@@ -168,10 +178,10 @@ export function MihomoRuntimeProvider({ children }: { children: ReactNode }) {
     setModePending(true);
     try {
       await mihomo.patchMode(nextMode);
-      toast.success(`运行模式已切换为「${MODE_LABELS[nextMode]}」`);
+      toast.success(`${text.switched} “${text[nextMode]}”`);
     } catch (e: any) {
       setMode(prev);
-      toast.error(`切换模式失败: ${e.message}`);
+      toast.error(`${text.failed}: ${e.message}`);
     } finally {
       setModePending(false);
     }

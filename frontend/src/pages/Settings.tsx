@@ -9,14 +9,49 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useUpdate } from "@/contexts/update-state";
+import { defineMessages, useLanguage, useMessages } from "@/contexts/language";
 
-function formatTime(value?: string) {
-  if (!value) return "未记录";
+const messages = defineMessages({
+  notRecorded: "未记录", passwordChanged: "管理密码已修改", linkRotated: "配置订阅链接已重新生成，旧链接已失效",
+  passwordLength: "新密码至少 8 位", mismatch: "两次输入的新密码不一致", copied: "配置链接已复制",
+  copyFailed: "复制失败，请手动复制链接", rotateConfirm: "重新生成后，已添加到 Clash Verge 的旧配置链接将立即失效。确定继续吗？",
+  loading: "读取中…", version: "版本", commit: "提交", notEmbedded: "未嵌入", buildTime: "构建时间",
+  updateRepo: "更新仓库", deployment: "部署方式", goVersion: "Go 版本", architecture: "系统 / 架构", timezone: "服务时区",
+  systemInfo: "系统信息", systemDescription: "当前 EasyProxy 服务的构建与运行环境", checking: "检查中…", checkUpdate: "检查更新",
+  exportTitle: "配置导出与分享", exportDescription: "导出可被 Clash Verge 使用的节点与分流配置，不包含本机端口、DNS、TUN 和控制器设置。",
+  linkHint: "配置链接会实时读取当前已保存的节点、节点组合与规则；请妥善保管。", download: "下载配置", configLink: "配置链接",
+  passwordTitle: "修改管理密码", passwordDescription: "新密码至少 8 位；修改后会立即生效。", currentPassword: "当前密码",
+  newPassword: "新密码", confirmPassword: "确认新密码", passwordSecurity: "密码仅以加密摘要形式保存", changing: "修改中…", confirmChange: "确认修改",
+  linkDescription: "将此链接添加到 Clash Verge 的订阅中。链接包含节点参数，请勿分享给不可信的人。",
+  generating: "正在生成配置链接…", readFailed: "读取配置链接失败，请关闭后重试。",
+  refreshHint: "节点或规则保存后，Clash Verge 下次刷新订阅即可获得最新配置；重新生成链接会立即使旧链接失效。",
+  regenerate: "重新生成链接", copy: "复制链接",
+}, {
+  notRecorded: "Not recorded", passwordChanged: "Management password changed", linkRotated: "Configuration subscription link regenerated; the old link is now invalid",
+  passwordLength: "The new password must be at least 8 characters", mismatch: "The new passwords do not match", copied: "Configuration link copied",
+  copyFailed: "Copy failed. Please copy the link manually", rotateConfirm: "Regenerating the link will immediately invalidate the old Clash Verge subscription link. Continue?",
+  loading: "Loading…", version: "Version", commit: "Commit", notEmbedded: "Not embedded", buildTime: "Build Time",
+  updateRepo: "Update Repository", deployment: "Deployment", goVersion: "Go Version", architecture: "System / Architecture", timezone: "Service Time Zone",
+  systemInfo: "System Information", systemDescription: "Build and runtime environment of the current EasyProxy service", checking: "Checking…", checkUpdate: "Check for Updates",
+  exportTitle: "Export & Share Configuration", exportDescription: "Export nodes and routing rules for Clash Verge without local ports, DNS, TUN, or controller settings.",
+  linkHint: "The configuration link always uses the latest saved nodes, groups, and rules. Keep it private.", download: "Download Configuration", configLink: "Configuration Link",
+  passwordTitle: "Change Management Password", passwordDescription: "The new password must be at least 8 characters and takes effect immediately.", currentPassword: "Current Password",
+  newPassword: "New Password", confirmPassword: "Confirm New Password", passwordSecurity: "Only an encrypted password hash is stored", changing: "Changing…", confirmChange: "Change Password",
+  linkDescription: "Add this link as a subscription in Clash Verge. It contains node credentials; do not share it with untrusted people.",
+  generating: "Generating configuration link…", readFailed: "Unable to load the configuration link. Close this dialog and try again.",
+  refreshHint: "After nodes or rules change, refresh the subscription in Clash Verge. Regenerating the link immediately invalidates the old one.",
+  regenerate: "Regenerate Link", copy: "Copy Link",
+});
+
+function formatTime(value: string | undefined, locale: string, missing: string) {
+  if (!value) return missing;
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "未记录" : date.toLocaleString("zh-CN", { hour12: false });
+  return Number.isNaN(date.getTime()) ? missing : date.toLocaleString(locale, { hour12: false });
 }
 
 export default function SettingsPage() {
+  const text = useMessages(messages);
+  const { locale } = useLanguage();
   const queryClient = useQueryClient();
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -34,7 +69,7 @@ export default function SettingsPage() {
       setOldPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      toast.success("管理密码已修改");
+      toast.success(text.passwordChanged);
     },
     onError: (error: any) => toast.error(error.message),
   });
@@ -47,7 +82,7 @@ export default function SettingsPage() {
     mutationFn: () => api.post<ClashConfigLink>("/api/clash-config/link/rotate"),
     onSuccess: (link) => {
       queryClient.setQueryData(["clash-config-link"], link);
-      toast.success("配置订阅链接已重新生成，旧链接已失效");
+      toast.success(text.linkRotated);
     },
     onError: (error: any) => toast.error(error.message),
   });
@@ -55,11 +90,11 @@ export default function SettingsPage() {
   const submitPassword = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (newPassword.length < 8) {
-      toast.error("新密码至少 8 位");
+      toast.error(text.passwordLength);
       return;
     }
     if (newPassword !== confirmPassword) {
-      toast.error("两次输入的新密码不一致");
+      toast.error(text.mismatch);
       return;
     }
     passwordMutation.mutate();
@@ -90,28 +125,28 @@ export default function SettingsPage() {
         fallback.remove();
         if (!copied) throw new Error("clipboard unavailable");
       }
-      toast.success("配置链接已复制");
+      toast.success(text.copied);
     } catch {
-      toast.error("复制失败，请手动复制链接");
+      toast.error(text.copyFailed);
     }
   };
   const confirmRotateConfigLink = () => {
-    if (!window.confirm("重新生成后，已添加到 Clash Verge 的旧配置链接将立即失效。确定继续吗？")) return;
+    if (!window.confirm(text.rotateConfirm)) return;
     rotateConfigLink.mutate();
   };
 
   const meta = metaQuery.data;
   const system = meta?.system;
-  const version = meta?.version ? (meta.version.startsWith("v") ? meta.version : `v${meta.version}`) : "读取中…";
+  const version = meta?.version ? (meta.version.startsWith("v") ? meta.version : `v${meta.version}`) : text.loading;
   const details = [
-    { label: "版本", value: version, hint: system?.build_type || "" },
-    { label: "提交", value: system?.commit || "未嵌入", mono: true },
-    { label: "构建时间", value: formatTime(system?.build_time) },
-    { label: "更新仓库", value: system?.release_repo || "zorohasaky/easyproxy", mono: true },
-    { label: "部署方式", value: system?.deployment || "读取中…" },
-    { label: "Go 版本", value: system?.go_version || "读取中…", mono: true },
-    { label: "系统 / 架构", value: system?.architecture || "读取中…", mono: true },
-    { label: "服务时区", value: system?.timezone || "读取中…", mono: true },
+    { label: text.version, value: version, hint: system?.build_type || "" },
+    { label: text.commit, value: system?.commit || text.notEmbedded, mono: true },
+    { label: text.buildTime, value: formatTime(system?.build_time, locale, text.notRecorded) },
+    { label: text.updateRepo, value: system?.release_repo || "zorohasaky/easyproxy", mono: true },
+    { label: text.deployment, value: system?.deployment || text.loading },
+    { label: text.goVersion, value: system?.go_version || text.loading, mono: true },
+    { label: text.architecture, value: system?.architecture || text.loading, mono: true },
+    { label: text.timezone, value: system?.timezone || text.loading, mono: true },
   ];
 
   return (
@@ -123,13 +158,13 @@ export default function SettingsPage() {
               <Server className="h-7 w-7" />
             </div>
             <div>
-              <h2 className="text-xl font-black tracking-tight text-foreground">系统信息</h2>
-              <p className="mt-1 text-xs text-muted-foreground">当前 EasyProxy 服务的构建与运行环境</p>
+              <h2 className="text-xl font-black tracking-tight text-foreground">{text.systemInfo}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{text.systemDescription}</p>
             </div>
           </div>
           <Button type="button" variant="outline" size="sm" className="shrink-0 border-primary/25 bg-card/70" onClick={openUpdateDialog} disabled={isChecking}>
             {isChecking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            {isChecking ? "检查中…" : "检查更新"}
+            {isChecking ? text.checking : text.checkUpdate}
           </Button>
         </div>
 
@@ -151,19 +186,19 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-sky-500/10 p-2 text-sky-600 dark:text-sky-400"><Link2 className="h-4.5 w-4.5" /></div>
             <div>
-              <CardTitle className="text-base font-bold">配置导出与分享</CardTitle>
-              <CardDescription>导出可被 Clash Verge 使用的节点与分流配置，不包含本机端口、DNS、TUN 和控制器设置。</CardDescription>
+              <CardTitle className="text-base font-bold">{text.exportTitle}</CardTitle>
+              <CardDescription>{text.exportDescription}</CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
-          <p className="text-[11px] text-muted-foreground">配置链接会实时读取当前已保存的节点、节点组合与规则；请妥善保管。</p>
+          <p className="text-[11px] text-muted-foreground">{text.linkHint}</p>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" size="sm" onClick={downloadClashConfig}>
-              <Download className="h-3.5 w-3.5" />下载配置
+              <Download className="h-3.5 w-3.5" />{text.download}
             </Button>
             <Button type="button" size="sm" onClick={() => setConfigLinkOpen(true)}>
-              <Link2 className="h-3.5 w-3.5" />配置链接
+              <Link2 className="h-3.5 w-3.5" />{text.configLink}
             </Button>
           </div>
         </CardContent>
@@ -174,8 +209,8 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-primary/10 p-2 text-primary"><KeyRound className="h-4.5 w-4.5" /></div>
             <div>
-              <CardTitle className="text-base font-bold">修改管理密码</CardTitle>
-              <CardDescription>新密码至少 8 位；修改后会立即生效。</CardDescription>
+              <CardTitle className="text-base font-bold">{text.passwordTitle}</CardTitle>
+              <CardDescription>{text.passwordDescription}</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -183,23 +218,23 @@ export default function SettingsPage() {
           <form className="space-y-4" onSubmit={submitPassword}>
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-1.5">
-                <Label htmlFor="current-password">当前密码</Label>
+                <Label htmlFor="current-password">{text.currentPassword}</Label>
                 <Input id="current-password" type="password" autoComplete="current-password" value={oldPassword} onChange={(event) => setOldPassword(event.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="new-password">新密码</Label>
+                <Label htmlFor="new-password">{text.newPassword}</Label>
                 <Input id="new-password" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="confirm-password">确认新密码</Label>
+                <Label htmlFor="confirm-password">{text.confirmPassword}</Label>
                 <Input id="confirm-password" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
-              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />密码仅以加密摘要形式保存</div>
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />{text.passwordSecurity}</div>
               <Button type="submit" size="sm" disabled={passwordMutation.isPending || !oldPassword || !newPassword || !confirmPassword}>
                 {passwordMutation.isPending ? <Clock className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />}
-                {passwordMutation.isPending ? "修改中…" : "确认修改"}
+                {passwordMutation.isPending ? text.changing : text.confirmChange}
               </Button>
             </div>
           </form>
@@ -209,25 +244,25 @@ export default function SettingsPage() {
       <Dialog open={configLinkOpen} onOpenChange={setConfigLinkOpen}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>配置链接</DialogTitle>
-            <DialogDescription>将此链接添加到 Clash Verge 的订阅中。链接包含节点参数，请勿分享给不可信的人。</DialogDescription>
+            <DialogTitle>{text.configLink}</DialogTitle>
+            <DialogDescription>{text.linkDescription}</DialogDescription>
           </DialogHeader>
           {configLinkQuery.isLoading ? (
-            <div className="flex h-28 items-center justify-center text-xs text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />正在生成配置链接…</div>
+            <div className="flex h-28 items-center justify-center text-xs text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{text.generating}</div>
           ) : configLinkQuery.isError ? (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">读取配置链接失败，请关闭后重试。</div>
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">{text.readFailed}</div>
           ) : (
             <div className="space-y-3">
               <Input value={subscriptionURL} readOnly onFocus={(event) => event.currentTarget.select()} className="font-mono text-xs" />
-              <p className="text-[11px] leading-relaxed text-muted-foreground">节点或规则保存后，Clash Verge 下次刷新订阅即可获得最新配置；重新生成链接会立即使旧链接失效。</p>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">{text.refreshHint}</p>
             </div>
           )}
           <DialogFooter>
             <Button type="button" variant="outline" size="sm" onClick={confirmRotateConfigLink} disabled={rotateConfigLink.isPending || configLinkQuery.isLoading}>
-              {rotateConfigLink.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}重新生成链接
+              {rotateConfigLink.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}{text.regenerate}
             </Button>
             <Button type="button" size="sm" onClick={copyConfigLink} disabled={!subscriptionURL}>
-              <Copy className="h-3.5 w-3.5" />复制链接
+              <Copy className="h-3.5 w-3.5" />{text.copy}
             </Button>
           </DialogFooter>
         </DialogContent>

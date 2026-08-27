@@ -36,16 +36,48 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn, formatBytes, formatCoreVersion } from "@/lib/utils";
+import { defineMessages, useMessages } from "@/contexts/language";
 
 const LOG_LEVELS = [
-  { value: "silent", label: "静默 (silent)" },
-  { value: "error", label: "仅错误 (error)" },
-  { value: "warning", label: "警告 (warning)" },
-  { value: "info", label: "标准信息 (info)" },
-  { value: "debug", label: "调试诊断 (debug)" },
-];
+  { value: "silent", label: "logSilent" }, { value: "error", label: "logError" },
+  { value: "warning", label: "logWarning" }, { value: "info", label: "logInfo" },
+  { value: "debug", label: "logDebug" },
+] as const;
+
+const messages = defineMessages({
+  logSilent: "静默 (silent)", logError: "仅错误 (error)", logWarning: "警告 (warning)", logInfo: "标准信息 (info)", logDebug: "调试诊断 (debug)",
+  basicSaved: "基础设置已保存，等待应用", downloadSaved: "内核下载设置已保存并生效", restarted: "内核已成功重启",
+  uploaded: "内核文件上传成功并已启动！", uploadFailed: "上传失败", title: "Mihomo 内核与服务调度",
+  description: "配置混合端口、局域网共享、日志级别与内核热重载", preview: "预览生成的配置", restart: "重启内核",
+  runtime: "内核运行详情", running: "运行中", stopped: "未运行", installed: "已装版本", notInstalled: "未安装",
+  pid: "进程 PID", memory: "当前内存占用", unavailable: "不可用", latest: "最新可用内核", checking: "检测中…",
+  tunActive: "TUN 已生效", tunInactive: "TUN 未生效（透明代理不可用）", installTitle: "下载或手动上传内核",
+  installDescription: "可手动下载 Mihomo 官方内核，或上传本地二进制文件", suitable: "本机适用内核",
+  latestStable: "最新稳定版", manualUpload: "或者手动上传内核", officialDownload: "下载本机适用的官方内核",
+  uploading: "正在上传…", selectUpload: "选择文件上传", networkTitle: "代理端口与网络参数",
+  networkDescription: "配置本地入站端口以及局域网设备接入策略", mixedPort: "混合代理端口 (HTTP / SOCKS5)", defaultPort: "默认端口为 7890",
+  logLevel: "日志输出级别", mirror: "内核下载加速镜像源（可选）", mirrorPlaceholder: "例如 https://ghproxy.com/ 或留空使用官方源",
+  allowLan: "允许局域网设备连接 (Allow LAN)", allowLanHint: "开启后局域网内其他设备可通过本机地址和混合端口连接代理",
+  previewTitle: "实时生成配置", generating: "正在生成配置…",
+}, {
+  logSilent: "Silent", logError: "Errors Only", logWarning: "Warnings", logInfo: "Standard Info", logDebug: "Debug Diagnostics",
+  basicSaved: "Basic settings saved and waiting to be applied", downloadSaved: "Kernel download settings saved and active", restarted: "Kernel restarted successfully",
+  uploaded: "Kernel uploaded and started successfully!", uploadFailed: "Upload failed", title: "Mihomo Kernel & Service Control",
+  description: "Configure the mixed port, LAN access, log level, and kernel reload", preview: "Preview Generated Configuration", restart: "Restart Kernel",
+  runtime: "Kernel Runtime Details", running: "Running", stopped: "Stopped", installed: "Installed Version", notInstalled: "Not Installed",
+  pid: "Process PID", memory: "Current Memory Usage", unavailable: "Unavailable", latest: "Latest Kernel", checking: "Checking…",
+  tunActive: "TUN Active", tunInactive: "TUN Inactive (transparent proxy unavailable)", installTitle: "Download or Upload Kernel",
+  installDescription: "Download the official Mihomo kernel or upload a local binary", suitable: "Recommended kernel",
+  latestStable: "latest stable", manualUpload: "Or upload a kernel manually", officialDownload: "Download the Official Kernel for This Machine",
+  uploading: "Uploading…", selectUpload: "Select File to Upload", networkTitle: "Proxy Port & Network Settings",
+  networkDescription: "Configure the local inbound port and LAN access policy", mixedPort: "Mixed Proxy Port (HTTP / SOCKS5)", defaultPort: "Default port: 7890",
+  logLevel: "Log Level", mirror: "Kernel Download Mirror (optional)", mirrorPlaceholder: "For example https://ghproxy.com/, or leave empty for the official source",
+  allowLan: "Allow LAN Devices", allowLanHint: "Allow other LAN devices to connect using this machine's address and mixed proxy port",
+  previewTitle: "Live Generated Configuration", generating: "Generating configuration…",
+});
 
 export default function KernelPage() {
+  const text = useMessages(messages);
   const qc = useQueryClient();
   const [form, setForm] = useState<Settings | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -79,7 +111,7 @@ export default function KernelPage() {
     mutationFn: (payload: Partial<Settings>) => api.put("/api/settings", payload),
     onSuccess: (_result, payload) => {
       const requiresApply = ["mixed_port", "allow_lan", "log_level"].some((key) => key in payload);
-      toast.success(requiresApply ? "基础设置已保存，等待应用" : "内核下载设置已保存并生效");
+      toast.success(requiresApply ? text.basicSaved : text.downloadSaved);
       qc.invalidateQueries({ queryKey: ["settings"] });
       qc.invalidateQueries({ queryKey: ["config-pending"] });
     },
@@ -88,7 +120,7 @@ export default function KernelPage() {
 
   const restartCoreMutation = useMutation({
     mutationFn: () => api.post("/api/core/restart"),
-    onSuccess: () => toast.success("内核已成功重启"),
+    onSuccess: () => toast.success(text.restarted),
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -96,10 +128,10 @@ export default function KernelPage() {
     setUploading(true);
     try {
       await api.upload("/api/core/upload", file);
-      toast.success("内核文件上传成功并已启动！");
+      toast.success(text.uploaded);
       qc.invalidateQueries({ queryKey: ["core"] });
     } catch (e: any) {
-      toast.error(`上传失败: ${e.message}`);
+      toast.error(`${text.uploadFailed}: ${e.message}`);
     } finally {
       setUploading(false);
     }
@@ -123,10 +155,10 @@ export default function KernelPage() {
         <div>
           <h3 className="text-base font-bold tracking-tight text-foreground flex items-center gap-2">
             <Cpu className="h-4.5 w-4.5 text-primary" />
-            Mihomo 内核与服务调度
+            {text.title}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            配置混合端口、局域网共享、日志级别与内核热重载
+            {text.description}
           </p>
         </div>
 
@@ -137,7 +169,7 @@ export default function KernelPage() {
             onClick={() => setPreviewOpen(true)}
           >
             <Eye className="h-3.5 w-3.5" />
-            预览生成的配置
+            {text.preview}
           </Button>
           <Button
             variant="outline"
@@ -146,7 +178,7 @@ export default function KernelPage() {
             disabled={restartCoreMutation.isPending || !isRunning}
           >
             <RotateCw className={cn("h-3.5 w-3.5", restartCoreMutation.isPending && "animate-spin")} />
-            重启内核
+            {text.restart}
           </Button>
         </div>
       </div>
@@ -156,36 +188,36 @@ export default function KernelPage() {
         <Card className="hover:border-primary/40 transition-all">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-bold">内核运行详情</CardTitle>
+              <CardTitle className="text-sm font-bold">{text.runtime}</CardTitle>
               <Badge variant={isRunning ? "success" : "destructive"}>
-                {isRunning ? "运行中" : "未运行"}
+                {isRunning ? text.running : text.stopped}
               </Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div>
-                <div className="text-muted-foreground">已装版本</div>
+                <div className="text-muted-foreground">{text.installed}</div>
                 <div className="font-mono font-semibold mt-0.5">
-                  {core.data?.installed_version ? formatCoreVersion(core.data.installed_version) : "未安装"}
+                  {core.data?.installed_version ? formatCoreVersion(core.data.installed_version) : text.notInstalled}
                 </div>
               </div>
               <div>
-                <div className="text-muted-foreground">进程 PID</div>
+                <div className="text-muted-foreground">{text.pid}</div>
                 <div className="font-mono font-semibold mt-0.5">
                   {core.data?.pid || "-"}
                 </div>
               </div>
               <div>
-                <div className="text-muted-foreground">当前内存占用</div>
+                <div className="text-muted-foreground">{text.memory}</div>
                 <div className="font-mono font-semibold mt-0.5">
-                  {core.data?.memory_bytes ? formatBytes(core.data.memory_bytes) : "不可用"}
+                  {core.data?.memory_bytes ? formatBytes(core.data.memory_bytes) : text.unavailable}
                 </div>
               </div>
               <div>
-                <div className="text-muted-foreground">最新可用内核</div>
+                <div className="text-muted-foreground">{text.latest}</div>
                 <div className="font-mono font-semibold mt-0.5 text-primary">
-                  {core.data?.latest_version || "检测中…"}
+                  {core.data?.latest_version || text.checking}
                 </div>
               </div>
             </div>
@@ -199,14 +231,14 @@ export default function KernelPage() {
             {core.data?.tun_active === true && (
               <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                TUN 已生效
+                {text.tunActive}
               </div>
             )}
             {core.data?.tun_active === false && (
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 text-xs font-semibold text-destructive">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                  TUN 未生效（透明代理不可用）
+                  {text.tunInactive}
                 </div>
                 {core.data?.tun_error && (
                   <div className="p-2.5 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-mono break-all">
@@ -221,9 +253,9 @@ export default function KernelPage() {
         {/* 内核更新/下载/上传 */}
         <Card className="hover:border-primary/40 transition-all">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-bold">下载或手动上传内核</CardTitle>
+            <CardTitle className="text-sm font-bold">{text.installTitle}</CardTitle>
             <CardDescription>
-              可手动下载 Mihomo 官方内核，或上传本地二进制文件
+              {text.installDescription}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -232,21 +264,21 @@ export default function KernelPage() {
                 <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
                 <div className="min-w-0 space-y-0.5">
                   <div className="font-semibold">
-                    本机适用内核：Mihomo {core.data.latest_version || "最新稳定版"}（linux-{core.data.download_asset.asset_arch}，{core.data.download_asset.label}）
+                    {text.suitable}: Mihomo {core.data.latest_version || text.latestStable} (linux-{core.data.download_asset.asset_arch}, {core.data.download_asset.label})
                   </div>
                 </div>
               </div>
             )}
             <div className="pt-2 border-t border-border/50 flex items-center justify-between">
               <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-                <span className="shrink-0">或者手动上传内核：</span>
+                <span className="shrink-0">{text.manualUpload}:</span>
                 <a
                   href={officialCoreDownloadURL}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 truncate font-medium text-primary underline underline-offset-2 hover:opacity-80"
                 >
-                  下载本机适用的官方内核
+                  {text.officialDownload}
                   <ExternalLink className="h-3 w-3 shrink-0" />
                 </a>
               </div>
@@ -266,7 +298,7 @@ export default function KernelPage() {
                 onClick={() => coreFileInputRef.current?.click()}
               >
                 <UploadCloud className="h-3.5 w-3.5" />
-                {uploading ? "正在上传…" : "选择文件上传"}
+                {uploading ? text.uploading : text.selectUpload}
               </Button>
             </div>
           </CardContent>
@@ -277,26 +309,26 @@ export default function KernelPage() {
       {form && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base font-bold">代理端口与网络参数</CardTitle>
+            <CardTitle className="text-base font-bold">{text.networkTitle}</CardTitle>
             <CardDescription>
-              配置本地入站端口以及局域网设备接入策略
+              {text.networkDescription}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label>混合代理端口 (HTTP / SOCKS5)</Label>
+                <Label>{text.mixedPort}</Label>
                 <Input
                   type="number"
                   value={form.mixed_port}
                   onChange={(e) => patch({ mixed_port: Number(e.target.value) })}
                   onBlur={() => saveMutation.mutate({ mixed_port: form.mixed_port })}
                 />
-                <p className="text-[11px] text-muted-foreground">默认端口为 7890</p>
+                <p className="text-[11px] text-muted-foreground">{text.defaultPort}</p>
               </div>
 
               <div className="space-y-1.5">
-                <Label>日志输出级别</Label>
+                <Label>{text.logLevel}</Label>
                 <Select
                   value={form.log_level}
                   onChange={(e) => {
@@ -307,7 +339,7 @@ export default function KernelPage() {
                 >
                   {LOG_LEVELS.map((l) => (
                     <option key={l.value} value={l.value}>
-                      {l.label}
+                      {text[l.label]}
                     </option>
                   ))}
                 </Select>
@@ -315,9 +347,9 @@ export default function KernelPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>内核下载加速镜像源 (可选)</Label>
+              <Label>{text.mirror}</Label>
               <Input
-                placeholder="例如 https://ghproxy.com/ 或留空使用官方源"
+                placeholder={text.mirrorPlaceholder}
                 value={form.core_mirror || ""}
                 onChange={(e) => patch({ core_mirror: e.target.value })}
                 onBlur={() => saveMutation.mutate({ core_mirror: form.core_mirror })}
@@ -326,9 +358,9 @@ export default function KernelPage() {
 
             <div className="flex items-center justify-between p-3.5 rounded-xl bg-muted/40 border border-border/60">
               <div className="space-y-0.5">
-                <div className="text-xs font-semibold">允许局域网设备连接 (Allow LAN)</div>
+                <div className="text-xs font-semibold">{text.allowLan}</div>
                 <div className="text-[11px] text-muted-foreground">
-                  开启后局域网内其他设备可通过 本机IP:{form.mixed_port} 走代理
+                  {text.allowLanHint}
                 </div>
               </div>
               <Switch
@@ -347,7 +379,7 @@ export default function KernelPage() {
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>实时生成配置</DialogTitle>
+            <DialogTitle>{text.previewTitle}</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-hidden rounded-xl border border-border/80 my-2">
             {preview.data ? (
@@ -360,7 +392,7 @@ export default function KernelPage() {
               />
             ) : (
               <div className="flex h-64 items-center justify-center text-xs text-muted-foreground">
-                正在生成配置…
+                {text.generating}
               </div>
             )}
           </div>

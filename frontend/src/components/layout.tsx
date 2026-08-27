@@ -39,32 +39,50 @@ import { useConfigApply } from "@/contexts/config-apply-state";
 import { cn, formatSpeed } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { LanguageToggle } from "@/components/language-toggle";
+import { defineMessages, useMessages } from "@/contexts/language";
 
 const nav = [
-  { to: "/", label: "仪表盘", icon: LayoutDashboard, desc: "概览与状态" },
-  { to: "/nodes", label: "节点池", icon: Server, desc: "节点与订阅" },
-  { to: "/rules", label: "规则集", icon: ScrollText, desc: "分流与策略" },
-  { to: "/connections", label: "连接监控", icon: Cable, desc: "实时会话" },
-  { to: "/kernel", label: "内核管理", icon: Cpu, desc: "Mihomo 内核" },
-  { to: "/geo", label: "Geo 数据", icon: Globe2, desc: "规则数据库" },
-  { to: "/tun", label: "透明代理", icon: Network, desc: "TUN 软路由" },
-  { to: "/logs", label: "实时日志", icon: Terminal, desc: "系统输出" },
-  { to: "/settings", label: "系统设置", icon: Settings, desc: "基础配置" },
-];
+  { to: "/", label: "dashboard", icon: LayoutDashboard },
+  { to: "/nodes", label: "nodes", icon: Server },
+  { to: "/rules", label: "rules", icon: ScrollText },
+  { to: "/connections", label: "connections", icon: Cable },
+  { to: "/kernel", label: "kernel", icon: Cpu },
+  { to: "/geo", label: "geo", icon: Globe2 },
+  { to: "/tun", label: "tun", icon: Network },
+  { to: "/logs", label: "logs", icon: Terminal },
+  { to: "/settings", label: "settings", icon: Settings },
+] as const;
 
-const modes: { key: MihomoMode; label: string; desc: string }[] = [
-  { key: "rule", label: "规则", desc: "智能分流" },
-  { key: "global", label: "全局", desc: "走代理" },
-  { key: "direct", label: "直连", desc: "免代理" },
+const modes: { key: MihomoMode; label: "modeRule" | "modeGlobal" | "modeDirect" }[] = [
+  { key: "rule", label: "modeRule" },
+  { key: "global", label: "modeGlobal" },
+  { key: "direct", label: "modeDirect" },
 ];
 
 const SIDEBAR_STORAGE_KEY = "easyproxy-sidebar-collapsed";
 
-const themes: { key: Theme; label: string; icon: typeof Sun }[] = [
-  { key: "light", label: "明亮", icon: Sun },
-  { key: "dark", label: "深暗", icon: Moon },
-  { key: "system", label: "自动", icon: Monitor },
+const themes: { key: Theme; label: "themeLight" | "themeDark" | "themeSystem"; icon: typeof Sun }[] = [
+  { key: "light", label: "themeLight", icon: Sun },
+  { key: "dark", label: "themeDark", icon: Moon },
+  { key: "system", label: "themeSystem", icon: Monitor },
 ];
+
+const messages = defineMessages({
+  dashboard: "仪表盘", nodes: "节点池", rules: "规则集", connections: "连接监控", kernel: "内核管理",
+  geo: "Geo 数据", tun: "透明代理", logs: "实时日志", settings: "系统设置",
+  coreRunning: "正常运行", coreError: "异常", coreStopped: "已停止", core: "内核", coreStatus: "内核状态",
+  logout: "退出登录", logoutSuccess: "已退出登录", modeRule: "规则", modeGlobal: "全局", modeDirect: "直连",
+  themeLight: "明亮", themeDark: "深暗", themeSystem: "自动", pendingConfig: "待应用配置",
+  newVersion: "发现新版本", currentTheme: "当前主题", clickToSwitch: "单击切换",
+}, {
+  dashboard: "Dashboard", nodes: "Nodes", rules: "Rules", connections: "Connections", kernel: "Kernel",
+  geo: "Geo Data", tun: "Transparent Proxy", logs: "Logs", settings: "Settings",
+  coreRunning: "Running", coreError: "Error", coreStopped: "Stopped", core: "Kernel", coreStatus: "Kernel Status",
+  logout: "Sign Out", logoutSuccess: "Signed out", modeRule: "Rule", modeGlobal: "Global", modeDirect: "Direct",
+  themeLight: "Light", themeDark: "Dark", themeSystem: "System", pendingConfig: "Pending Changes",
+  newVersion: "Update Available", currentTheme: "Current theme", clickToSwitch: "click to switch",
+});
 
 interface SidebarContentProps {
   collapsed: boolean;
@@ -75,8 +93,9 @@ interface SidebarContentProps {
 }
 
 function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }: SidebarContentProps) {
+  const text = useMessages(messages);
   const running = coreState === "running";
-  const coreLabel = running ? "正常运行" : coreState === "failed" ? "异常" : "已停止";
+  const coreLabel = running ? text.coreRunning : coreState === "failed" ? text.coreError : text.coreStopped;
   const displayVersion = version ? (version.startsWith("v") ? version : `v${version}`) : "v…";
 
   return (
@@ -94,12 +113,14 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
 
       {/* 导航项 */}
       <nav className="flex-1 space-y-1.5 p-3 overflow-y-auto">
-        {nav.map((item) => (
+        {nav.map((item) => {
+          const label = text[item.label];
+          return (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.to === "/"}
-            title={collapsed ? item.label : undefined}
+            title={collapsed ? label : undefined}
             onClick={onNavigate}
             className={({ isActive }) =>
               cn(
@@ -112,10 +133,11 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
           >
             <item.icon className="h-5 w-5 shrink-0 transition-transform duration-200 group-hover:scale-110" />
             <div className={cn("flex min-w-0 flex-col overflow-hidden whitespace-nowrap text-left transition-[max-width,opacity,transform] duration-200 ease-out", collapsed ? "delay-100 max-w-0 -translate-x-2 opacity-0" : "delay-0 max-w-32 translate-x-0 opacity-100")}>
-              <span className="leading-tight">{item.label}</span>
+              <span className="leading-tight">{label}</span>
             </div>
           </NavLink>
-        ))}
+          );
+        })}
       </nav>
 
       {/* 底部内核运行状态与退出 */}
@@ -123,8 +145,8 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
         <div className="space-y-3">
           <div className="relative flex h-11 w-full items-center rounded-xl border border-border/50 bg-card px-3 shadow-xs">
             <div className={cn("absolute top-1/2 flex -translate-y-1/2 items-center transition-[left,transform] duration-300 ease-in-out", collapsed ? "left-1/2 -translate-x-1/2" : "left-3 translate-x-0")}>
-              <div className={cn("h-2.5 w-2.5 shrink-0 rounded-full", running ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} title={`内核: ${coreLabel}`} />
-              <span className={cn("overflow-hidden whitespace-nowrap text-xs font-medium text-muted-foreground transition-[max-width,margin,opacity,transform] duration-200 ease-out", collapsed ? "delay-100 ml-0 max-w-0 -translate-x-2 opacity-0" : "ml-2 max-w-20 translate-x-0 opacity-100")}>内核状态</span>
+              <div className={cn("h-2.5 w-2.5 shrink-0 rounded-full", running ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} title={`${text.core}: ${coreLabel}`} />
+              <span className={cn("overflow-hidden whitespace-nowrap text-xs font-medium text-muted-foreground transition-[max-width,margin,opacity,transform] duration-200 ease-out", collapsed ? "delay-100 ml-0 max-w-0 -translate-x-2 opacity-0" : "ml-2 max-w-20 translate-x-0 opacity-100")}>{text.coreStatus}</span>
             </div>
             <Badge variant={running ? "success" : "destructive"} className={cn("absolute right-3 top-1/2 -translate-y-1/2 overflow-hidden text-[10px] transition-[max-width,padding,opacity] duration-200 ease-out", collapsed ? "delay-100 max-w-0 border-0 px-0 py-0 opacity-0" : "max-w-20 px-2 py-0 opacity-100")}>
               {coreLabel}
@@ -132,11 +154,11 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
           </div>
           <button
             onClick={onLogout}
-            title={collapsed ? "退出登录" : undefined}
+            title={collapsed ? text.logout : undefined}
             className="flex h-11 w-full items-center justify-center rounded-xl border border-border/50 bg-card px-3 text-xs font-medium text-muted-foreground shadow-xs transition-colors hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
           >
             <LogOut className="h-4 w-4 shrink-0" />
-            <span className={cn("overflow-hidden whitespace-nowrap transition-[max-width,margin,opacity,transform] duration-200 ease-out", collapsed ? "delay-100 ml-0 max-w-0 -translate-x-2 opacity-0" : "ml-2 max-w-20 translate-x-0 opacity-100")}>退出登录</span>
+            <span className={cn("overflow-hidden whitespace-nowrap transition-[max-width,margin,opacity,transform] duration-200 ease-out", collapsed ? "delay-100 ml-0 max-w-0 -translate-x-2 opacity-0" : "ml-2 max-w-20 translate-x-0 opacity-100")}>{text.logout}</span>
           </button>
         </div>
       </div>
@@ -145,6 +167,7 @@ function SidebarContent({ collapsed, coreState, version, onLogout, onNavigate }:
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const text = useMessages(messages);
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
@@ -174,7 +197,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     try {
       await api.post("/api/logout");
-      toast.success("已退出登录");
+      toast.success(text.logoutSuccess);
       qc.clear();
       navigate("/");
       window.location.reload();
@@ -269,7 +292,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                         : "text-muted-foreground hover:text-foreground"
                     )}
                   >
-                    {m.label}
+                    {text[m.label]}
                   </button>
                 );
               })}
@@ -299,7 +322,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 onClick={() => setConfigDialogOpen(true)}
               >
                 <Wrench className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">待应用配置</span>
+                <span className="hidden md:inline">{text.pendingConfig}</span>
                 <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 font-mono text-[10px]">{pending?.count}</span>
               </Button>
             )}
@@ -312,13 +335,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 onClick={() => setUpdateDialogOpen(true)}
               >
                 <Sparkles className="h-3.5 w-3.5 animate-bounce" />
-                <span className="hidden md:inline">发现新版本</span>
+                <span className="hidden md:inline">{text.newVersion}</span>
               </Button>
             )}
 
+            <LanguageToggle />
+
             <button
               onClick={cycleTheme}
-              title={`当前主题：${themes.find((item) => item.key === theme)?.label ?? "自动"}；单击切换`}
+              title={`${text.currentTheme}: ${text[themes.find((item) => item.key === theme)?.label ?? "themeSystem"]}; ${text.clickToSwitch}`}
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/80 bg-card/60 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors shadow-2xs"
             >
               {theme === "light" ? (

@@ -1,25 +1,41 @@
-# EasyProxy 发布版 compose：随 GitHub Release 分发，镜像来自 ghcr，无需克隆仓库
-# 使用：下载本文件（Release 中的 docker-compose.yml）放入任意目录，执行
-#   docker compose up -d
-#   面板: http://<host>:8080    初始密码: docker logs easyproxy
-#   代理: http/socks5 <host>:7890
+# EasyProxy 发布版 Docker Compose
 #
-# ── 透明代理（TUN）模式：取消下面各行的注释，并注释掉 services.easyproxy 下的 ports: 段 ──
-# 开启后 LAN 设备将网关/DNS 指向本机即可免配置走代理，再到面板「透明代理」页开启 TUN 开关
+# 默认使用 GitHub 官方镜像源和普通代理模式，下载后可直接启动。
+# 中国大陆用户可切换为南京大学镜像源；需要软路由功能时可切换为 TUN 透明代理模式。
+#
+# 启动：docker compose up -d
+# 日志/初始密码：docker logs easyproxy
+
 services:
   easyproxy:
-    image: __IMAGE__:__VERSION__
+    # ==================== 1. 镜像源（默认官方源） ====================
+
+    # GitHub 官方镜像源：默认启用
+    image: ghcr.io/zorohasaky/easyproxy:latest
+
+    # 南京大学镜像源：中国大陆环境可注释上方官方源，再解除下一行注释
+    # image: ghcr.nju.edu.cn/zorohasaky/easyproxy:latest
+
     container_name: easyproxy
-    # network_mode: host          # 必需：host 网络（与 ports 互斥，需一并注释）
-    # cap_add:
-    #   - NET_ADMIN               # 必需：创建 TUN 网卡的能力
-    # devices:
-    #   - /dev/net/tun:/dev/net/tun  # 必需：TUN 设备
-    # 注：host 网络模式不允许 compose 设置 sysctl；如需转发请确认宿主机已开启
-    # net.ipv4.ip_forward=1（多数发行版/PVE 默认已开启）
+
+    # ==================== 2. 运行模式（默认普通代理） ====================
+
+    # ---------- 普通代理模式 ----------
+    # 默认启用，适合在设备中手动设置 HTTP/SOCKS5 代理。
     ports:
-      - "8080:8080" # 面板
-      - "7890:7890" # 混合代理端口 (HTTP/SOCKS5)
+      - "8080:8080" # 管理面板
+      - "7890:7890" # HTTP/SOCKS5 混合代理
+
+    # ---------- TUN 透明代理模式 ----------
+    # 切换时先注释上方 ports 段，再解除下面 5 行注释：
+    # network_mode: host
+    # cap_add:
+    #   - NET_ADMIN
+    # devices:
+    #   - /dev/net/tun:/dev/net/tun
+    # 注：host 网络与 ports 互斥；不要同时解除普通代理模式的 ports 注释。
+    # 注：host 网络模式下请在宿主机开启 net.ipv4.ip_forward=1，不能在此处设置 sysctl。
+
     volumes:
       - ./data:/data
     restart: unless-stopped

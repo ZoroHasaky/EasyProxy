@@ -45,10 +45,52 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SubscriptionsPanel } from "@/pages/Subscriptions";
 import { cn } from "@/lib/utils";
+import { defineMessages, useLanguage, useMessages, useRegionName } from "@/contexts/language";
+
+const messages = defineMessages({
+  untested: "未测速", timeout: "超时", applyFailed: "{message}，但自动应用失败，已加入待应用清单", applied: "{message}，{result}",
+  tested: "测速完成，共测试 {count} 个节点", enabled: "节点已启用", disabled: "节点已禁用", deleted: "节点已删除",
+  parametersUpdated: "节点参数已更新", nameUpdated: "节点名称已更新", invalidObject: "节点参数必须是有效的 JSON 对象",
+  objectRequired: "节点参数必须是 JSON 对象", testSuccess: "测速成功：{delay} ms", imported: "导入成功，新增 {count} 个节点",
+  title: "节点池总览", nodeCount: "{count} 个节点", testAll: "并发测速", importNodes: "导入节点", search: "搜索节点名称/服务器…",
+  allRegions: "全部地区", allSources: "全部来源", subscriptionImport: "订阅导入", manualImport: "手动导入",
+  allStatuses: "全部状态", enabledOnly: "仅启用", disabledOnly: "仅禁用", sortAdded: "按添加顺序排序",
+  sortLatency: "按测速延迟升序", sortName: "按节点名称排序", status: "状态", nodeName: "节点名称", protocol: "协议",
+  region: "地区", latency: "延迟", serverPort: "服务器 / 端口", actions: "操作", source: "来源", unknown: "未知",
+  testOne: "单独测速", editFull: "编辑完整节点参数", rename: "重命名节点", remove: "删除节点",
+  confirmRemove: "确定删除节点「{name}」吗？", emptyTitle: "没有找到匹配的节点", emptyDescription: "请尝试调整筛选条件或点击右上角导入新节点",
+  importTitle: "手动导入单节点分享链接", importDescription: "支持 ss://、vmess://、vless://、trojan://、hysteria2://、tuic:// 等链接，每行一条",
+  importPlaceholder: "在此粘贴节点分享链接，支持多行批量输入…", cancel: "取消", importing: "解析导入中…", importNow: "立即解析导入",
+  editManualTitle: "编辑手动节点参数", editNameTitle: "修改节点名称", editManualDescription: "可修改完整 Mihomo 节点配置；保存后会自动重新加载当前有效配置。",
+  editNameDescription: "自定义该节点的展示名称（修改后自动同步到规则与节点组合）", fullConfig: "完整节点参数（JSON）",
+  requiredFields: "必填字段：name、type、server、port；其余协议参数会原样保存。", regionOptional: "地区标签（可选）",
+  regionPlaceholder: "例如 HK、US；留空则显示为未知地区", namePlaceholder: "输入新的节点名称", saving: "保存中…", saveChanges: "保存修改",
+  subscriptions: "订阅管理", nodePool: "节点池",
+}, {
+  untested: "Not Tested", timeout: "Timed Out", applyFailed: "{message}, but automatic apply failed and the change was added to the pending list", applied: "{message}; {result}",
+  tested: "Latency test complete for {count} nodes", enabled: "Node enabled", disabled: "Node disabled", deleted: "Node deleted",
+  parametersUpdated: "Node settings updated", nameUpdated: "Node name updated", invalidObject: "Node settings must be a valid JSON object",
+  objectRequired: "Node settings must be a JSON object", testSuccess: "Latency test succeeded: {delay} ms", imported: "Import complete: {count} new nodes",
+  title: "Node Pool", nodeCount: "{count} nodes", testAll: "Test All", importNodes: "Import Nodes", search: "Search node name or server…",
+  allRegions: "All Regions", allSources: "All Sources", subscriptionImport: "Subscription", manualImport: "Manual Import",
+  allStatuses: "All Statuses", enabledOnly: "Enabled Only", disabledOnly: "Disabled Only", sortAdded: "Sort by Date Added",
+  sortLatency: "Sort by Latency", sortName: "Sort by Node Name", status: "Status", nodeName: "Node Name", protocol: "Protocol",
+  region: "Region", latency: "Latency", serverPort: "Server / Port", actions: "Actions", source: "Source", unknown: "Unknown",
+  testOne: "Test This Node", editFull: "Edit Full Node Settings", rename: "Rename Node", remove: "Delete Node",
+  confirmRemove: "Delete node “{name}”?", emptyTitle: "No matching nodes", emptyDescription: "Adjust the filters or import a new node from the upper-right corner",
+  importTitle: "Import Individual Node Links", importDescription: "Supports ss://, vmess://, vless://, trojan://, hysteria2://, tuic://, and similar links, one per line",
+  importPlaceholder: "Paste node share links here, one per line…", cancel: "Cancel", importing: "Parsing and Importing…", importNow: "Parse and Import",
+  editManualTitle: "Edit Manual Node Settings", editNameTitle: "Rename Node", editManualDescription: "Edit the full Mihomo node configuration. The active configuration reloads automatically after saving.",
+  editNameDescription: "Change the node's display name. Rules and proxy groups are updated automatically.", fullConfig: "Full Node Settings (JSON)",
+  requiredFields: "Required fields: name, type, server, and port. Other protocol settings are preserved as entered.", regionOptional: "Region Tag (optional)",
+  regionPlaceholder: "For example HK or US; leave empty for Unknown", namePlaceholder: "Enter a new node name", saving: "Saving…", saveChanges: "Save Changes",
+  subscriptions: "Subscriptions", nodePool: "Node Pool",
+});
 
 function LatencyBadge({ node }: { node: ProxyNode }) {
-  if (!node.latency_at) return <span className="whitespace-nowrap text-xs font-mono text-muted-foreground">未测速</span>;
-  if (!node.alive || node.latency === 0) return <Badge variant="destructive" className="whitespace-nowrap">超时</Badge>;
+  const text = useMessages(messages);
+  if (!node.latency_at) return <span className="whitespace-nowrap text-xs font-mono text-muted-foreground">{text.untested}</span>;
+  if (!node.alive || node.latency === 0) return <Badge variant="destructive" className="whitespace-nowrap">{text.timeout}</Badge>;
   const variant = node.latency < 200 ? "success" : node.latency < 600 ? "warning" : "secondary";
   return (
     <Badge variant={variant as any} className="whitespace-nowrap font-mono text-[11px]">
@@ -58,6 +100,9 @@ function LatencyBadge({ node }: { node: ProxyNode }) {
 }
 
 export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
+  const text = useMessages(messages);
+  const { language } = useLanguage();
+  const regionName = useRegionName();
   const qc = useQueryClient();
   const [region, setRegion] = useState("");
   const [source, setSource] = useState("");
@@ -91,9 +136,9 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
 
   const reportAutoApply = (savedMessage: string, result: AutoApplyResponse) => {
     if (result.apply_error) {
-      toast.warning(`${savedMessage}，但自动应用失败，已加入待应用清单`);
+      toast.warning(text.applyFailed.replace("{message}", savedMessage));
     } else {
-      toast.success(`${savedMessage}，${autoApplyResultMessage(result.apply_result)}`);
+      toast.success(text.applied.replace("{message}", savedMessage).replace("{result}", autoApplyResultMessage(result.apply_result, language)));
     }
     qc.invalidateQueries({ queryKey: ["config-pending"] });
   };
@@ -104,7 +149,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
         ids: (nodes.data ?? []).filter((node) => node.enabled).map((node) => node.id),
       }),
     onSuccess: (res) => {
-      toast.success(`测速完成，共测试 ${res.tested} 个节点`);
+      toast.success(text.tested.replace("{count}", String(res.tested)));
       qc.invalidateQueries({ queryKey: ["nodes"] });
     },
     onError: (e: any) => {
@@ -117,7 +162,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
     mutationFn: ({ id, value }: { id: number; value: boolean }) =>
       api.patch<AutoApplyResponse>(`/api/nodes/${id}`, { enabled: value }),
     onSuccess: (res, { value }) => {
-      reportAutoApply(value ? "节点已启用" : "节点已禁用", res);
+      reportAutoApply(value ? text.enabled : text.disabled, res);
       qc.invalidateQueries({ queryKey: ["nodes"] });
     },
     onError: (e: any) => toast.error(e.message),
@@ -126,7 +171,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
   const removeMutation = useMutation({
     mutationFn: (id: number) => api.del<AutoApplyResponse>(`/api/nodes/${id}`),
     onSuccess: (res) => {
-      reportAutoApply("节点已删除", res);
+      reportAutoApply(text.deleted, res);
       qc.invalidateQueries({ queryKey: ["nodes"] });
       qc.invalidateQueries({ queryKey: ["nodeRegions"] });
       qc.invalidateQueries({ queryKey: ["ruleTargets"] });
@@ -137,7 +182,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
     mutationFn: ({ id, body }: { id: number; body: Record<string, unknown> }) =>
       api.patch<AutoApplyResponse>(`/api/nodes/${id}`, body),
     onSuccess: (res) => {
-      reportAutoApply(editingNode?.source_type === "manual" ? "节点参数已更新" : "节点名称已更新", res);
+      reportAutoApply(editingNode?.source_type === "manual" ? text.parametersUpdated : text.nameUpdated, res);
       setEditingNode(null);
       setEditingName("");
       setEditingRawConfig("");
@@ -165,11 +210,11 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
     try {
       rawConfig = JSON.parse(editingRawConfig);
     } catch {
-      toast.error("节点参数必须是有效的 JSON 对象");
+      toast.error(text.invalidObject);
       return;
     }
     if (!rawConfig || typeof rawConfig !== "object" || Array.isArray(rawConfig)) {
-      toast.error("节点参数必须是 JSON 对象");
+      toast.error(text.objectRequired);
       return;
     }
     editMutation.mutate({
@@ -182,7 +227,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
     setDelayPending(id);
     try {
       const res = await api.get<{ delay: number }>(`/api/nodes/${id}/delay`);
-      toast.success(`测速成功：${res.delay} ms`);
+      toast.success(text.testSuccess.replace("{delay}", String(res.delay)));
       qc.invalidateQueries({ queryKey: ["nodes"] });
     } catch (e: any) {
       toast.error(e.message);
@@ -195,7 +240,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
   const importMutation = useMutation({
     mutationFn: () => api.post<{ added: number; duplicated: number } & AutoApplyResponse>("/api/nodes/import", { content: importText }),
     onSuccess: (res) => {
-      reportAutoApply(`导入成功，新增 ${res.added} 个节点`, res);
+      reportAutoApply(text.imported.replace("{count}", String(res.added)), res);
       setImportOpen(false);
       setImportText("");
       qc.invalidateQueries({ queryKey: ["nodes"] });
@@ -222,9 +267,9 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Server className="h-5 w-5 text-primary" />
-            <h3 className="font-bold text-base tracking-tight">节点池总览</h3>
+            <h3 className="font-bold text-base tracking-tight">{text.title}</h3>
             <Badge variant="secondary" className="font-mono text-xs">
-              {rawList.length} 个节点
+              {text.nodeCount.replace("{count}", String(rawList.length))}
             </Badge>
           </div>
 
@@ -236,11 +281,11 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
               disabled={checkMutation.isPending || rawList.length === 0}
             >
               <Gauge className={cn("h-3.5 w-3.5", checkMutation.isPending && "animate-spin")} />
-              并发测速
+              {text.testAll}
             </Button>
             <Button size="sm" onClick={() => setImportOpen(true)}>
               <Plus className="h-4 w-4" />
-              导入节点
+              {text.importNodes}
             </Button>
           </div>
         </div>
@@ -250,7 +295,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
           <div className="relative col-span-2 sm:col-span-1">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="搜索节点名称/服务器…"
+              placeholder={text.search}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               className="pl-9 h-9 text-xs"
@@ -258,30 +303,30 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
           </div>
 
           <Select value={region} onChange={(e) => setRegion(e.target.value)} className="h-9 text-xs">
-            <option value="">全部地区</option>
+            <option value="">{text.allRegions}</option>
             {regions.data?.map((r) => (
               <option key={r.code} value={r.code}>
-                {r.flag} {r.cn} ({r.count ?? 0})
+                {r.flag} {regionName(r.code, r.cn)} ({r.count ?? 0})
               </option>
             ))}
           </Select>
 
           <Select value={source} onChange={(e) => setSource(e.target.value)} className="h-9 text-xs">
-            <option value="">全部来源</option>
-            <option value="sub">订阅导入</option>
-            <option value="manual">手动导入</option>
+            <option value="">{text.allSources}</option>
+            <option value="sub">{text.subscriptionImport}</option>
+            <option value="manual">{text.manualImport}</option>
           </Select>
 
           <Select value={enabled} onChange={(e) => setEnabled(e.target.value)} className="h-9 text-xs">
-            <option value="">全部状态</option>
-            <option value="true">仅启用</option>
-            <option value="false">仅禁用</option>
+            <option value="">{text.allStatuses}</option>
+            <option value="true">{text.enabledOnly}</option>
+            <option value="false">{text.disabledOnly}</option>
           </Select>
 
           <Select value={sort} onChange={(e) => setSort(e.target.value)} className="h-9 text-xs">
-            <option value="id">按添加顺序排序</option>
-            <option value="latency">按测速延迟升序</option>
-            <option value="name">按节点名称排序</option>
+            <option value="id">{text.sortAdded}</option>
+            <option value="latency">{text.sortLatency}</option>
+            <option value="name">{text.sortName}</option>
           </Select>
         </div>
       </div>
@@ -290,13 +335,13 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-12 text-center">状态</TableHead>
-            <TableHead>节点名称</TableHead>
-            <TableHead className="w-24">协议</TableHead>
-            <TableHead className="w-28">地区</TableHead>
-            <TableHead className="w-32">延迟</TableHead>
-            <TableHead>服务器 / 端口</TableHead>
-            <TableHead className="w-24 text-right">操作</TableHead>
+            <TableHead className="w-12 text-center">{text.status}</TableHead>
+            <TableHead>{text.nodeName}</TableHead>
+            <TableHead className="w-24">{text.protocol}</TableHead>
+            <TableHead className="w-28">{text.region}</TableHead>
+            <TableHead className="w-32">{text.latency}</TableHead>
+            <TableHead>{text.serverPort}</TableHead>
+            <TableHead className="w-24 text-right">{text.actions}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -316,7 +361,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
                   </div>
                   {node.source_name && (
                     <div className="text-[10px] text-muted-foreground truncate">
-                      来源: {node.source_name}
+                      {text.source}: {node.source_name}
                     </div>
                   )}
                 </TableCell>
@@ -327,7 +372,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
                 </TableCell>
                 <TableCell>
                   <span className="text-xs font-medium">
-                    {node.region || "未知"}
+                    {node.region ? regionName(node.region, node.region) : text.unknown}
                   </span>
                 </TableCell>
                 <TableCell>
@@ -337,7 +382,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
                       onClick={() => testOne(node.id)}
                       disabled={isTesting}
                       className="p-1 rounded-md text-muted-foreground hover:text-primary hover:bg-accent transition-colors"
-                      title="单独测速"
+                      title={text.testOne}
                     >
                       <Zap className={cn("h-3 w-3", isTesting && "animate-pulse text-primary")} />
                     </button>
@@ -354,7 +399,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
                       onClick={() => {
                         openNodeEditor(node);
                       }}
-                      title={node.source_type === "manual" ? "编辑完整节点参数" : "重命名节点"}
+                      title={node.source_type === "manual" ? text.editFull : text.rename}
                     >
                       <Pencil className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                     </Button>
@@ -362,9 +407,9 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
                       variant="ghost"
                       size="iconSm"
                       onClick={() => {
-                        if (confirm(`确定删除节点「${node.name}」吗？`)) removeMutation.mutate(node.id);
+                        if (confirm(text.confirmRemove.replace("{name}", node.name))) removeMutation.mutate(node.id);
                       }}
-                      title="删除节点"
+                      title={text.remove}
                     >
                       <Trash2 className="h-3.5 w-3.5 text-rose-500 hover:text-rose-600" />
                     </Button>
@@ -379,9 +424,9 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
       {sortedList.length === 0 && (
         <div className="text-center py-12 bg-card/30 rounded-2xl border border-dashed border-border/70">
           <Server className="h-10 w-10 text-muted-foreground/40 mx-auto mb-2" />
-          <h4 className="text-sm font-semibold text-foreground">没有找到匹配的节点</h4>
+          <h4 className="text-sm font-semibold text-foreground">{text.emptyTitle}</h4>
           <p className="text-xs text-muted-foreground mt-1">
-            请尝试调整筛选条件或点击右上角导入新节点
+            {text.emptyDescription}
           </p>
         </div>
       )}
@@ -390,15 +435,15 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>手动导入单节点分享链接</DialogTitle>
+            <DialogTitle>{text.importTitle}</DialogTitle>
             <DialogDescription>
-              支持 ss://, vmess://, vless://, trojan://, hysteria2://, tuic:// 等链接，每行一条
+              {text.importDescription}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2 py-2">
             <Textarea
-              placeholder="在此粘贴节点分享链接，支持多行批量输入…"
+              placeholder={text.importPlaceholder}
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
               className="min-h-[160px] font-mono text-xs"
@@ -407,14 +452,14 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
 
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setImportOpen(false)}>
-              取消
+              {text.cancel}
             </Button>
             <Button
               size="sm"
               onClick={() => importMutation.mutate()}
               disabled={importMutation.isPending || !importText.trim()}
             >
-              {importMutation.isPending ? "解析导入中…" : "立即解析导入"}
+              {importMutation.isPending ? text.importing : text.importNow}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -424,11 +469,11 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
       <Dialog open={!!editingNode} onOpenChange={(v) => !v && setEditingNode(null)}>
         <DialogContent className={cn("sm:max-w-md", editingNode?.source_type === "manual" && "sm:max-w-2xl")}>
           <DialogHeader>
-            <DialogTitle>{editingNode?.source_type === "manual" ? "编辑手动节点参数" : "修改节点名称"}</DialogTitle>
+            <DialogTitle>{editingNode?.source_type === "manual" ? text.editManualTitle : text.editNameTitle}</DialogTitle>
             <DialogDescription>
               {editingNode?.source_type === "manual"
-                ? "可修改完整 Mihomo 节点配置；保存后会自动重新加载当前有效配置。"
-                : "自定义该节点的展示名称（修改后自动同步到规则与节点组合）"}
+                ? text.editManualDescription
+                : text.editNameDescription}
             </DialogDescription>
           </DialogHeader>
 
@@ -436,7 +481,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
             {editingNode?.source_type === "manual" ? (
               <>
                 <div className="space-y-2">
-                  <Label htmlFor="node-raw-config">完整节点参数（JSON）</Label>
+                  <Label htmlFor="node-raw-config">{text.fullConfig}</Label>
                   <Textarea
                     id="node-raw-config"
                     value={editingRawConfig}
@@ -445,16 +490,16 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
                     className="min-h-[360px] font-mono text-xs leading-5"
                   />
                   <p className="text-xs text-muted-foreground">
-                    必填字段：name、type、server、port；其余协议参数会原样保存。
+                    {text.requiredFields}
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="node-region">地区标签（可选）</Label>
+                  <Label htmlFor="node-region">{text.regionOptional}</Label>
                   <Input
                     id="node-region"
                     value={editingRegion}
                     onChange={(e) => setEditingRegion(e.target.value)}
-                    placeholder="例如 HK、US；留空则显示为未知地区"
+                    placeholder={text.regionPlaceholder}
                   />
                 </div>
               </>
@@ -462,21 +507,21 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
               <Input
                 value={editingName}
                 onChange={(e) => setEditingName(e.target.value)}
-                placeholder="输入新的节点名称"
+                placeholder={text.namePlaceholder}
               />
             )}
           </div>
 
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setEditingNode(null)}>
-              取消
+              {text.cancel}
             </Button>
             <Button
               size="sm"
               onClick={saveNodeEdits}
               disabled={editMutation.isPending || (editingNode?.source_type !== "manual" && !editingName.trim())}
             >
-              {editMutation.isPending ? "保存中…" : "保存修改"}
+              {editMutation.isPending ? text.saving : text.saveChanges}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -486,6 +531,7 @@ export function NodesPanel({ embedded = false }: { embedded?: boolean }) {
 }
 
 export default function NodesPage() {
+  const text = useMessages(messages);
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get("tab") === "subscriptions" ? "subscriptions" : "nodes";
 
@@ -501,11 +547,11 @@ export default function NodesPage() {
         <TabsList>
           <TabsTrigger value="subscriptions" className="gap-2">
             <Radio className="h-4 w-4" />
-            订阅管理
+            {text.subscriptions}
           </TabsTrigger>
           <TabsTrigger value="nodes" className="gap-2">
             <Server className="h-4 w-4" />
-            节点池
+            {text.nodePool}
           </TabsTrigger>
         </TabsList>
 

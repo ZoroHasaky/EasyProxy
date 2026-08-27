@@ -17,8 +17,18 @@ import GeoDataPage from "@/pages/GeoData";
 import { MihomoRuntimeProvider } from "@/contexts/app-state";
 import { UpdateProvider } from "@/contexts/update-state";
 import { ConfigApplyProvider } from "@/contexts/config-apply-state";
+import { defineMessages, useMessages } from "@/contexts/language";
+
+const messages = defineMessages({
+  loading: "EasyProxy 正在加载…",
+  backendUnavailable: "无法连接后端服务",
+}, {
+  loading: "Loading EasyProxy…",
+  backendUnavailable: "Unable to connect to the backend service",
+});
 
 function Me() {
+  const text = useMessages(messages);
   const me = useQuery({
     queryKey: ["me"],
     queryFn: () =>
@@ -34,7 +44,7 @@ function Me() {
       <div className="flex h-screen items-center justify-center bg-background text-muted-foreground font-mono text-sm">
         <div className="flex items-center gap-2">
           <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          EasyProxy 正在加载…
+          {text.loading}
         </div>
       </div>
     );
@@ -78,12 +88,13 @@ function Me() {
 }
 
 export default function App() {
+  const text = useMessages(messages);
   const [fatal, setFatal] = useState<string>("");
   useEffect(() => {
     api.get("/api/meta").catch((e) => {
-      if (e instanceof ApiError && e.status === 0) setFatal("无法连接后端服务");
+      if (e instanceof ApiError && e.status === 0) setFatal(text.backendUnavailable);
     });
-  }, []);
+  }, [text.backendUnavailable]);
   if (fatal) {
     return (
       <div className="flex h-screen items-center justify-center text-destructive font-mono text-sm">
