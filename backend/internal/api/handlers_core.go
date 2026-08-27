@@ -593,56 +593,78 @@ func appendUniqueStrings(values []string, candidates ...string) []string {
 	return values
 }
 
-// handleRefreshGeoData 先请求运行中的 Mihomo 刷新已启用数据库；若配置中没有
-// GEOIP/GEOSITE 规则，Mihomo 会成功返回但不下载文件，因此再由面板按同一份
-// 已应用数据源补齐缺失或未初始化的数据库。
-// 未应用的 Geo 数据源仍保留在顶栏待应用清单中，不会被此次刷新提前使用。
-func (s *Server) handleRefreshGeoData(w http.ResponseWriter, r *http.Request) {
+type geoRefreshError struct {
+	status  int
+	message string
+	err     error
+}
+
+func (e *geoRefreshError) Error() string {
+	if e.err == nil {
+		return e.message
+	}
+	return e.message + ": " + e.err.Error()
+}
+
+func geoRefreshFailure(status int, message string, err error) error {
+	return &geoRefreshError{status: status, message: message, err: err}
+}
+
+// refreshGeoData 使用当前已应用的 Geo 设置刷新数据库并确认两个文件均可用。
+// 调用方负责记录自己的审计事件，以便单独区分手动刷新和一键路由生成。
+func (s *Server) refreshGeoData() ([]service.GeoDataDownload, error) {
 	if !s.st.GetSettingBool("geo_enabled", true) {
-		s.audit("operation", "geo.refresh", "warning", "Geo 数据库刷新未执行：功能已禁用", nil)
-		writeErr(w, http.StatusBadRequest, "Geo 数据库已禁用，请先启用并应用配置")
-		return
+		return nil, geoRefreshFailure(http.StatusBadRequest, "Geo 数据库已禁用，请先启用并应用配置", nil)
 	}
 	sources, enabled, err := s.appliedGeoSettings()
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "读取当前生效 Geo 配置失败: "+err.Error())
-		return
+		return nil, geoRefreshFailure(http.StatusInternalServerError, "读取当前生效 Geo 配置失败", err)
 	}
 	if !enabled {
-		s.audit("operation", "geo.refresh", "warning", "Geo 数据库刷新未执行：当前生效配置未启用", nil)
-		writeErr(w, http.StatusConflict, "当前生效配置未启用 Geo 数据，请先应用设置")
-		return
+		return nil, geoRefreshFailure(http.StatusConflict, "当前生效配置未启用 Geo 数据，请先应用设置", nil)
 	}
 	if s.mgr.Status().State != core.StateRunning {
-		s.audit("operation", "geo.refresh", "warning", "Geo 数据库刷新未执行：内核未运行", nil)
-		writeErr(w, http.StatusConflict, "内核未运行，无法刷新 Geo 数据库")
-		return
+		return nil, geoRefreshFailure(http.StatusConflict, "内核未运行，无法刷新 Geo 数据库", nil)
 	}
 	if err := s.client.UpdateGeoDatabases(); err != nil {
-		s.audit("operation", "geo.refresh", "error", "Geo 数据库刷新失败", map[string]any{"error": safeAuditError(err)})
-		writeErr(w, http.StatusBadGateway, "刷新 Geo 数据库失败: "+err.Error())
-		return
+		return nil, geoRefreshFailure(http.StatusBadGateway, "刷新 Geo 数据库失败", err)
 	}
 
 	keys, err := s.geoDataKindsWithoutActiveRules()
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "读取 Geo 识别规则失败: "+err.Error())
-		return
+		return nil, geoRefreshFailure(http.StatusInternalServerError, "读取 Geo 识别规则失败", err)
 	}
 	statuses := service.GeoDataStatuses(s.dataDir, sources, enabled, true)
 	keys = appendUniqueStrings(keys, missingGeoDataKinds(statuses)...)
 	downloaded, err := service.RefreshGeoDataFiles(s.dataDir, sources, keys, s.runningCoreProxyAddr())
 	if err != nil {
-		s.audit("operation", "geo.refresh", "error", "Geo 数据库刷新失败", map[string]any{"error": safeAuditError(err)})
-		writeErr(w, http.StatusBadGateway, "刷新 Geo 数据库失败: "+err.Error())
-		return
+		return nil, geoRefreshFailure(http.StatusBadGateway, "刷新 Geo 数据库失败", err)
 	}
 
 	statuses = service.GeoDataStatuses(s.dataDir, sources, enabled, true)
 	if missing := missingGeoDataKinds(statuses); len(missing) > 0 {
-		err := fmt.Errorf("%s 文件未就绪", strings.Join(missing, "、"))
-		s.audit("operation", "geo.refresh", "error", "Geo 数据库刷新后文件仍未就绪", map[string]any{"error": safeAuditError(err)})
-		writeErr(w, http.StatusBadGateway, "刷新 Geo 数据库失败: "+err.Error())
+		return nil, geoRefreshFailure(http.StatusBadGateway, "刷新 Geo 数据库失败", fmt.Errorf("%s 文件未就绪", strings.Join(missing, "、")))
+	}
+	return downloaded, nil
+}
+
+// handleRefreshGeoData 先请求运行中的 Mihomo 刷新已启用数据库；若配置中没有
+// GEOIP/GEOSITE 规则，Mihomo 会成功返回但不下载文件，因此再由面板按同一份
+// 已应用数据源补齐缺失或未初始化的数据库。
+// 未应用的 Geo 数据源仍保留在顶栏待应用清单中，不会被此次刷新提前使用。
+func (s *Server) handleRefreshGeoData(w http.ResponseWriter, r *http.Request) {
+	downloaded, err := s.refreshGeoData()
+	if err != nil {
+		status := http.StatusInternalServerError
+		if refreshErr, ok := err.(*geoRefreshError); ok {
+			status = refreshErr.status
+		}
+		level := "error"
+		if status < http.StatusInternalServerError {
+			level = "warning"
+		}
+		s.audit("operation", "geo.refresh", level, "Geo 数据库刷新失败", map[string]any{"error": safeAuditError(err)})
+		writeErr(w, status, err.Error())
 		return
 	}
 	refreshed := make([]string, 0, len(downloaded))

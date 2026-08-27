@@ -294,6 +294,7 @@ func (s *Server) Handler() http.Handler {
 	route("POST /api/recognition-rules/import", s.handleImportRecognitionRules)
 	route("GET /api/recognition-rules/geo-presets", s.handleGetGeoRecognitionPresets)
 	route("POST /api/recognition-rules/generate-geo", s.handleGenerateGeoRecognitionRules)
+	route("POST /api/recognition-rules/generate-geo-routing", s.handleGenerateQuickGeoRouting)
 	route("GET /api/outbound-rules", s.handleGetOutboundRules)
 	route("PUT /api/outbound-rules", s.handlePutOutboundRules)
 	// 这是纯本地推演查询，不写操作日志，也不会访问用户填写的目标地址。

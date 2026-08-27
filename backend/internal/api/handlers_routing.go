@@ -11,6 +11,7 @@ import (
 	"easyproxy/internal/core"
 	"easyproxy/internal/model"
 	"easyproxy/internal/service"
+	"easyproxy/internal/store"
 
 	"gopkg.in/yaml.v3"
 )
@@ -63,6 +64,18 @@ type geoRecognitionGenerationSkip struct {
 	Reason string `json:"reason"`
 }
 
+type quickGeoRoutingGenerationResponse struct {
+	OK           bool                           `json:"ok"`
+	GeoRefreshed bool                           `json:"geo_refreshed"`
+	Downloaded   []string                       `json:"downloaded"`
+	Count        int                            `json:"count"`
+	Created      []model.RecognitionRule        `json:"created"`
+	Skipped      []geoRecognitionGenerationSkip `json:"skipped"`
+	Mappings     []model.OutboundRule           `json:"mappings"`
+	ApplyResult  string                         `json:"apply_result"`
+	ApplyError   string                         `json:"apply_error"`
+}
+
 func (s *Server) geoRecognitionPresets() geoRecognitionPresetCatalog {
 	catalog := geoRecognitionPresetCatalog{Presets: make([]geoRecognitionPreset, 0, len(geoRecognitionPresetDefinitions))}
 	if !s.st.GetSettingBool("geo_enabled", true) {
@@ -106,6 +119,137 @@ func recognitionConditionKey(kind, condition string) string {
 func (s *Server) rejectGeoRecognitionGeneration(w http.ResponseWriter, status int, message string) {
 	s.audit("operation", "routing.geo_generate", "warning", "根据 Geo 数据生成识别规则未执行", map[string]any{"reason": message})
 	writeErr(w, status, message)
+}
+
+func (s *Server) rejectQuickGeoRoutingGeneration(w http.ResponseWriter, status int, message string) {
+	level := "warning"
+	if status >= http.StatusInternalServerError {
+		level = "error"
+	}
+	s.audit("operation", "routing.geo_quick_generate", level, "一键生成 Geo 路由未执行", map[string]any{"reason": message})
+	writeErr(w, status, message)
+}
+
+func (s *Server) ensureGeoSettingsApplied() error {
+	changes, err := s.st.ListPendingConfigChanges()
+	if err != nil {
+		return fmt.Errorf("读取待应用 Geo 设置失败：%w", err)
+	}
+	for _, change := range changes {
+		if change.Scope == store.ConfigScopeGeo {
+			return fmt.Errorf("Geo 设置尚未应用，请先在顶栏应用配置")
+		}
+	}
+	return nil
+}
+
+func quickGeoOutboundTarget(presetID string) int64 {
+	switch presetID {
+	case "private-ip", "private-domain", "cn-ip", "cn-domain":
+		return model.OutboundTargetDirectID
+	default:
+		return model.OutboundTargetProxyID
+	}
+}
+
+// quickGeoRoutingCandidates 仅从已确认可用的预置项构造候选规则；已有规则不会被改写。
+func quickGeoRoutingCandidates(presets []geoRecognitionPreset, existing []model.RecognitionRule) ([]model.RecognitionRule, []int64, []geoRecognitionGenerationSkip) {
+	existingNames := map[string]bool{}
+	existingConditions := map[string]bool{}
+	for _, rule := range existing {
+		existingNames[strings.ToLower(strings.TrimSpace(rule.Name))] = true
+		for _, condition := range rule.Conditions {
+			existingConditions[recognitionConditionKey(rule.Kind, condition)] = true
+		}
+	}
+
+	candidates := make([]model.RecognitionRule, 0, len(presets))
+	targets := make([]int64, 0, len(presets))
+	skipped := make([]geoRecognitionGenerationSkip, 0)
+	for _, preset := range presets {
+		if !preset.Available {
+			continue
+		}
+		conditionKey := recognitionConditionKey(preset.Kind, preset.Condition)
+		if existingConditions[conditionKey] {
+			skipped = append(skipped, geoRecognitionGenerationSkip{ID: preset.ID, Reason: "已存在相同类型与条件的识别规则"})
+			continue
+		}
+		name := "Geo · " + preset.Name
+		if existingNames[strings.ToLower(name)] {
+			skipped = append(skipped, geoRecognitionGenerationSkip{ID: preset.ID, Reason: "规则名称已被占用"})
+			continue
+		}
+		candidates = append(candidates, model.RecognitionRule{
+			Name: name, Kind: preset.Kind, Conditions: []string{preset.Condition}, Priority: 1, Enabled: true,
+		})
+		targets = append(targets, quickGeoOutboundTarget(preset.ID))
+		existingNames[strings.ToLower(name)] = true
+		existingConditions[conditionKey] = true
+	}
+	return candidates, targets, skipped
+}
+
+// handleGenerateQuickGeoRouting 串行刷新 Geo 数据、生成可用常用规则并创建默认出站映射。
+// 已有识别规则和出站映射始终保留；仅为本次新增规则写入映射。
+func (s *Server) handleGenerateQuickGeoRouting(w http.ResponseWriter, r *http.Request) {
+	if err := s.ensureGeoSettingsApplied(); err != nil {
+		s.rejectQuickGeoRoutingGeneration(w, http.StatusConflict, err.Error())
+		return
+	}
+	downloaded, err := s.refreshGeoData()
+	if err != nil {
+		status := http.StatusInternalServerError
+		if refreshErr, ok := err.(*geoRefreshError); ok {
+			status = refreshErr.status
+		}
+		s.rejectQuickGeoRoutingGeneration(w, status, err.Error())
+		return
+	}
+
+	catalog := s.geoRecognitionPresets()
+	if !catalog.Available {
+		s.rejectQuickGeoRoutingGeneration(w, http.StatusConflict, catalog.Message)
+		return
+	}
+	existing, err := s.st.ListRecognitionRules()
+	if err != nil {
+		s.audit("operation", "routing.geo_quick_generate", "error", "一键生成 Geo 路由失败", map[string]any{"error": safeAuditError(err)})
+		writeErr(w, http.StatusInternalServerError, "读取现有识别规则失败")
+		return
+	}
+	candidates, targets, skipped := quickGeoRoutingCandidates(catalog.Presets, existing)
+	response := quickGeoRoutingGenerationResponse{
+		OK: true, GeoRefreshed: true, Downloaded: make([]string, 0, len(downloaded)),
+		Created: []model.RecognitionRule{}, Skipped: skipped, Mappings: []model.OutboundRule{},
+	}
+	for _, item := range downloaded {
+		response.Downloaded = append(response.Downloaded, item.Name)
+	}
+	if len(candidates) == 0 {
+		s.audit("operation", "routing.geo_quick_generate", "info", "一键生成 Geo 路由未新增规则", map[string]any{"skipped": len(skipped), "downloaded": response.Downloaded})
+		writeJSON(w, http.StatusOK, response)
+		return
+	}
+
+	created, mappings, err := s.st.CreateRecognitionRulesWithOutboundMappings(candidates, targets)
+	if err != nil {
+		s.audit("operation", "routing.geo_quick_generate", "error", "一键生成 Geo 路由失败", map[string]any{"error": safeAuditError(err)})
+		writeErr(w, http.StatusInternalServerError, "保存 Geo 路由失败: "+err.Error())
+		return
+	}
+	response.Count = len(created)
+	response.Created = created
+	response.Mappings = mappings
+	response.ApplyResult, response.ApplyError = s.applyChangedConfig("geo_routing", []string{"识别规则", "出站映射"})
+	level, summary := "success", "一键生成 Geo 路由完成"
+	details := map[string]any{"created": len(created), "skipped": len(skipped), "mappings": len(mappings), "downloaded": response.Downloaded}
+	if response.ApplyError != "" {
+		level, summary = "warning", "一键生成 Geo 路由完成，但自动应用失败"
+		details["error"] = safeAuditError(fmt.Errorf("%s", response.ApplyError))
+	}
+	s.audit("operation", "routing.geo_quick_generate", level, summary, details)
+	writeJSON(w, http.StatusOK, response)
 }
 
 // handleGetGeoRecognitionPresets 根据实际已拉取的 Geo 数据返回可生成的常用规则。

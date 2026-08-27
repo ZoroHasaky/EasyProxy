@@ -82,3 +82,36 @@ func TestCreateRemoteYAMLRecognitionRulesIsAtomicAndRejectsMRS(t *testing.T) {
 		t.Fatalf("MRS source should be rejected, got %v", err)
 	}
 }
+
+func TestCreateRecognitionRulesWithOutboundMappingsIsAtomic(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	created, mappings, err := st.CreateRecognitionRulesWithOutboundMappings([]model.RecognitionRule{
+		{Name: "国内 IP", Kind: "GEOIP", Conditions: []string{"CN"}, Enabled: true},
+		{Name: "GitHub", Kind: "GEOSITE", Conditions: []string{"github"}, Enabled: true},
+	}, []int64{model.OutboundTargetDirectID, model.OutboundTargetProxyID})
+	if err != nil || len(created) != 2 || len(mappings) != 2 {
+		t.Fatalf("created=%#v mappings=%#v err=%v", created, mappings, err)
+	}
+	if mappings[0].RecognitionID != created[0].ID || mappings[0].GroupID != model.OutboundTargetDirectID || mappings[1].GroupID != model.OutboundTargetProxyID {
+		t.Fatalf("unexpected mappings: %#v", mappings)
+	}
+
+	if _, _, err := st.CreateRecognitionRulesWithOutboundMappings([]model.RecognitionRule{{
+		Name: "不应保留", Kind: "GEOIP", Conditions: []string{"PRIVATE"}, Enabled: true,
+	}}, []int64{999}); err == nil || !strings.Contains(err.Error(), "节点组合不存在") {
+		t.Fatalf("invalid mapping should fail atomically, got %v", err)
+	}
+	rules, err := st.ListRecognitionRules()
+	if err != nil || len(rules) != 2 {
+		t.Fatalf("failed batch changed recognition rules=%#v err=%v", rules, err)
+	}
+	allMappings, err := st.ListOutboundRules()
+	if err != nil || len(allMappings) != 2 {
+		t.Fatalf("failed batch changed mappings=%#v err=%v", allMappings, err)
+	}
+}

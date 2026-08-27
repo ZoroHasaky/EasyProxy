@@ -176,6 +176,84 @@ func (s *Store) CreateRecognitionRules(rules []model.RecognitionRule) ([]model.R
 	return cleaned, nil
 }
 
+// CreateRecognitionRulesWithOutboundMappings 原子创建识别规则及其一对一出站映射。
+// 它用于需要同时落盘路由两端的批量操作，任一规则或映射校验失败时不会保留半成品。
+func (s *Store) CreateRecognitionRulesWithOutboundMappings(rules []model.RecognitionRule, groupIDs []int64) ([]model.RecognitionRule, []model.OutboundRule, error) {
+	if len(rules) == 0 {
+		return nil, nil, fmt.Errorf("没有可创建的识别规则")
+	}
+	if len(rules) != len(groupIDs) {
+		return nil, nil, fmt.Errorf("识别规则与出站映射数量不一致")
+	}
+	cleaned := make([]model.RecognitionRule, 0, len(rules))
+	names := map[string]bool{}
+	for _, rule := range rules {
+		if err := cleanRecognitionRule(&rule); err != nil {
+			return nil, nil, err
+		}
+		if names[rule.Name] {
+			return nil, nil, fmt.Errorf("导入内容中存在重复的识别规则名称：%s", rule.Name)
+		}
+		names[rule.Name] = true
+		cleaned = append(cleaned, rule)
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer tx.Rollback()
+	for name := range names {
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM recognition_rules WHERE name=?)`, name).Scan(&exists); err != nil {
+			return nil, nil, err
+		}
+		if exists {
+			return nil, nil, fmt.Errorf("识别规则名称已存在：%s", name)
+		}
+	}
+	for _, groupID := range groupIDs {
+		if model.IsBuiltinOutboundTarget(groupID) {
+			continue
+		}
+		if groupID <= 0 {
+			return nil, nil, fmt.Errorf("出站映射必须选择识别规则和出站目标")
+		}
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM proxy_groups WHERE id=?)`, groupID).Scan(&exists); err != nil {
+			return nil, nil, err
+		}
+		if !exists {
+			return nil, nil, fmt.Errorf("节点组合不存在")
+		}
+	}
+
+	mappings := make([]model.OutboundRule, 0, len(cleaned))
+	for i := range cleaned {
+		conditions, err := json.Marshal(cleaned[i].Conditions)
+		if err != nil {
+			return nil, nil, err
+		}
+		result, err := tx.Exec(`INSERT INTO recognition_rules(name,kind,conditions,source_url,source_behavior,source_interval,priority,enabled)
+			VALUES(?,?,?,?,?,?,?,?)`, cleaned[i].Name, cleaned[i].Kind, string(conditions), cleaned[i].SourceURL,
+			cleaned[i].SourceBehavior, cleaned[i].SourceInterval, cleaned[i].Priority, cleaned[i].Enabled)
+		if err != nil {
+			return nil, nil, err
+		}
+		cleaned[i].ID, _ = result.LastInsertId()
+		result, err = tx.Exec(`INSERT INTO outbound_rules(recognition_id,group_id,enabled) VALUES(?,?,?)`, cleaned[i].ID, groupIDs[i], true)
+		if err != nil {
+			return nil, nil, err
+		}
+		mappingID, _ := result.LastInsertId()
+		mappings = append(mappings, model.OutboundRule{ID: mappingID, RecognitionID: cleaned[i].ID, GroupID: groupIDs[i], Enabled: true})
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+	return cleaned, mappings, nil
+}
+
 // ReplaceRecognitionRules 原子保存识别规则；被出站映射引用的规则需先解除映射后才能删除。
 func (s *Store) ReplaceRecognitionRules(rules []model.RecognitionRule) error {
 	tx, err := s.db.Begin()

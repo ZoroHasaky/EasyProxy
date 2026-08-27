@@ -176,6 +176,12 @@ func TestGeoRecognitionGenerationSkipsNameConflictsAndRequiresLogin(t *testing.T
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated status=%d body=%s", rec.Code, rec.Body.String())
 	}
+	quickReq := httptest.NewRequest(http.MethodPost, "/api/recognition-rules/generate-geo-routing", nil)
+	quickRec := httptest.NewRecorder()
+	handler.ServeHTTP(quickRec, quickReq)
+	if quickRec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated quick generation status=%d body=%s", quickRec.Code, quickRec.Body.String())
+	}
 	getReq := httptest.NewRequest(http.MethodGet, "/api/recognition-rules/geo-presets", nil)
 	getRec := httptest.NewRecorder()
 	handler.ServeHTTP(getRec, getReq)
@@ -189,5 +195,66 @@ func TestGeoRecognitionGenerationSkipsNameConflictsAndRequiresLogin(t *testing.T
 	handler.ServeHTTP(getRec, getReq)
 	if getRec.Code != http.StatusOK {
 		t.Fatalf("authenticated get status=%d body=%s", getRec.Code, getRec.Body.String())
+	}
+}
+
+func TestQuickGeoRoutingCandidatesKeepExistingRulesAndUseExpectedTargets(t *testing.T) {
+	candidates, targets, skipped := quickGeoRoutingCandidates([]geoRecognitionPreset{
+		{ID: "private-ip", Name: "私有地址", Kind: "GEOIP", Condition: "PRIVATE", Available: true},
+		{ID: "cn-ip", Name: "中国大陆 IP", Kind: "GEOIP", Condition: "CN", Available: true},
+		{ID: "private-domain", Name: "私有域名", Kind: "GEOSITE", Condition: "private", Available: true},
+		{ID: "cn-domain", Name: "中国大陆域名", Kind: "GEOSITE", Condition: "cn", Available: true},
+		{ID: "github", Name: "GitHub", Kind: "GEOSITE", Condition: "github", Available: true},
+		{ID: "ads", Name: "广告服务", Kind: "GEOSITE", Condition: "category-ads-all"},
+	}, []model.RecognitionRule{{Name: "已有国内规则", Kind: "GEOIP", Conditions: []string{"cn"}, Enabled: true}})
+	if len(candidates) != 4 || len(targets) != 4 || len(skipped) != 1 || skipped[0].ID != "cn-ip" {
+		t.Fatalf("candidates=%#v targets=%#v skipped=%#v", candidates, targets, skipped)
+	}
+	targetByName := map[string]int64{}
+	for i, candidate := range candidates {
+		targetByName[candidate.Name] = targets[i]
+	}
+	for _, name := range []string{"Geo · 私有地址", "Geo · 私有域名", "Geo · 中国大陆域名"} {
+		if targetByName[name] != model.OutboundTargetDirectID {
+			t.Fatalf("%s target=%d, want DIRECT", name, targetByName[name])
+		}
+	}
+	if targetByName["Geo · GitHub"] != model.OutboundTargetProxyID {
+		t.Fatalf("GitHub target=%d, want PROXY", targetByName["Geo · GitHub"])
+	}
+}
+
+func TestQuickGeoRoutingRequiresAppliedSettingsAndRunningCore(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	srv := New(st, dir, "test")
+	if err := st.UpsertPendingConfigChange(store.PendingConfigChange{Scope: store.ConfigScopeGeo, Fields: []string{"geox_urls"}}); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/recognition-rules/generate-geo-routing", nil)
+	rec := httptest.NewRecorder()
+	srv.handleGenerateQuickGeoRouting(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "尚未应用") {
+		t.Fatalf("pending Geo settings status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if err := st.DeletePendingConfigChange(store.ConfigScopeGeo); err != nil {
+		t.Fatal(err)
+	}
+	rec = httptest.NewRecorder()
+	srv.handleGenerateQuickGeoRouting(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "内核未运行") {
+		t.Fatalf("stopped core status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	rules, err := st.ListRecognitionRules()
+	if err != nil || len(rules) != 0 {
+		t.Fatalf("precondition failure created recognition rules=%#v err=%v", rules, err)
+	}
+	mappings, err := st.ListOutboundRules()
+	if err != nil || len(mappings) != 0 {
+		t.Fatalf("precondition failure created mappings=%#v err=%v", mappings, err)
 	}
 }

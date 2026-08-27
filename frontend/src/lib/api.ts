@@ -208,6 +208,16 @@ export interface GeoRecognitionGenerationResponse extends AutoApplyResponse {
   skipped: { id: string; reason: string }[];
 }
 
+export interface QuickGeoRoutingGenerationResponse extends AutoApplyResponse {
+  ok: boolean;
+  geo_refreshed: boolean;
+  downloaded: string[];
+  count: number;
+  created: RecognitionRule[];
+  skipped: { id: string; reason: string }[];
+  mappings: OutboundRule[];
+}
+
 export interface OutboundRule {
   id: number;
   recognition_id: number;

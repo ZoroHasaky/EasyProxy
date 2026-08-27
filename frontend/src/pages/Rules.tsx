@@ -18,7 +18,7 @@ import {
   Trash2,
   WandSparkles,
 } from "lucide-react";
-import { api, autoApplyResultMessage, AutoApplyResponse, GenResult, GeoRecognitionGenerationResponse, GeoRecognitionPresetCatalog, mihomo, OutboundRule, OutboundSimulation, proxyGroupTypeLabel, ProxyGroup, RecognitionRule, RecognitionRuleImportResponse } from "@/lib/api";
+import { api, autoApplyResultMessage, AutoApplyResponse, GenResult, GeoRecognitionGenerationResponse, GeoRecognitionPresetCatalog, mihomo, OutboundRule, OutboundSimulation, proxyGroupTypeLabel, ProxyGroup, QuickGeoRoutingGenerationResponse, RecognitionRule, RecognitionRuleImportResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -102,6 +102,8 @@ function RecognitionRulesPanel({
   onImport,
   onGenerateGeo,
   geoLoading,
+  onQuickGenerate,
+  quickGenerating,
   onEdit,
   onToggle,
   onDelete,
@@ -112,6 +114,8 @@ function RecognitionRulesPanel({
   onImport: () => void;
   onGenerateGeo: () => void;
   geoLoading: boolean;
+  onQuickGenerate: () => void;
+  quickGenerating: boolean;
   onEdit: (rule: RecognitionRule) => void;
   onToggle: (id: number, enabled: boolean) => void;
   onDelete: (rule: RecognitionRule) => void;
@@ -132,6 +136,10 @@ function RecognitionRulesPanel({
           <Button variant="outline" size="sm" onClick={onImport}>
             <FileUp className="h-4 w-4" />
             导入 YAML 规则源
+          </Button>
+          <Button size="sm" onClick={onQuickGenerate} disabled={quickGenerating} title="刷新 Geo 数据、生成常用规则并创建默认出站映射">
+            <WandSparkles className="h-4 w-4" />
+            {quickGenerating ? "一键生成中…" : "一键生成"}
           </Button>
           <Button variant="outline" size="sm" onClick={onGenerateGeo} disabled={geoLoading}>
             <WandSparkles className="h-4 w-4" />
@@ -465,6 +473,23 @@ export default function RulesPage() {
     },
     onError: (error: any) => toast.error(error.message),
   });
+  const quickGenerateGeoRouting = useMutation({
+    mutationFn: () => api.post<QuickGeoRoutingGenerationResponse>("/api/recognition-rules/generate-geo-routing"),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ["recognitionRules"] });
+      qc.invalidateQueries({ queryKey: ["outboundRules"] });
+      qc.invalidateQueries({ queryKey: ["geo-status"] });
+      qc.invalidateQueries({ queryKey: ["config-pending"] });
+      qc.invalidateQueries({ queryKey: ["configPreview"] });
+      if (result.count > 0) {
+        const skipped = result.skipped.length ? `，跳过 ${result.skipped.length} 条已有规则` : "";
+        reportAutoApply(`Geo 数据已刷新，已生成 ${result.count} 条识别规则和 ${result.mappings.length} 条出站映射${skipped}`, result);
+      } else {
+        toast.info(`Geo 数据已刷新，没有可新增的常用规则${result.skipped.length ? `，跳过 ${result.skipped.length} 条已有规则` : ""}`);
+      }
+    },
+    onError: (error: any) => toast.error(error.message),
+  });
 
   const mappedRecognitionIDs = useMemo(
     () => new Set(outboundRules.map((rule) => rule.recognition_id)),
@@ -637,6 +662,8 @@ export default function RulesPage() {
             onImport={openRecognitionImport}
             onGenerateGeo={openGeoPresetGenerator}
             geoLoading={loadGeoPresets.isPending}
+            onQuickGenerate={() => quickGenerateGeoRouting.mutate()}
+            quickGenerating={quickGenerateGeoRouting.isPending}
             onEdit={openEditRecognition}
             onToggle={toggleRecognition}
             onDelete={deleteRecognition}
