@@ -100,8 +100,6 @@ function RecognitionRulesPanel({
   mappedRecognitionIDs,
   onAdd,
   onImport,
-  onGenerateGeo,
-  geoLoading,
   onQuickGenerate,
   quickGenerating,
   onEdit,
@@ -112,8 +110,6 @@ function RecognitionRulesPanel({
   mappedRecognitionIDs: Set<number>;
   onAdd: () => void;
   onImport: () => void;
-  onGenerateGeo: () => void;
-  geoLoading: boolean;
   onQuickGenerate: () => void;
   quickGenerating: boolean;
   onEdit: (rule: RecognitionRule) => void;
@@ -137,13 +133,9 @@ function RecognitionRulesPanel({
             <FileUp className="h-4 w-4" />
             导入 YAML 规则源
           </Button>
-          <Button size="sm" onClick={onQuickGenerate} disabled={quickGenerating} title="刷新 Geo 数据、生成常用规则并创建默认出站映射">
+          <Button size="sm" onClick={onQuickGenerate} disabled={quickGenerating} title="选择 Geo 规则或通用配置生成方式">
             <WandSparkles className="h-4 w-4" />
             {quickGenerating ? "一键生成中…" : "一键生成"}
-          </Button>
-          <Button variant="outline" size="sm" onClick={onGenerateGeo} disabled={geoLoading}>
-            <WandSparkles className="h-4 w-4" />
-            {geoLoading ? "检查 Geo 数据中…" : "根据 Geo 自动生成"}
           </Button>
           <Button size="sm" onClick={onAdd}>
             <Plus className="h-4 w-4" />
@@ -361,6 +353,7 @@ export default function RulesPage() {
   const [geoPresetDialogOpen, setGeoPresetDialogOpen] = useState(false);
   const [geoPresetCatalog, setGeoPresetCatalog] = useState<GeoRecognitionPresetCatalog | null>(null);
   const [selectedGeoPresetIDs, setSelectedGeoPresetIDs] = useState<string[]>([]);
+  const [quickGenerateDialogOpen, setQuickGenerateDialogOpen] = useState(false);
 
   const [outboundDialogOpen, setOutboundDialogOpen] = useState(false);
   const [editingOutbound, setEditingOutbound] = useState<OutboundRule | null>(null);
@@ -660,9 +653,7 @@ export default function RulesPage() {
             mappedRecognitionIDs={mappedRecognitionIDs}
             onAdd={openAddRecognition}
             onImport={openRecognitionImport}
-            onGenerateGeo={openGeoPresetGenerator}
-            geoLoading={loadGeoPresets.isPending}
-            onQuickGenerate={() => quickGenerateGeoRouting.mutate()}
+            onQuickGenerate={() => setQuickGenerateDialogOpen(true)}
             quickGenerating={quickGenerateGeoRouting.isPending}
             onEdit={openEditRecognition}
             onToggle={toggleRecognition}
@@ -766,6 +757,42 @@ export default function RulesPage() {
             <div className="flex items-center justify-between self-end rounded-xl border border-border/60 bg-muted/40 p-3"><div><div className="text-xs font-semibold">导入后启用</div><div className="text-[11px] text-muted-foreground">未映射前不会写入内核配置。</div></div><Switch checked={importEnabled} onCheckedChange={setImportEnabled} /></div>
           </div>
           <DialogFooter><Button variant="outline" size="sm" onClick={() => setImportDialogOpen(false)}>取消</Button><Button size="sm" onClick={persistRecognitionImport} disabled={importRecognition.isPending || (importMode === "url" ? !importURL.trim() : !previewRecognitionImport.data)}>{importRecognition.isPending ? "导入中…" : "导入识别规则"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={quickGenerateDialogOpen} onOpenChange={setQuickGenerateDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>一键生成</DialogTitle>
+            <DialogDescription>选择要执行的生成方式。</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <Button
+              variant="outline"
+              className="h-auto items-start justify-start gap-3 whitespace-normal p-4 text-left"
+              onClick={() => { setQuickGenerateDialogOpen(false); openGeoPresetGenerator(); }}
+              disabled={loadGeoPresets.isPending}
+            >
+              <WandSparkles className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <span className="space-y-1">
+                <span className="block text-sm font-semibold">根据 Geo 生成识别规则</span>
+                <span className="block text-xs font-normal text-muted-foreground">选择本机已下载 Geo 数据中的分类，生成识别规则；不会创建出站映射。</span>
+              </span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-auto items-start justify-start gap-3 whitespace-normal p-4 text-left"
+              onClick={() => { setQuickGenerateDialogOpen(false); quickGenerateGeoRouting.mutate(); }}
+              disabled={quickGenerateGeoRouting.isPending}
+            >
+              <WandSparkles className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <span className="space-y-1">
+                <span className="block text-sm font-semibold">一键生成通用配置</span>
+                <span className="block text-xs font-normal text-muted-foreground">刷新 Geo 数据，生成常用规则并创建大陆直连、其他主代理出口的出站映射。</span>
+              </span>
+            </Button>
+          </div>
+          <DialogFooter><Button variant="outline" size="sm" onClick={() => setQuickGenerateDialogOpen(false)}>取消</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
