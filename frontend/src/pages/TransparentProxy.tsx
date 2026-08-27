@@ -4,8 +4,6 @@ import { toast } from "sonner";
 import {
   Network,
   AlertTriangle,
-  CheckCircle2,
-  Info,
 } from "lucide-react";
 import { api, Settings } from "@/lib/api";
 import { Label } from "@/components/ui/label";
@@ -23,7 +21,12 @@ import {
 } from "@/components/ui/card";
 
 type TunCheckWarning = { severity: "warning" | "error"; message: string };
-type TunCheckResponse = { ok: boolean; detail: string; warnings?: TunCheckWarning[] };
+type TunCheckResponse = {
+  ok: boolean;
+  can_enable: boolean;
+  detail: string;
+  warnings?: TunCheckWarning[];
+};
 
 export default function TransparentProxyPage() {
   const qc = useQueryClient();
@@ -43,41 +46,55 @@ export default function TransparentProxyPage() {
 
   const saveMutation = useMutation({
     mutationFn: (payload: Partial<Settings>) => api.put("/api/settings", payload),
-    onSuccess: () => {
-      toast.success("透明代理设置已保存，等待应用");
+    onSuccess: (_, payload) => {
+      // 开关通过预检后静默保存，避免“成功”状态占据用户视线；其他透明代理
+      // 设置仍保留原有的保存反馈。
+      if (!("tun_enable" in payload)) {
+        toast.success("透明代理设置已保存，等待应用");
+      }
       qc.invalidateQueries({ queryKey: ["settings"] });
       qc.invalidateQueries({ queryKey: ["config-pending"] });
     },
     onError: (e: any) => toast.error(e.message),
   });
 
-  const runTunCheck = async (silent = false) => {
+  const blockingMessage = (res: TunCheckResponse) => {
+    if (!res.ok) return res.detail;
+    return res.warnings?.find((warning) => warning.severity === "error")?.message ?? res.detail;
+  };
+
+  const runTunCheck = async (silent = false): Promise<TunCheckResponse | null> => {
     try {
       const res = await api.get<TunCheckResponse>("/api/tun/check");
-      setTunCheck(res);
-      if (silent) return;
-      const fatal = res.warnings?.find((w) => w.severity === "error");
-      if (!res.ok) {
-        toast.error(`TUN 环境预检异常：${res.detail}`, { duration: 7000 });
-      } else if (fatal) {
-        toast.error(fatal.message, { duration: 7000 });
-      } else if (res.warnings?.length) {
-        toast.warning(res.warnings[0].message, { duration: 7000 });
-      } else {
-        toast.success("TUN 软路由环境预检通过");
+      // 预检通过无需显示任何状态；只有无法启用时才保留错误并提示用户。
+      setTunCheck(res.can_enable ? null : res);
+      if (!res.can_enable && !silent) {
+        toast.error(`TUN 无法启用：${blockingMessage(res)}`, { duration: 7000 });
       }
+      return res;
     } catch {
-      /* 预检失败不阻止保存，统一应用时仍会给出内核错误 */
+      if (!silent) toast.error("无法完成 TUN 环境预检，已取消启用");
+      return null;
     }
   };
 
-  const checkTun = (on: boolean) => {
-    patch({ tun_enable: on });
-    saveMutation.mutate({ tun_enable: on });
-    if (on) runTunCheck();
+  const checkTun = async (on: boolean) => {
+    if (!on) {
+      setTunCheck(null);
+      patch({ tun_enable: false });
+      saveMutation.mutate({ tun_enable: false });
+      return;
+    }
+    const res = await runTunCheck();
+    if (!res?.can_enable) return;
+    patch({ tun_enable: true });
+    saveMutation.mutate(
+      { tun_enable: true },
+      { onError: () => patch({ tun_enable: false }) },
+    );
   };
 
-  // TUN 已开启时进入页面自动预检一次（静默，仅更新内联状态区）
+  // 已开启状态只在环境退化时显示错误；通过预检时页面保持无提示。
   const tunEnabled = settings.data?.tun_enable;
   useEffect(() => {
     if (tunEnabled && tunCheck === null) runTunCheck(true);
@@ -135,33 +152,12 @@ export default function TransparentProxyPage() {
             />
           </div>
 
-          {tunCheck && (
+          {tunCheck && !tunCheck.can_enable && (
             <div className="space-y-1.5 text-xs">
-              {!tunCheck.ok ? (
-                <div className="flex items-start gap-2 p-2.5 rounded-lg bg-destructive/10 text-destructive">
-                  <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                  <span>{tunCheck.detail}</span>
-                </div>
-              ) : tunCheck.warnings?.length ? (
-                tunCheck.warnings.map((w, i) =>
-                  w.severity === "error" ? (
-                    <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg bg-destructive/10 text-destructive">
-                      <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                      <span>{w.message}</span>
-                    </div>
-                  ) : (
-                    <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                      <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                      <span>{w.message}</span>
-                    </div>
-                  ),
-                )
-              ) : (
-                <div className="flex items-center gap-2 p-2.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                  <span>环境预检通过：{tunCheck.detail}</span>
-                </div>
-              )}
+              <div className="flex items-start gap-2 p-2.5 rounded-lg bg-destructive/10 text-destructive">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>{blockingMessage(tunCheck)}</span>
+              </div>
             </div>
           )}
 

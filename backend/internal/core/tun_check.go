@@ -1,5 +1,12 @@
 package core
 
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
 // TUN 环境预检：除 /dev/net/tun 与 NET_ADMIN 权限外，mihomo 的 auto-redirect
 // 还依赖内核 netfilter——优先走原生 nftables（netlink），内核不支持时退回
 // iptables 命令。两者皆不可用时 TUN 将无法启动（内核仅记录一条 error 后继续运行，
@@ -16,9 +23,55 @@ type TunCheckWarning struct {
 }
 
 type TunCheckResult struct {
-	OK       bool              `json:"ok"`
-	Detail   string            `json:"detail"`
-	Warnings []TunCheckWarning `json:"warnings,omitempty"`
+	// OK 仅表示 /dev/net/tun 和 NET_ADMIN 已通过实测；CanEnable 还会纳入
+	// auto-redirect 的 iptables/nftables 依赖，是界面和写接口是否允许开启的准则。
+	OK        bool              `json:"ok"`
+	CanEnable bool              `json:"can_enable"`
+	Detail    string            `json:"detail"`
+	Warnings  []TunCheckWarning `json:"warnings,omitempty"`
+}
+
+// BlockingReason 返回阻止开启 TUN 的具体原因。调用方不应只检查 OK：当 TUN
+// 设备可创建、但 auto-redirect 后端不可用时，OK 为 true 而 CanEnable 为 false。
+func (r TunCheckResult) BlockingReason() string {
+	if !r.OK {
+		return r.Detail
+	}
+	for _, warning := range r.Warnings {
+		if warning.Severity == TunCheckSeverityError {
+			return warning.Message
+		}
+	}
+	return ""
+}
+
+func (r TunCheckResult) canEnable() bool {
+	return r.BlockingReason() == ""
+}
+
+func createIPTablesLegacyShim(dataDir, legacyPath string) (string, error) {
+	shimDir := filepath.Join(dataDir, "iptables")
+	if err := os.MkdirAll(shimDir, 0o755); err != nil {
+		return "", err
+	}
+	shimPath := filepath.Join(shimDir, "iptables")
+	script := fmt.Sprintf("#!/bin/sh\nexec %q \"$@\"\n", legacyPath)
+	if err := os.WriteFile(shimPath, []byte(script), 0o755); err != nil {
+		return "", err
+	}
+	return shimDir, nil
+}
+
+func prependPath(env []string, dir string) []string {
+	prefix := dir + string(os.PathListSeparator)
+	for i, value := range env {
+		if strings.HasPrefix(value, "PATH=") {
+			out := append([]string(nil), env...)
+			out[i] = "PATH=" + prefix + strings.TrimPrefix(value, "PATH=")
+			return out
+		}
+	}
+	return append(append([]string(nil), env...), "PATH="+prefix)
 }
 
 // evaluateDeps 评估 auto-redirect 依赖。与探测 IO 分离以便跨平台表测：

@@ -526,6 +526,12 @@ func (s *Server) applyConfigWithSettings(includePending bool) (string, map[strin
 			return "", nil, "", fmt.Errorf("读取已应用配置失败: %w", err)
 		}
 	}
+	if configBool(values, "tun_enable", false) {
+		check := runTunEnvironmentCheck()
+		if !check.CanEnable {
+			return "", nil, "", fmt.Errorf("TUN 无法启用：%s", check.BlockingReason())
+		}
+	}
 	yaml, err := s.generateConfigForSettings(values)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("配置生成失败: %w", err)

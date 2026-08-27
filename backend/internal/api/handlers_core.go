@@ -113,6 +113,10 @@ func (s *Server) handleRegions(w http.ResponseWriter, r *http.Request) {
 
 // ---------- 内核管理 ----------
 
+// runTunEnvironmentCheck 是唯一的 TUN 启用预检入口。保留变量形式以便接口测试
+// 覆盖“设备存在但 auto-redirect 不可用”的场景，而无需依赖测试机网络命名空间。
+var runTunEnvironmentCheck = core.CheckTun
+
 func (s *Server) handleCoreStatus(w http.ResponseWriter, r *http.Request) {
 	st := s.mgr.Status()
 	s.dlMu.Lock()
@@ -289,7 +293,7 @@ func (s *Server) handleCoreRestart(w http.ResponseWriter, r *http.Request) {
 
 // handleTunCheck 开启 TUN 前的环境预检（/dev/net/tun + NET_ADMIN + auto-redirect 依赖）
 func (s *Server) handleTunCheck(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, core.CheckTun())
+	writeJSON(w, http.StatusOK, runTunEnvironmentCheck())
 }
 
 // tunDeviceName mihomo 未显式配置 tun.device 时的默认 TUN 接口名
@@ -708,6 +712,16 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if err := readJSON(r, &p); err != nil {
 		writeErr(w, http.StatusBadRequest, "请求格式错误")
 		return
+	}
+	// 不能先保存再等待用户应用：TUN 设备虽然可创建、但 auto-redirect 后端
+	// 不可用时，mihomo 会以“内核运行、透明代理不生效”的状态启动。拒绝该
+	// 写入可避免把一个必然失败的 TUN 配置放进待应用列表。
+	if p.TunEnable != nil && *p.TunEnable {
+		check := runTunEnvironmentCheck()
+		if !check.CanEnable {
+			writeErr(w, http.StatusBadRequest, "TUN 无法启用："+check.BlockingReason())
+			return
+		}
 	}
 	if p.MixedPort != nil {
 		if *p.MixedPort < 1 || *p.MixedPort > 65535 {

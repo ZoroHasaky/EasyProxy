@@ -91,6 +91,46 @@ func TestSettingsPutReturnsAndMaintainsPendingConfigChanges(t *testing.T) {
 	}
 }
 
+func TestSettingsPutRejectsTunWhenAutoRedirectIsUnavailable(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	srv := New(st, dir, "test")
+
+	originalCheck := runTunEnvironmentCheck
+	runTunEnvironmentCheck = func() core.TunCheckResult {
+		return core.TunCheckResult{
+			OK:        true,
+			CanEnable: false,
+			Detail:    "TUN 可用",
+			Warnings: []core.TunCheckWarning{{
+				Severity: core.TunCheckSeverityError,
+				Message:  "iptables 存在但执行异常，auto-redirect 可能失败",
+			}},
+		}
+	}
+	defer func() { runTunEnvironmentCheck = originalCheck }()
+
+	req := httptest.NewRequest(http.MethodPut, "/api/settings", bytes.NewBufferString(`{"tun_enable":true}`))
+	rec := httptest.NewRecorder()
+	srv.handlePutSettings(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("PUT status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "iptables 存在但执行异常") {
+		t.Fatalf("missing blocking reason: %s", rec.Body.String())
+	}
+	if got := st.GetSetting("tun_enable", ""); got != "" {
+		t.Fatalf("blocked TUN setting must not be saved, got %q", got)
+	}
+	if changes, err := st.ListPendingConfigChanges(); err != nil || len(changes) != 0 {
+		t.Fatalf("blocked TUN setting must not create pending changes: %#v, %v", changes, err)
+	}
+}
+
 func TestConfigApplySnapshotsSettingsAndClearsPendingAfterSuccess(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(dir)

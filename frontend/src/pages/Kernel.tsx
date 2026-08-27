@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   UploadCloud,
   FileCode,
+  ExternalLink,
 } from "lucide-react";
 import { api, Settings, CoreStatus, GenResult } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -122,6 +123,9 @@ export default function KernelPage() {
   };
 
   const isRunning = core.data?.state === "running";
+  const officialCoreDownloadURL = core.data?.latest_version && core.data.download_asset?.asset_arch
+    ? `https://github.com/MetaCubeX/mihomo/releases/download/${core.data.latest_version}/mihomo-linux-${core.data.download_asset.asset_arch}-${core.data.latest_version}.gz`
+    : "https://github.com/MetaCubeX/mihomo/releases/latest";
 
   return (
     <div className="space-y-6">
@@ -235,16 +239,22 @@ export default function KernelPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {core.data?.download_asset && (
-              <div className={cn(
-                "flex gap-2.5 rounded-xl border p-2.5 text-xs",
-                core.data.download_asset.variant === "compatible"
-                  ? "border-amber-500/25 bg-amber-500/5 text-amber-700 dark:text-amber-300"
-                  : "border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
-              )}>
-                {core.data.download_asset.variant === "compatible" ? <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
+              <div className="flex gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-300">
+                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
                 <div className="min-w-0 space-y-0.5">
-                  <div className="font-semibold">在线下载将使用：{core.data.download_asset.label}（linux-{core.data.download_asset.asset_arch}）</div>
+                  <div className="font-semibold">
+                    本机适用内核：Mihomo {core.data.latest_version || "最新稳定版"}（linux-{core.data.download_asset.asset_arch}，{core.data.download_asset.label}）
+                  </div>
                   <p className="leading-relaxed opacity-85">{core.data.download_asset.reason}</p>
+                  <a
+                    href={officialCoreDownloadURL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:opacity-80"
+                  >
+                    下载本机适用的官方内核
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
                 </div>
               </div>
             )}
@@ -268,7 +278,7 @@ export default function KernelPage() {
             </div>
 
             <div className="pt-2 border-t border-border/50 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">或者手动上传内核（建议 linux-{core.data?.download_asset?.asset_arch || "amd64"}）:</span>
+              <span className="text-xs text-muted-foreground">或者手动上传内核：</span>
               <input
                 ref={coreFileInputRef}
                 type="file"

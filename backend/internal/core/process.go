@@ -142,6 +142,15 @@ func (m *Manager) Start() error {
 
 	cmd := exec.Command(m.binPath, "-d", m.dataDir, "-f", filepath.Join(m.dataDir, "config.yaml"))
 	cmd.Dir = m.dataDir
+	// 某些 NAS 内核仅提供 legacy netfilter 表，但 Alpine 的 iptables 默认走
+	// nft 后端。探测到该组合时，为 Mihomo 子进程注入 legacy 包装器。
+	if env, err := processEnvWithIPTablesFallback(m.dataDir); err != nil {
+		m.state = StateFailed
+		m.lastErr = "准备 iptables 兼容环境失败: " + err.Error()
+		return fmt.Errorf("%s", m.lastErr)
+	} else {
+		cmd.Env = env
+	}
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	if err := cmd.Start(); err != nil {

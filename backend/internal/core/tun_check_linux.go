@@ -30,6 +30,7 @@ func CheckTun() TunCheckResult {
 	if len(res.Warnings) == 0 {
 		res.Detail = "TUN 可用，auto-redirect 依赖正常"
 	}
+	res.CanEnable = res.canEnable()
 	return res
 }
 
@@ -59,10 +60,24 @@ func checkTunDevice() (bool, string) {
 	return true, "TUN 可用"
 }
 
-// probeIPtables 返回 iptables 路径；命令存在时顺带实测一次 NAT 规则读取
-// （同时验证权限与内核 netfilter 链路），失败以 probeErr 返回。
+// probeIPtables 返回 mihomo 应使用的 iptables 路径；先实测默认 iptables，失败
+// 后再尝试 iptables-legacy。部分 NAS 主机仅暴露 legacy netfilter 表，而容器内
+// iptables 默认指向 nft 后端；此时 legacy 能成功读取 NAT 规则即可作为后备。
 func probeIPtables() (path string, probeErr error) {
-	p, err := exec.LookPath("iptables")
+	path, probeErr = probeIPtablesCommand("iptables")
+	if path != "" && probeErr == nil {
+		return path, nil
+	}
+	legacyPath, legacyErr := probeIPtablesCommand("iptables-legacy")
+	if legacyPath != "" && legacyErr == nil {
+		return legacyPath, nil
+	}
+	return path, probeErr
+}
+
+// probeIPtablesCommand 返回指定前端是否可实际读取 NAT 规则。
+func probeIPtablesCommand(name string) (path string, probeErr error) {
+	p, err := exec.LookPath(name)
 	if err != nil {
 		return "", nil
 	}
@@ -86,6 +101,25 @@ func probeIPtables() (path string, probeErr error) {
 		return p, fmt.Errorf("iptables -t nat -S 失败: %s", msg)
 	}
 	return p, nil
+}
+
+// processEnvWithIPTablesFallback 将 iptables-legacy 放到 Mihomo 子进程 PATH 的
+// 最前面。仅在默认 iptables 探测失败、且 legacy 探测成功时启用；这样不影响
+// 支持 nftables 的普通 Linux 主机，也能适配只提供 legacy 表的群晖等设备。
+func processEnvWithIPTablesFallback(dataDir string) ([]string, error) {
+	standardPath, standardErr := probeIPtablesCommand("iptables")
+	if standardPath != "" && standardErr == nil {
+		return os.Environ(), nil
+	}
+	legacyPath, legacyErr := probeIPtablesCommand("iptables-legacy")
+	if legacyPath == "" || legacyErr != nil {
+		return os.Environ(), nil
+	}
+	shimDir, err := createIPTablesLegacyShim(dataDir, legacyPath)
+	if err != nil {
+		return nil, err
+	}
+	return prependPath(os.Environ(), shimDir), nil
 }
 
 // hasNftablesModule 检查宿主内核是否加载 nf_tables 模块

@@ -2,7 +2,10 @@ package core
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -37,5 +40,43 @@ func TestEvaluateDeps(t *testing.T) {
 				t.Fatalf("severity = %v, want %v", sevs, c.wantSev)
 			}
 		})
+	}
+}
+
+func TestTunCheckCanEnable(t *testing.T) {
+	cases := []struct {
+		name string
+		res  TunCheckResult
+		want bool
+	}{
+		{"device unavailable", TunCheckResult{OK: false, Detail: "缺少 NET_ADMIN"}, false},
+		{"device and redirect ready", TunCheckResult{OK: true}, true},
+		{"soft warning", TunCheckResult{OK: true, Warnings: []TunCheckWarning{{Severity: TunCheckSeverityWarning, Message: "fallback"}}}, true},
+		{"redirect unavailable", TunCheckResult{OK: true, Warnings: []TunCheckWarning{{Severity: TunCheckSeverityError, Message: "iptables 执行异常"}}}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.res.canEnable(); got != c.want {
+				t.Fatalf("canEnable()=%v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestCreateIPTablesLegacyShim(t *testing.T) {
+	dir := t.TempDir()
+	shimDir, err := createIPTablesLegacyShim(dir, "/sbin/iptables-legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shimDir != filepath.Join(dir, "iptables") {
+		t.Fatalf("shim dir=%q", shimDir)
+	}
+	data, err := os.ReadFile(filepath.Join(shimDir, "iptables"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); !strings.Contains(got, "exec \"/sbin/iptables-legacy\" \"$@\"") {
+		t.Fatalf("unexpected shim: %q", got)
 	}
 }
