@@ -25,7 +25,8 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
 
 # ---- runtime ----
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata
+# iptables: mihomo TUN 的 auto-redirect 依赖 iptables 命令，缺失会导致 TUN 启动失败
+RUN apk add --no-cache ca-certificates tzdata iptables
 COPY --from=build /out/easyproxy /app/easyproxy
 COPY deploy/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh /app/easyproxy
