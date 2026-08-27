@@ -30,8 +30,39 @@ func CheckTun() TunCheckResult {
 	if len(res.Warnings) == 0 {
 		res.Detail = "TUN 可用，auto-redirect 依赖正常"
 	}
+	res.LANForwardingWarning = checkLANForwarding()
 	res.CanEnable = res.canEnable()
 	return res
+}
+
+// checkLANForwarding 检查 Docker 的 FORWARD 默认拒绝策略是否遗漏了 Meta TUN
+// 的双向放行规则。命令不可用或读取失败时不作猜测，避免产生误报。
+func checkLANForwarding() string {
+	if nft, err := exec.LookPath("nft"); err == nil {
+		forward, forwardErr := runNetfilterCommand(nft, "list", "chain", "ip", "filter", "FORWARD")
+		user, userErr := runNetfilterCommand(nft, "list", "chain", "ip", "filter", "DOCKER-USER")
+		if forwardErr == nil && userErr == nil {
+			return evaluateLANForwardingWarning(forward, user)
+		}
+	}
+
+	iptables, err := exec.LookPath("iptables")
+	if err != nil {
+		return ""
+	}
+	forward, forwardErr := runNetfilterCommand(iptables, "-S", "FORWARD")
+	user, userErr := runNetfilterCommand(iptables, "-S", "DOCKER-USER")
+	if forwardErr != nil || userErr != nil {
+		return ""
+	}
+	return evaluateLANForwardingWarning(forward, user)
+}
+
+func runNetfilterCommand(path string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, args...).CombinedOutput()
+	return string(out), err
 }
 
 // checkTunDevice 原 CheckTunAvailable 逻辑：验证 TUN 设备与权限

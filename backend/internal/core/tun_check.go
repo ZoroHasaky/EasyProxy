@@ -25,11 +25,14 @@ type TunCheckWarning struct {
 type TunCheckResult struct {
 	// OK 仅表示 /dev/net/tun 和 NET_ADMIN 已通过实测；CanEnable 还会纳入
 	// auto-redirect 的 iptables/nftables 依赖，是界面和写接口是否允许开启的准则。
-	OK        bool              `json:"ok"`
-	CanEnable bool              `json:"can_enable"`
-	Detail    string            `json:"detail"`
-	Warnings  []TunCheckWarning `json:"warnings,omitempty"`
+	OK                   bool              `json:"ok"`
+	CanEnable            bool              `json:"can_enable"`
+	Detail               string            `json:"detail"`
+	Warnings             []TunCheckWarning `json:"warnings,omitempty"`
+	LANForwardingWarning string            `json:"lan_forwarding_warning,omitempty"`
 }
+
+const lanForwardingWarningMessage = "检测到 Docker 的 FORWARD 默认拒绝，且 DOCKER-USER 未放行 Meta 与局域网网卡的双向转发；局域网设备经本机网关访问域名可能失败。请放行“LAN 网卡 ↔ Meta”双向转发流量。"
 
 // BlockingReason 返回阻止开启 TUN 的具体原因。调用方不应只检查 OK：当 TUN
 // 设备可创建、但 auto-redirect 后端不可用时，OK 为 true 而 CanEnable 为 false。
@@ -47,6 +50,44 @@ func (r TunCheckResult) BlockingReason() string {
 
 func (r TunCheckResult) canEnable() bool {
 	return r.BlockingReason() == ""
+}
+
+// evaluateLANForwardingWarning 根据 Docker 的 FORWARD/DOCKER-USER 规则判断
+// 局域网与 Mihomo Meta TUN 之间的流量是否可能被默认 DROP 策略阻断。
+// 这是运行后的风险提示，不阻止 TUN 启动：本机流量仍可能正常，受影响的是
+// 将 EasyProxy 作为局域网网关时的转发流量。
+func evaluateLANForwardingWarning(forwardChain, dockerUserChain string) string {
+	forward := strings.ToLower(forwardChain)
+	if !hasForwardDropPolicy(forward) || !strings.Contains(forward, "docker-user") {
+		return ""
+	}
+
+	userChain := strings.ToLower(dockerUserChain)
+	if hasMetaForwardAccept(userChain, true) && hasMetaForwardAccept(userChain, false) {
+		return ""
+	}
+	return lanForwardingWarningMessage
+}
+
+func hasForwardDropPolicy(chain string) bool {
+	return strings.Contains(chain, "policy drop") || strings.Contains(chain, "-p forward drop")
+}
+
+// lanToTun 为 true 时检查 LAN → Meta；false 时检查 Meta → LAN。
+// 同时兼容 nft 与 iptables-save 风格的规则输出。
+func hasMetaForwardAccept(chain string, lanToTun bool) bool {
+	for _, line := range strings.Split(chain, "\n") {
+		if !strings.Contains(line, "accept") {
+			continue
+		}
+		if lanToTun && (strings.Contains(line, `oifname "meta"`) || strings.Contains(line, "-o meta")) {
+			return true
+		}
+		if !lanToTun && (strings.Contains(line, `iifname "meta"`) || strings.Contains(line, "-i meta")) {
+			return true
+		}
+	}
+	return false
 }
 
 func createIPTablesLegacyShim(dataDir, legacyPath string) (string, error) {

@@ -63,6 +63,53 @@ func TestTunCheckCanEnable(t *testing.T) {
 	}
 }
 
+func TestEvaluateLANForwardingWarning(t *testing.T) {
+	cases := []struct {
+		name    string
+		forward string
+		user    string
+		want    bool
+	}{
+		{
+			name:    "docker forward accepts traffic",
+			forward: "chain FORWARD { policy accept; jump DOCKER-USER }",
+			user:    "",
+		},
+		{
+			name:    "docker drop with missing rules",
+			forward: "chain FORWARD { policy drop; jump DOCKER-USER }",
+			user:    "chain DOCKER-USER { }",
+			want:    true,
+		},
+		{
+			name:    "only lan to tun is allowed",
+			forward: "chain FORWARD { policy drop; jump DOCKER-USER }",
+			user:    `iifname "enp6s18" oifname "Meta" accept`,
+			want:    true,
+		},
+		{
+			name:    "nft both directions are allowed",
+			forward: "chain FORWARD { policy drop; jump DOCKER-USER }",
+			user: `iifname "enp6s18" oifname "Meta" accept
+iifname "Meta" oifname "enp6s18" accept`,
+		},
+		{
+			name:    "iptables both directions are allowed",
+			forward: "-P FORWARD DROP\n-A FORWARD -j DOCKER-USER",
+			user: "-A DOCKER-USER -i enp6s18 -o Meta -j ACCEPT\n" +
+				"-A DOCKER-USER -i Meta -o enp6s18 -j ACCEPT",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := evaluateLANForwardingWarning(c.forward, c.user)
+			if (got != "") != c.want {
+				t.Fatalf("warning=%q, want present=%v", got, c.want)
+			}
+		})
+	}
+}
+
 func TestCreateIPTablesLegacyShim(t *testing.T) {
 	dir := t.TempDir()
 	shimDir, err := createIPTablesLegacyShim(dir, "/sbin/iptables-legacy")

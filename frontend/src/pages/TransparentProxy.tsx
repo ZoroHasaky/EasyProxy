@@ -19,6 +19,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type TunCheckWarning = { severity: "warning" | "error"; message: string };
 type TunCheckResponse = {
@@ -26,12 +33,15 @@ type TunCheckResponse = {
   can_enable: boolean;
   detail: string;
   warnings?: TunCheckWarning[];
+  lan_forwarding_warning?: string;
 };
 
 export default function TransparentProxyPage() {
   const qc = useQueryClient();
   const [form, setForm] = useState<Settings | null>(null);
   const [tunCheck, setTunCheck] = useState<TunCheckResponse | null>(null);
+  const [lanForwardingWarning, setLanForwardingWarning] = useState<string | null>(null);
+  const [lanForwardingDialogOpen, setLanForwardingDialogOpen] = useState(false);
 
   const settings = useQuery({
     queryKey: ["settings"],
@@ -66,6 +76,7 @@ export default function TransparentProxyPage() {
   const runTunCheck = async (silent = false): Promise<TunCheckResponse | null> => {
     try {
       const res = await api.get<TunCheckResponse>("/api/tun/check");
+      setLanForwardingWarning(res.lan_forwarding_warning ?? null);
       // 预检通过无需显示任何状态；只有无法启用时才保留错误并提示用户。
       setTunCheck(res.can_enable ? null : res);
       if (!res.can_enable && !silent) {
@@ -130,9 +141,22 @@ export default function TransparentProxyPage() {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base font-bold">TUN 虚拟网卡配置</CardTitle>
-            <Badge variant={form.tun_enable ? "success" : "secondary"}>
-              {form.tun_enable ? "TUN 已开启" : "TUN 已关闭"}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant={form.tun_enable ? "success" : "secondary"}>
+                {form.tun_enable ? "TUN 已开启" : "TUN 已关闭"}
+              </Badge>
+              {form.tun_enable && lanForwardingWarning && (
+                <button
+                  type="button"
+                  onClick={() => setLanForwardingDialogOpen(true)}
+                  className="rounded-full p-1 text-amber-500 transition-colors hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                  title="局域网转发风险提示"
+                  aria-label="查看局域网转发风险提示"
+                >
+                  <AlertTriangle className="h-4 w-4 fill-amber-500/15" />
+                </button>
+              )}
+            </div>
           </div>
           <CardDescription>
             软路由/网关场景下开启。需要容器具备 NET_ADMIN 权限与 /dev/net/tun 设备挂载。
@@ -178,6 +202,18 @@ export default function TransparentProxyPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={lanForwardingDialogOpen} onOpenChange={setLanForwardingDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="h-5 w-5" />
+              局域网转发风险
+            </DialogTitle>
+            <DialogDescription>{lanForwardingWarning}</DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
 
       {/* 内置 DNS 设置 */}
       <Card>
