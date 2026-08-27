@@ -50,7 +50,7 @@ var configSettingDefaults = map[string]string{
 	"dns_nameserver":      `["https://223.5.5.5/dns-query","https://doh.pub/dns-query"]`,
 	"dns_fallback":        `["223.5.5.5","119.29.29.29"]`,
 	"geo_enabled":         "1",
-	"geo_auto_update":     "0",
+	"geo_auto_update":     "1",
 	"geo_update_interval": "24",
 }
 

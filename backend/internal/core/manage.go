@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -335,6 +336,61 @@ func reportDownloadProgress(progress func(DownloadProgress), update DownloadProg
 // mirror 为 GitHub 下载前缀（如 https://ghproxy.net/https://github.com），空则不额外优先。
 func DownloadCore(dataDir, version, mirror string) error {
 	return DownloadCoreWithProgress(dataDir, version, mirror, nil)
+}
+
+// ValidateOfficialCoreDownloadURL 验证用户填写的 Mihomo 官方发布直链是否与
+// 当前环境所需架构一致。只接受 GitHub 官方 Release 资产，避免面板成为任意
+// 地址下载器，也避免误装不兼容的标准版或兼容版内核。
+func ValidateOfficialCoreDownloadURL(rawURL string) (string, error) {
+	return validateOfficialCoreDownloadURL(rawURL, RecommendedCoreDownloadAsset())
+}
+
+func validateOfficialCoreDownloadURL(rawURL string, asset CoreDownloadAsset) (string, error) {
+	if asset.Variant == "unsupported" || asset.AssetArch == "" {
+		return "", fmt.Errorf("当前环境不支持自动选择内核：%s", asset.Reason)
+	}
+	parsed, err := url.ParseRequestURI(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Scheme != "https" || parsed.Host != "github.com" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("请输入 Mihomo 官方 GitHub Release 下载链接")
+	}
+	const prefix = "/MetaCubeX/mihomo/releases/download/"
+	if !strings.HasPrefix(parsed.Path, prefix) {
+		return "", fmt.Errorf("下载链接必须来自 MetaCubeX/mihomo 官方 Release")
+	}
+	parts := strings.Split(strings.TrimPrefix(parsed.Path, prefix), "/")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
+		return "", fmt.Errorf("官方下载链接格式无效")
+	}
+	version := parts[0]
+	expected := fmt.Sprintf("mihomo-linux-%s-%s.gz", asset.AssetArch, version)
+	if parts[1] != expected {
+		return "", fmt.Errorf("本机需要 %s，链接文件应为 %s", asset.AssetArch, expected)
+	}
+	return version, nil
+}
+
+// DownloadCoreURLWithProgress 从用户填写、且已验证的 Mihomo 官方直链下载内核。
+func DownloadCoreURLWithProgress(dataDir, rawURL string, progress func(DownloadProgress)) error {
+	version, err := ValidateOfficialCoreDownloadURL(rawURL)
+	if err != nil {
+		return err
+	}
+	update := DownloadProgress{Source: "GitHub 官方直链", Attempt: 1, Total: 1, Version: version}
+	reportDownloadProgress(progress, DownloadProgress{Stage: "attempt", Source: update.Source, Attempt: update.Attempt, Total: update.Total, Version: update.Version})
+	data, err := fetchCoreAsset(strings.TrimSpace(rawURL))
+	if err != nil {
+		update.Stage, update.Err = "failed", err
+		reportDownloadProgress(progress, update)
+		return fmt.Errorf("官方下载链接下载失败: %w", err)
+	}
+	if err := installCoreBytes(dataDir, data); err != nil {
+		update.Stage, update.Err = "verification_failed", err
+		reportDownloadProgress(progress, update)
+		return fmt.Errorf("官方链接返回的内核无法通过校验: %w", err)
+	}
+	update.Stage = "completed"
+	reportDownloadProgress(progress, update)
+	return nil
 }
 
 // DownloadCoreWithProgress 下载并安装内核，并在每个源尝试与失败时报告进度。

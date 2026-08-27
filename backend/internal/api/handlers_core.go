@@ -199,8 +199,19 @@ func (s *Server) coreDownloadProgress(eventPrefix string) func(core.DownloadProg
 func (s *Server) handleCoreDownload(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Version string `json:"version"`
+		URL     string `json:"url"`
 	}
 	_ = readJSON(r, &req)
+	downloadURL := strings.TrimSpace(req.URL)
+	version := strings.TrimSpace(req.Version)
+	if downloadURL != "" {
+		var err error
+		version, err = core.ValidateOfficialCoreDownloadURL(downloadURL)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 
 	s.dlMu.Lock()
 	if s.dlRunning {
@@ -211,7 +222,11 @@ func (s *Server) handleCoreDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	s.dlRunning, s.dlErr = true, ""
 	s.dlMu.Unlock()
-	s.audit("core", "core.download", "info", "已开始下载 Mihomo 内核", map[string]any{"version": strings.TrimSpace(req.Version)})
+	auditDetails := map[string]any{"version": version}
+	if downloadURL != "" {
+		auditDetails["source"] = "GitHub 官方直链"
+	}
+	s.audit("core", "core.download", "info", "已开始下载 Mihomo 内核", auditDetails)
 
 	go func() {
 		defer func() {
@@ -220,23 +235,28 @@ func (s *Server) handleCoreDownload(w http.ResponseWriter, r *http.Request) {
 			s.dlMu.Unlock()
 		}()
 		mirror := s.st.GetSetting("core_mirror", "")
-		ver := req.Version
-		log.Printf("[core] 开始下载内核 ver=%s mirror=%s", ver, mirror)
-		if err := core.DownloadCoreWithProgress(s.dataDir, ver, mirror, s.coreDownloadProgress("core.download")); err != nil {
+		log.Printf("[core] 开始下载内核 ver=%s", version)
+		var err error
+		if downloadURL != "" {
+			err = core.DownloadCoreURLWithProgress(s.dataDir, downloadURL, s.coreDownloadProgress("core.download"))
+		} else {
+			err = core.DownloadCoreWithProgress(s.dataDir, version, mirror, s.coreDownloadProgress("core.download"))
+		}
+		if err != nil {
 			s.dlMu.Lock()
 			s.dlErr = err.Error()
 			s.dlMu.Unlock()
 			log.Printf("[core] 内核下载失败: %v", err)
-			s.audit("core", "core.download", "error", "Mihomo 内核下载失败", map[string]any{"version": strings.TrimSpace(ver), "error": safeCoreAuditError(err)})
+			s.audit("core", "core.download", "error", "Mihomo 内核下载失败", map[string]any{"version": version, "error": safeCoreAuditError(err)})
 			return
 		}
 		log.Printf("[core] 内核下载完成，重启内核")
 		s.writeGeneratedConfig()
 		if err := s.mgr.Restart(); err != nil {
-			s.audit("core", "core.download", "warning", "Mihomo 内核下载完成，但重启失败", map[string]any{"version": strings.TrimSpace(ver), "error": safeAuditError(err)})
+			s.audit("core", "core.download", "warning", "Mihomo 内核下载完成，但重启失败", map[string]any{"version": version, "error": safeAuditError(err)})
 			return
 		}
-		s.audit("core", "core.download", "success", "Mihomo 内核下载并启动完成", map[string]any{"version": strings.TrimSpace(ver)})
+		s.audit("core", "core.download", "success", "Mihomo 内核下载并启动完成", map[string]any{"version": version})
 		s.refreshRecognitionRuleProvidersAfterCoreStart()
 	}()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "下载任务已开始"})
@@ -678,7 +698,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"dns_nameserver":      ns,
 		"dns_fallback":        fb,
 		"geo_enabled":         s.st.GetSettingBool("geo_enabled", true),
-		"geo_auto_update":     s.st.GetSettingBool("geo_auto_update", false),
+		"geo_auto_update":     s.st.GetSettingBool("geo_auto_update", true),
 		"geo_update_interval": s.st.GetSettingInt("geo_update_interval", 24),
 		"geox_urls":           geox,
 		"default_geox_urls":   service.DefaultGeoxSources(),

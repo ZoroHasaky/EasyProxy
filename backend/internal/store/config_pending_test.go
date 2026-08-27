@@ -37,7 +37,7 @@ func TestAppliedConfigSettingsInitializeFromExistingSettings(t *testing.T) {
 	if applied["mixed_port"] != "18080" || applied["tun_enable"] != "1" {
 		t.Fatalf("snapshot did not retain existing settings: %#v", applied)
 	}
-	if applied["log_level"] != "info" || applied["dns_enable"] != "1" {
+	if applied["log_level"] != "info" || applied["dns_enable"] != "1" || applied["geo_auto_update"] != "1" {
 		t.Fatalf("snapshot did not initialize default settings: %#v", applied)
 	}
 }

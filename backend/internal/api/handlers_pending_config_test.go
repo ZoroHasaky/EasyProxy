@@ -131,6 +131,26 @@ func TestSettingsPutRejectsTunWhenAutoRedirectIsUnavailable(t *testing.T) {
 	}
 }
 
+func TestCoreDownloadRejectsNonOfficialURL(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	srv := New(st, dir, "test")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/core/download", bytes.NewBufferString(`{"url":"https://example.com/mihomo.gz"}`))
+	rec := httptest.NewRecorder()
+	srv.handleCoreDownload(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("download status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Mihomo 官方 GitHub Release") {
+		t.Fatalf("download response did not explain official-link requirement: %s", rec.Body.String())
+	}
+}
+
 func TestConfigApplySnapshotsSettingsAndClearsPendingAfterSuccess(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(dir)

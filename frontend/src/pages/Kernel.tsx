@@ -50,7 +50,7 @@ export default function KernelPage() {
   const qc = useQueryClient();
   const [form, setForm] = useState<Settings | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [coreVer, setCoreVer] = useState("");
+  const [coreURL, setCoreURL] = useState("");
   const [uploading, setUploading] = useState(false);
   const coreFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -89,7 +89,7 @@ export default function KernelPage() {
   });
 
   const downloadCoreMutation = useMutation({
-    mutationFn: () => api.post("/api/core/download", { version: coreVer || "latest" }),
+    mutationFn: () => api.post("/api/core/download", { url: coreURL.trim() }),
     onSuccess: () => {
       toast.success("已触发内核下载任务（下载完成后将自动启动）");
       qc.invalidateQueries({ queryKey: ["core"] });
@@ -234,7 +234,7 @@ export default function KernelPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-bold">下载或手动上传内核</CardTitle>
             <CardDescription>
-              支持在线从 GitHub/加速镜像拉取或上传本地二进制文件
+              填写 Mihomo 官方 Release 下载链接，或上传本地二进制文件
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -260,9 +260,9 @@ export default function KernelPage() {
             )}
             <div className="flex gap-2">
               <Input
-                placeholder="内核版本 (留空默认 latest)"
-                value={coreVer}
-                onChange={(e) => setCoreVer(e.target.value)}
+                placeholder="https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-amd64-v1.19.30.gz"
+                value={coreURL}
+                onChange={(e) => setCoreURL(e.target.value)}
                 className="h-9 text-xs"
               />
               <Button
@@ -270,10 +270,10 @@ export default function KernelPage() {
                 size="sm"
                 className="shrink-0"
                 onClick={() => downloadCoreMutation.mutate()}
-                disabled={downloadCoreMutation.isPending || core.data?.downloading}
+                disabled={!coreURL.trim() || downloadCoreMutation.isPending || core.data?.downloading}
               >
                 <Download className={cn("h-3.5 w-3.5", downloadCoreMutation.isPending && "animate-spin")} />
-                在线下载
+                从链接下载
               </Button>
             </div>
 

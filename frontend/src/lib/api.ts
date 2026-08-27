@@ -246,7 +246,8 @@ export interface ProxyGroup {
 
 // 仅用于界面展示；内核配置和 API 仍使用 Mihomo 原始类型值。
 export function proxyGroupTypeLabel(type: string) {
-  return type === "url-test" ? "自动测速" : type;
+  const normalized = type.toLowerCase().replace(/[_\s]/g, "-");
+  return normalized === "url-test" || normalized === "urltest" ? "自动测速" : type;
 }
 
 export interface RulesPayload {

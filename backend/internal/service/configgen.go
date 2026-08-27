@@ -355,7 +355,7 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 				fmt.Fprintf(&sb, "  %s: %s\n", k, quote(geox[k]))
 			}
 		}
-		fmt.Fprintf(&sb, "geo-auto-update: %t\n", settings.getBool("geo_auto_update", false))
+		fmt.Fprintf(&sb, "geo-auto-update: %t\n", settings.getBool("geo_auto_update", true))
 		fmt.Fprintf(&sb, "geo-update-interval: %d\n", settings.getInt("geo_update_interval", 24))
 		// Geo 数据页管理的是 GeoIP.dat / GeoSite.dat；显式启用 dat 模式，
 		// 避免 Mihomo 默认改用 geoip.metadb，导致页面状态和实际路由数据不一致。
