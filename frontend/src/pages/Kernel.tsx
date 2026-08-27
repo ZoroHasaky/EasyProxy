@@ -11,6 +11,7 @@ import {
   RotateCw,
   ShieldAlert,
   CheckCircle2,
+  AlertTriangle,
   UploadCloud,
   FileCode,
 } from "lucide-react";
@@ -199,6 +200,26 @@ export default function KernelPage() {
             {core.data?.last_error && (
               <div className="p-2.5 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-mono">
                 {core.data.last_error}
+              </div>
+            )}
+
+            {core.data?.tun_active === true && (
+              <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                TUN 已生效
+              </div>
+            )}
+            {core.data?.tun_active === false && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 text-xs font-semibold text-destructive">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  TUN 未生效（透明代理不可用）
+                </div>
+                {core.data?.tun_error && (
+                  <div className="p-2.5 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-mono break-all">
+                    {core.data.tun_error}
+                  </div>
+                )}
               </div>
             )}
           </CardContent>

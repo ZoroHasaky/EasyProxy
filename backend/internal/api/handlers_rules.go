@@ -543,6 +543,11 @@ func (s *Server) applyConfigWithSettings(includePending bool) (string, map[strin
 		return "saved", values, yaml, nil // 内核缺失，仅保存
 	}
 	st := s.mgr.Status()
+	verifyTun := func() {
+		if configBool(values, "tun_enable", false) {
+			s.verifyTunAfterStart()
+		}
+	}
 	if st.State != core.StateRunning {
 		if err := s.mgr.Start(); err != nil {
 			restoreAppliedConfig()
@@ -550,6 +555,7 @@ func (s *Server) applyConfigWithSettings(includePending bool) (string, map[strin
 			return "", values, "", err
 		}
 		s.audit("core", "core.start", "success", "Mihomo 内核已启动", nil)
+		verifyTun()
 		return "started", values, yaml, nil
 	}
 	needRestart := false
@@ -573,6 +579,7 @@ func (s *Server) applyConfigWithSettings(includePending bool) (string, map[strin
 			return "", values, "", err
 		}
 		s.audit("core", "core.restart", "success", "Mihomo 内核已重启", nil)
+		verifyTun()
 		return "restarted", values, yaml, nil
 	}
 	// 新版 mihomo 要求 PUT /configs 的 path 为绝对路径
@@ -584,6 +591,7 @@ func (s *Server) applyConfigWithSettings(includePending bool) (string, map[strin
 			return "", values, "", fmt.Errorf("热重载失败: %v；重启内核也失败: %v", err, rerr)
 		}
 		s.audit("core", "core.restart", "success", "Mihomo 热重载失败，已通过重启恢复", nil)
+		verifyTun()
 		return "restarted", values, yaml, nil
 	}
 	return "reloaded", values, yaml, nil

@@ -29,6 +29,8 @@ type Manager struct {
 	startedAt time.Time
 	stableAt  time.Time
 	stopping  bool
+	tunActive *bool
+	tunError  string
 
 	logMu   sync.Mutex
 	logBuf  []string
@@ -52,11 +54,16 @@ type Status struct {
 	Restarts    int       `json:"restarts"`
 	StartedAt   time.Time `json:"started_at"`
 	LastError   string    `json:"last_error"`
+	// TunActive 为 nil 表示未开启 TUN 或尚未完成验证；
+	// false 表示内核进程存活但 TUN 接口未创建（透明代理未生效），原因见 TunError。
+	TunActive *bool  `json:"tun_active,omitempty"`
+	TunError  string `json:"tun_error,omitempty"`
 }
 
 func (m *Manager) Status() Status {
 	m.mu.Lock()
-	st := Status{State: m.state, Restarts: m.restarts, StartedAt: m.startedAt, LastError: m.lastErr}
+	st := Status{State: m.state, Restarts: m.restarts, StartedAt: m.startedAt, LastError: m.lastErr,
+		TunActive: m.tunActive, TunError: m.tunError}
 	if m.cmd != nil && m.cmd.Process != nil {
 		st.PID = m.cmd.Process.Pid
 	}
@@ -65,6 +72,14 @@ func (m *Manager) Status() Status {
 		st.MemoryBytes = processMemoryBytes(st.PID)
 	}
 	return st
+}
+
+// SetTunVerifyResult 记录内核启动后的 TUN 实际生效状态（由 api 层异步验证写入）
+func (m *Manager) SetTunVerifyResult(active bool, errMsg string) {
+	m.mu.Lock()
+	m.tunActive = &active
+	m.tunError = errMsg
+	m.mu.Unlock()
 }
 
 func (m *Manager) writeLog(line string) {
@@ -138,6 +153,9 @@ func (m *Manager) Start() error {
 	m.state = StateRunning
 	m.lastErr = ""
 	m.startedAt = time.Now()
+	// 新进程的 TUN 状态未知，等待启动后验证；清掉上一次的结果避免残留误导
+	m.tunActive = nil
+	m.tunError = ""
 	go m.pump(stdout)
 	go m.pump(stderr)
 

@@ -21,3 +21,6 @@ data/
 # misc
 .env
 .DS_Store
+
+# ZCode 会话产物
+.zcode/

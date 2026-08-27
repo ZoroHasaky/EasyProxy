@@ -3,6 +3,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Network,
+  AlertTriangle,
+  CheckCircle2,
+  Info,
 } from "lucide-react";
 import { api, Settings } from "@/lib/api";
 import { Label } from "@/components/ui/label";
@@ -19,9 +22,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+type TunCheckWarning = { severity: "warning" | "error"; message: string };
+type TunCheckResponse = { ok: boolean; detail: string; warnings?: TunCheckWarning[] };
+
 export default function TransparentProxyPage() {
   const qc = useQueryClient();
   const [form, setForm] = useState<Settings | null>(null);
+  const [tunCheck, setTunCheck] = useState<TunCheckResponse | null>(null);
 
   const settings = useQuery({
     queryKey: ["settings"],
@@ -44,14 +51,18 @@ export default function TransparentProxyPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const checkTun = async (on: boolean) => {
-    patch({ tun_enable: on });
-    saveMutation.mutate({ tun_enable: on });
-    if (!on) return;
+  const runTunCheck = async (silent = false) => {
     try {
-      const res = await api.get<{ ok: boolean; detail: string }>("/api/tun/check");
+      const res = await api.get<TunCheckResponse>("/api/tun/check");
+      setTunCheck(res);
+      if (silent) return;
+      const fatal = res.warnings?.find((w) => w.severity === "error");
       if (!res.ok) {
         toast.error(`TUN 环境预检异常：${res.detail}`, { duration: 7000 });
+      } else if (fatal) {
+        toast.error(fatal.message, { duration: 7000 });
+      } else if (res.warnings?.length) {
+        toast.warning(res.warnings[0].message, { duration: 7000 });
       } else {
         toast.success("TUN 软路由环境预检通过");
       }
@@ -59,6 +70,19 @@ export default function TransparentProxyPage() {
       /* 预检失败不阻止保存，统一应用时仍会给出内核错误 */
     }
   };
+
+  const checkTun = (on: boolean) => {
+    patch({ tun_enable: on });
+    saveMutation.mutate({ tun_enable: on });
+    if (on) runTunCheck();
+  };
+
+  // TUN 已开启时进入页面自动预检一次（静默，仅更新内联状态区）
+  const tunEnabled = settings.data?.tun_enable;
+  useEffect(() => {
+    if (tunEnabled && tunCheck === null) runTunCheck(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tunEnabled]);
 
   const saveNameservers = (key: "dns_nameserver" | "dns_fallback", value: string) => {
     const servers = value.split("\n").map((item) => item.trim()).filter(Boolean);
@@ -110,6 +134,36 @@ export default function TransparentProxyPage() {
               onCheckedChange={(v) => checkTun(v)}
             />
           </div>
+
+          {tunCheck && (
+            <div className="space-y-1.5 text-xs">
+              {!tunCheck.ok ? (
+                <div className="flex items-start gap-2 p-2.5 rounded-lg bg-destructive/10 text-destructive">
+                  <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  <span>{tunCheck.detail}</span>
+                </div>
+              ) : tunCheck.warnings?.length ? (
+                tunCheck.warnings.map((w, i) =>
+                  w.severity === "error" ? (
+                    <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg bg-destructive/10 text-destructive">
+                      <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <span>{w.message}</span>
+                    </div>
+                  ) : (
+                    <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                      <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <span>{w.message}</span>
+                    </div>
+                  ),
+                )
+              ) : (
+                <div className="flex items-center gap-2 p-2.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                  <span>环境预检通过：{tunCheck.detail}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label>TUN 协议栈 (Stack)</Label>

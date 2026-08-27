@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -137,6 +138,8 @@ func (s *Server) handleCoreStatus(w http.ResponseWriter, r *http.Request) {
 		"memory_bytes":      st.MemoryBytes,
 		"restarts":          st.Restarts,
 		"last_error":        st.LastError,
+		"tun_active":        st.TunActive,
+		"tun_error":         st.TunError,
 		"downloading":       dlRunning,
 		"download_error":    dlErr,
 		"latest_version":    latest,
@@ -278,13 +281,87 @@ func (s *Server) handleCoreRestart(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit("core", "core.restart", "success", "Mihomo 内核已重启", nil)
 	s.refreshRecognitionRuleProvidersAfterCoreStart()
+	if s.appliedTunEnabled() {
+		s.verifyTunAfterStart()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// handleTunCheck 开启 TUN 前的权限预检（/dev/net/tun + NET_ADMIN）
+// handleTunCheck 开启 TUN 前的环境预检（/dev/net/tun + NET_ADMIN + auto-redirect 依赖）
 func (s *Server) handleTunCheck(w http.ResponseWriter, r *http.Request) {
-	ok, detail := core.CheckTunAvailable()
-	writeJSON(w, http.StatusOK, map[string]any{"ok": ok, "detail": detail})
+	writeJSON(w, http.StatusOK, core.CheckTun())
+}
+
+// tunDeviceName mihomo 未显式配置 tun.device 时的默认 TUN 接口名
+const tunDeviceName = "Meta"
+
+// verifyTunAfterStart 异步验证内核启动后 TUN 接口是否真的创建。
+// 内核进程存活不代表 TUN 生效：auto-redirect 初始化失败时 mihomo 仅记录一条
+// error 后继续运行，状态灯不变，必须以接口存在性做最终确认。
+func (s *Server) verifyTunAfterStart() {
+	go func() {
+		active := false
+		for i := 0; i < 6; i++ {
+			time.Sleep(500 * time.Millisecond)
+			if tunInterfaceExists(tunDeviceName) {
+				active = true
+				break
+			}
+		}
+		if active {
+			s.mgr.SetTunVerifyResult(true, "")
+			s.audit("core", "core.tun_verify", "success", "TUN 接口已就绪，透明代理生效", nil)
+			return
+		}
+		reason := tunFailureReason(s.mgr.RecentLogs())
+		s.mgr.SetTunVerifyResult(false, reason)
+		summary := "TUN 接口未创建，透明代理未生效"
+		if reason != "" {
+			summary += "：" + reason
+		}
+		s.audit("core", "core.tun_verify", "error", summary, nil)
+	}()
+}
+
+func tunInterfaceExists(name string) bool {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+	for _, ifc := range ifaces {
+		if ifc.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// tunFailureReason 从内核最近输出中提取 TUN 失败原因：
+// 优先取包含 "tun" 的 error 行（如 Start TUN listening error），否则取第一条 error 行。
+func tunFailureReason(logs []string) string {
+	first := ""
+	for _, line := range logs {
+		if coreOutputLevel(line) != "error" {
+			continue
+		}
+		cleaned := sanitizeCoreOutput(line)
+		if strings.Contains(strings.ToLower(line), "tun") {
+			return cleaned
+		}
+		if first == "" {
+			first = cleaned
+		}
+	}
+	return first
+}
+
+// appliedTunEnabled 已应用配置快照中 TUN 是否开启（重启类入口的验证条件）
+func (s *Server) appliedTunEnabled() bool {
+	values, err := s.st.AppliedConfigSettings()
+	if err != nil {
+		return false
+	}
+	return configBool(values, "tun_enable", false)
 }
 
 // ---------- 面板自更新 ----------

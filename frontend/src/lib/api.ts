@@ -291,6 +291,9 @@ export interface CoreStatus {
   memory_bytes: number;
   restarts: number;
   last_error: string;
+  /** null/undefined = TUN 未开启或尚未完成验证 */
+  tun_active?: boolean | null;
+  tun_error?: string;
   downloading: boolean;
   download_error: string;
   latest_version: string;
