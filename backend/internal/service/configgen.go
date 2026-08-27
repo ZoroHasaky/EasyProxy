@@ -186,14 +186,46 @@ func DefaultFallbackDNS() []string {
 	return []string{"223.5.5.5", "119.29.29.29"}
 }
 
-// detectLANIP 返回默认出站接口的本机 IP（UDP 拨号选路，不实际发包）
+// detectLANIP 返回供局域网设备访问的本机 IP（物理网卡的私网 IPv4）。
+// 不能用 UDP 拨号选路：mihomo TUN 的 auto-route 会把默认路由指向 Meta 接口，
+// 拨号会选中 fake-ip 网关地址（198.18.0.1），导致 DNS 监听写到一个客户端不可达的地址。
 func detectLANIP() string {
-	conn, err := net.Dial("udp", "223.5.5.5:53")
+	ifaces, err := net.Interfaces()
 	if err != nil {
 		return ""
 	}
-	defer conn.Close()
-	return conn.LocalAddr().(*net.UDPAddr).IP.String()
+	return chooseLANIP(ifaces)
+}
+
+// chooseLANIP 从接口列表中挑选局域网设备可达的本机 IPv4：
+// 跳过 loopback/未启用的接口、容器与 OVS 虚拟接口、非私网地址（含 fake-ip 段）。
+func chooseLANIP(ifaces []net.Interface) string {
+	for _, ifc := range ifaces {
+		if ifc.Flags&net.FlagLoopback != 0 || ifc.Flags&net.FlagUp == 0 {
+			continue
+		}
+		name := ifc.Name
+		if strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "br-") ||
+			strings.HasPrefix(name, "veth") || strings.HasPrefix(name, "vnet") {
+			continue
+		}
+		addrs, err := ifc.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip4 := ipnet.IP.To4()
+			if ip4 == nil || !ip4.IsPrivate() {
+				continue
+			}
+			return ip4.String()
+		}
+	}
+	return ""
 }
 
 // GenerateConfig 依据节点池/策略组/规则模板/设置生成最终 mihomo 配置
