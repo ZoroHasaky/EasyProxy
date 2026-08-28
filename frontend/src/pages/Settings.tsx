@@ -26,6 +26,7 @@ const messages = defineMessages({
   generating: "正在生成配置链接…", readFailed: "读取配置链接失败，请关闭后重试。",
   refreshHint: "节点或规则保存后，Clash Verge 下次刷新订阅即可获得最新配置；重新生成链接会立即使旧链接失效。",
   regenerate: "重新生成链接", copy: "复制链接",
+  releaseBuild: "正式发布", developmentBuild: "开发构建", dockerContainer: "Docker 容器", containerEnvironment: "容器环境", localRun: "本地运行",
 }, {
   notRecorded: "Not recorded", passwordChanged: "Management password changed", linkRotated: "Configuration subscription link regenerated; the old link is now invalid",
   passwordLength: "The new password must be at least 8 characters", mismatch: "The new passwords do not match", copied: "Configuration link copied",
@@ -41,7 +42,23 @@ const messages = defineMessages({
   generating: "Generating configuration link…", readFailed: "Unable to load the configuration link. Close this dialog and try again.",
   refreshHint: "After nodes or rules change, refresh the subscription in Clash Verge. Regenerating the link immediately invalidates the old one.",
   regenerate: "Regenerate Link", copy: "Copy Link",
+  releaseBuild: "Release", developmentBuild: "Development Build", dockerContainer: "Docker Container", containerEnvironment: "Container Environment", localRun: "Local Run",
 });
+
+type SystemValueKey = "releaseBuild" | "developmentBuild" | "dockerContainer" | "containerEnvironment" | "localRun";
+
+const SYSTEM_VALUE_KEYS: Record<string, SystemValueKey> = {
+  "正式发布": "releaseBuild",
+  "开发构建": "developmentBuild",
+  "Docker 容器": "dockerContainer",
+  "容器环境": "containerEnvironment",
+  "本地运行": "localRun",
+};
+
+function localizeSystemValue(value: string | undefined, text: Record<SystemValueKey, string>) {
+  const key = SYSTEM_VALUE_KEYS[value ?? ""];
+  return key ? text[key] : value ?? "";
+}
 
 function formatTime(value: string | undefined, locale: string, missing: string) {
   if (!value) return missing;
@@ -139,11 +156,11 @@ export default function SettingsPage() {
   const system = meta?.system;
   const version = meta?.version ? (meta.version.startsWith("v") ? meta.version : `v${meta.version}`) : text.loading;
   const details = [
-    { label: text.version, value: version, hint: system?.build_type || "" },
+    { label: text.version, value: version, hint: localizeSystemValue(system?.build_type, text) },
     { label: text.commit, value: system?.commit || text.notEmbedded, mono: true },
     { label: text.buildTime, value: formatTime(system?.build_time, locale, text.notRecorded) },
     { label: text.updateRepo, value: system?.release_repo || "zorohasaky/easyproxy", mono: true },
-    { label: text.deployment, value: system?.deployment || text.loading },
+    { label: text.deployment, value: localizeSystemValue(system?.deployment, text) || text.loading },
     { label: text.goVersion, value: system?.go_version || text.loading, mono: true },
     { label: text.architecture, value: system?.architecture || text.loading, mono: true },
     { label: text.timezone, value: system?.timezone || text.loading, mono: true },

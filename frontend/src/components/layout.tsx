@@ -339,7 +339,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </Button>
             )}
 
-            <LanguageToggle />
+            <LanguageToggle variant="switch" />
 
             <button
               onClick={cycleTheme}
