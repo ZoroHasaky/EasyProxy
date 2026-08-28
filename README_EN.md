@@ -1,6 +1,8 @@
 # EasyProxy
 
-[简体中文说明](README.md)
+<p align="center">
+  <a href="README.md">简体中文</a> | <a href="README_EN.md">English</a>
+</p>
 
 ## 1. Overview
 
