@@ -1,5 +1,7 @@
 # EasyProxy
 
+[English README](README_EN.md)
+
 ## 1. 项目简介
 
 EasyProxy 是一个基于 [Mihomo](https://github.com/MetaCubeX/mihomo) 的可视化代理管理面板，使用 Go 后端和 React 前端，面向 Linux 服务器、NAS 与软路由场景。项目采用单容器部署，节点、规则和运行配置均可在网页中管理。
