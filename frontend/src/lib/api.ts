@@ -383,6 +383,42 @@ export function autoApplyResultMessage(result?: AutoApplyResult, language: Langu
   }
 }
 
+export type GeoDataKey = "geoip" | "geosite";
+
+export interface GeoDataCategory {
+  name: string;
+  entry_count: number;
+}
+
+export interface GeoDataCategoriesResponse {
+  key: GeoDataKey;
+  file: string;
+  categories: GeoDataCategory[];
+  total: number;
+}
+
+export interface GeoDataEntry {
+  value: string;
+  entry_type: string;
+}
+
+export interface GeoDataEntriesResponse {
+  key: GeoDataKey;
+  category: string;
+  page: number;
+  page_size: number;
+  total: number;
+  has_more: boolean;
+  entries: GeoDataEntry[];
+}
+
+export interface CreateGeoRecognitionRuleResponse extends AutoApplyResponse {
+  ok: boolean;
+  created: boolean;
+  needs_mapping: boolean;
+  rule: RecognitionRule;
+}
+
 export interface GeoDataStatus {
   key: "geoip" | "geosite";
   name: string;

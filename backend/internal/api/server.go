@@ -29,12 +29,13 @@ import (
 )
 
 type Server struct {
-	st       *store.Store
-	dataDir  string
-	version  string
-	mgr      *core.Manager
-	client   *core.Client
-	sessions *SessionManager
+	st         *store.Store
+	dataDir    string
+	version    string
+	mgr        *core.Manager
+	client     *core.Client
+	sessions   *SessionManager
+	geoBrowser *service.GeoDataBrowser
 
 	mihomoRP *httputil.ReverseProxy
 
@@ -80,6 +81,7 @@ func New(st *store.Store, dataDir, version string) *Server {
 		mgr:        core.NewManager(core.CorePath(dataDir), dataDir),
 		client:     core.NewClient(port, secret),
 		sessions:   NewSessionManager(),
+		geoBrowser: service.NewGeoDataBrowser(dataDir),
 		updateTask: updateTaskStatus{State: "idle"},
 	}
 	s.mustChangePw.Store(st.GetSettingBool("must_change_password", false))
@@ -137,11 +139,11 @@ func (s *Server) EnsureCoreStarted() {
 			s.audit("core", "core.auto_download", "error", "Mihomo 内核自动下载完成，但启动失败", map[string]any{"error": safeAuditError(err)})
 			return
 		}
-			s.audit("core", "core.auto_download", "success", "Mihomo 内核自动下载并启动完成", nil)
-			s.refreshRecognitionRuleProvidersAfterCoreStart()
-			if s.appliedTunEnabled() {
-				s.verifyTunAfterStart()
-			}
+		s.audit("core", "core.auto_download", "success", "Mihomo 内核自动下载并启动完成", nil)
+		s.refreshRecognitionRuleProvidersAfterCoreStart()
+		if s.appliedTunEnabled() {
+			s.verifyTunAfterStart()
+		}
 	}()
 }
 
@@ -325,7 +327,11 @@ func (s *Server) Handler() http.Handler {
 	route("GET /api/settings", s.handleGetSettings)
 	route("PUT /api/settings", s.handlePutSettings)
 	route("GET /api/geo/status", s.handleGeoDataStatus)
+	route("GET /api/geo/categories", s.handleGeoDataCategories)
+	route("GET /api/geo/entries", s.handleGeoDataEntries)
 	route("POST /api/geo/refresh", s.handleRefreshGeoData)
+
+	route("POST /api/recognition-rules/from-geo", s.handleCreateGeoRecognitionRule)
 	route("GET /api/logs", s.handleListAuditLogs)
 	route("GET /api/logs/export", s.handleExportAuditLogs)
 
