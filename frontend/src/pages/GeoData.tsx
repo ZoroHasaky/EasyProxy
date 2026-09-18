@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { defineMessages, useLanguage, useMessages } from "@/contexts/language";
 
 const GEO_SOURCE_FIELDS = [
@@ -107,6 +108,7 @@ export default function GeoDataPage() {
   const [form, setForm] = useState<SettingsType | null>(null);
   const navigate = useNavigate();
   const [browseKey, setBrowseKey] = useState<GeoDataKey>("geosite");
+  const [browserOpen, setBrowserOpen] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
   const [entrySearch, setEntrySearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -125,13 +127,13 @@ export default function GeoDataPage() {
   const geoCategoriesQuery = useQuery({
     queryKey: ["geo-categories", browseKey, categorySearch],
     queryFn: () => api.get<GeoDataCategoriesResponse>(`/api/geo/categories?key=${browseKey}&q=${encodeURIComponent(categorySearch)}`),
-    enabled: Boolean(form),
+    enabled: Boolean(form && browserOpen),
     retry: false,
   });
   const geoEntriesQuery = useQuery({
     queryKey: ["geo-entries", browseKey, selectedCategory, entrySearch, entryPage],
     queryFn: () => api.get<GeoDataEntriesResponse>(`/api/geo/entries?key=${browseKey}&category=${encodeURIComponent(selectedCategory)}&q=${encodeURIComponent(entrySearch)}&page=${entryPage}&page_size=100`),
-    enabled: Boolean(selectedCategory),
+    enabled: Boolean(selectedCategory && browserOpen),
     placeholderData: (previous) => previous,
     retry: false,
   });
@@ -185,6 +187,7 @@ export default function GeoDataPage() {
   if (!form) return <div className="p-8 text-center text-xs text-muted-foreground">{text.loadingSettings}</div>;
 
   const canRefreshGeo = form.geo_enabled && geoStatusQuery.data?.core_running !== false;
+  const canBrowseGeo = (geoStatusQuery.data?.items ?? []).some((status) => status.counts_available);
   const browseKind = browseKey === "geoip" ? "GEOIP" : "GEOSITE";
   const entryTotalPages = Math.max(1, Math.ceil((geoEntriesQuery.data?.total ?? 0) / 100));
   const copyText = async (value: string) => {
@@ -205,7 +208,13 @@ export default function GeoDataPage() {
   };
   const focusGeoBrowser = (key: GeoDataKey) => {
     switchBrowseKey(key);
-    requestAnimationFrame(() => document.getElementById("geo-browser")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    setBrowserOpen(true);
+  };
+  const openGeoBrowser = () => {
+    const items = geoStatusQuery.data?.items ?? [];
+    const preferred = items.find((status) => status.key === browseKey && status.counts_available);
+    const available = preferred ?? items.find((status) => status.counts_available);
+    if (available) focusGeoBrowser(available.key);
   };
   const updateGeoSource = (key: "geoip" | "geosite", value: string) => {
     patch({ geox_urls: { ...form.geox_urls, [key]: sourceFieldValue(value) } });
@@ -234,6 +243,58 @@ export default function GeoDataPage() {
           <p className="mt-0.5 text-xs text-muted-foreground">{text.description}</p>
         </div>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-base font-bold">{text.statusTitle}</CardTitle>
+              <CardDescription>{text.statusDescription}</CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={openGeoBrowser} disabled={!canBrowseGeo}>
+                <Globe2 className="h-3.5 w-3.5" />{text.browserTitle}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => refreshGeoMutation.mutate()} disabled={refreshGeoMutation.isPending || !canRefreshGeo} title={!form.geo_enabled ? text.enableFirst : geoStatusQuery.data?.core_running === false ? text.startCore : text.updateTitle}>
+                <RefreshCw className={`h-3.5 w-3.5 ${refreshGeoMutation.isPending ? "animate-spin" : ""}`} />
+                {refreshGeoMutation.isPending ? text.updating : text.manualUpdate}
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => geoStatusQuery.refetch()} disabled={geoStatusQuery.isFetching}><RefreshCw className={`h-3.5 w-3.5 ${geoStatusQuery.isFetching ? "animate-spin" : ""}`} />{text.refreshStatus}</Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {geoStatusQuery.isLoading ? (
+            <div className="py-4 text-center text-xs text-muted-foreground">{text.reading}</div>
+          ) : geoStatusQuery.isError ? (
+            <div className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{text.readFailed}</div>
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {(geoStatusQuery.data?.items ?? []).map((status) => (
+                <div key={status.key} className="rounded-xl border border-border/50 bg-muted/40 p-3">
+                  <div className="flex items-center justify-between gap-3"><div className="text-sm font-semibold">{status.name}</div>{statusBadge(status, text)}</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">{status.message}</div>
+                  {status.counts_available ? (
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div><div className="text-muted-foreground">{text.categories}</div><div className="mt-0.5 font-mono font-semibold">{status.group_count.toLocaleString(locale)} {text.groupsUnit}</div></div>
+                      <div><div className="text-muted-foreground">{text.entries}</div><div className="mt-0.5 font-mono font-semibold">{status.entry_count.toLocaleString(locale)} {text.entriesUnit}</div></div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-xs">
+                      <div className="text-muted-foreground">{text.lastFetch}</div>
+                      <div className="mt-0.5 font-mono font-semibold">{status.updated_at ? new Date(status.updated_at).toLocaleString(locale, { hour12: false }) : text.noRecord}</div>
+                    </div>
+                  )}
+                  <div className="mt-3 border-t border-border/50 pt-2 text-[11px] text-muted-foreground">
+                    <div>{text.file}: {status.file} · {formatSize(status.size_bytes)}</div>
+                    {status.counts_available && status.updated_at && <div className="mt-0.5">{text.lastFetch}: {new Date(status.updated_at).toLocaleString(locale, { hour12: false })}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">
@@ -282,152 +343,106 @@ export default function GeoDataPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-base font-bold">{text.statusTitle}</CardTitle>
-              <CardDescription>{text.statusDescription}</CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => refreshGeoMutation.mutate()} disabled={refreshGeoMutation.isPending || !canRefreshGeo} title={!form.geo_enabled ? text.enableFirst : geoStatusQuery.data?.core_running === false ? text.startCore : text.updateTitle}>
-                <RefreshCw className={`h-3.5 w-3.5 ${refreshGeoMutation.isPending ? "animate-spin" : ""}`} />
-                {refreshGeoMutation.isPending ? text.updating : text.manualUpdate}
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={() => geoStatusQuery.refetch()} disabled={geoStatusQuery.isFetching}><RefreshCw className={`h-3.5 w-3.5 ${geoStatusQuery.isFetching ? "animate-spin" : ""}`} />{text.refreshStatus}</Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {geoStatusQuery.isLoading ? (
-            <div className="py-4 text-center text-xs text-muted-foreground">{text.reading}</div>
-          ) : geoStatusQuery.isError ? (
-            <div className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{text.readFailed}</div>
-          ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
-              {(geoStatusQuery.data?.items ?? []).map((status) => (
-                <div key={status.key} className="rounded-xl border border-border/50 bg-muted/40 p-3">
-                  <div className="flex items-center justify-between gap-3"><div className="text-sm font-semibold">{status.name}</div><div className="flex items-center gap-2">{status.counts_available && <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={() => focusGeoBrowser(status.key)}>{text.browse}</Button>}{statusBadge(status, text)}</div></div>
-                  <div className="mt-1 text-[11px] text-muted-foreground">{status.message}</div>
-                  {status.counts_available ? (
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                      <div><div className="text-muted-foreground">{text.categories}</div><div className="mt-0.5 font-mono font-semibold">{status.group_count.toLocaleString(locale)} {text.groupsUnit}</div></div>
-                      <div><div className="text-muted-foreground">{text.entries}</div><div className="mt-0.5 font-mono font-semibold">{status.entry_count.toLocaleString(locale)} {text.entriesUnit}</div></div>
-                    </div>
-                  ) : (
-                    <div className="mt-3 text-xs">
-                      <div className="text-muted-foreground">{text.lastFetch}</div>
-                      <div className="mt-0.5 font-mono font-semibold">{status.updated_at ? new Date(status.updated_at).toLocaleString(locale, { hour12: false }) : text.noRecord}</div>
-                    </div>
-                  )}
-                  <div className="mt-3 border-t border-border/50 pt-2 text-[11px] text-muted-foreground">
-                    <div>{text.file}: {status.file} · {formatSize(status.size_bytes)}</div>
-                    {status.counts_available && status.updated_at && <div className="mt-0.5">{text.lastFetch}: {new Date(status.updated_at).toLocaleString(locale, { hour12: false })}</div>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card id="geo-browser">
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle className="text-base font-bold">{text.browserTitle}</CardTitle>
-              <CardDescription>{text.browserDescription}</CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button type="button" size="sm" variant={browseKey === "geoip" ? "default" : "outline"} onClick={() => switchBrowseKey("geoip")}>{text.geoipTab}</Button>
-              <Button type="button" size="sm" variant={browseKey === "geosite" ? "default" : "outline"} onClick={() => switchBrowseKey("geosite")}>{text.geositeTab}</Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
-            {text.mappingHint}
-          </div>
-          {lastCreatedRuleName && (
-            <div className="flex flex-col gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-300 sm:flex-row sm:items-center sm:justify-between">
-              <span>{lastCreatedRuleName}</span>
-              <Button type="button" variant="outline" size="sm" onClick={() => navigate("/rules")}>{text.goRules}</Button>
-            </div>
-          )}
-          <div className="grid gap-4 lg:grid-cols-[minmax(220px,0.75fr)_minmax(0,1.5fr)]">
-            <div className="space-y-3 rounded-xl border border-border/60 p-3">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                <Input className="h-8 pl-8 text-xs" value={categorySearch} onChange={(event) => setCategorySearch(event.target.value)} placeholder={text.searchCategories} />
+      <Dialog open={browserOpen} onOpenChange={setBrowserOpen}>
+        <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-5xl">
+          <DialogHeader>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <DialogTitle className="text-base font-bold">{text.browserTitle}</DialogTitle>
+                <DialogDescription>{text.browserDescription}</DialogDescription>
               </div>
-              <div className="max-h-[30rem] space-y-1 overflow-y-auto pr-1">
-                {geoCategoriesQuery.isLoading ? (
-                  <div className="py-8 text-center text-xs text-muted-foreground">{text.reading}</div>
-                ) : geoCategoriesQuery.isError ? (
-                  <div className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{(geoCategoriesQuery.error as any)?.message || text.browserUnavailable}</div>
-                ) : (geoCategoriesQuery.data?.categories ?? []).length === 0 ? (
-                  <div className="py-8 text-center text-xs text-muted-foreground">{text.noCategories}</div>
+              <div className="flex items-center gap-2">
+                <Button type="button" size="sm" variant={browseKey === "geoip" ? "default" : "outline"} onClick={() => switchBrowseKey("geoip")}>{text.geoipTab}</Button>
+                <Button type="button" size="sm" variant={browseKey === "geosite" ? "default" : "outline"} onClick={() => switchBrowseKey("geosite")}>{text.geositeTab}</Button>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
+              {text.mappingHint}
+            </div>
+            {lastCreatedRuleName && (
+              <div className="flex flex-col gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-300 sm:flex-row sm:items-center sm:justify-between">
+                <span>{lastCreatedRuleName}</span>
+                <Button type="button" variant="outline" size="sm" onClick={() => navigate("/rules")}>{text.goRules}</Button>
+              </div>
+            )}
+            <div className="grid gap-4 lg:grid-cols-[minmax(220px,0.75fr)_minmax(0,1.5fr)]">
+              <div className="space-y-3 rounded-xl border border-border/60 p-3">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input className="h-8 pl-8 text-xs" value={categorySearch} onChange={(event) => setCategorySearch(event.target.value)} placeholder={text.searchCategories} />
+                </div>
+                <div className="max-h-[30rem] space-y-1 overflow-y-auto pr-1">
+                  {geoCategoriesQuery.isLoading ? (
+                    <div className="py-8 text-center text-xs text-muted-foreground">{text.reading}</div>
+                  ) : geoCategoriesQuery.isError ? (
+                    <div className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{(geoCategoriesQuery.error as any)?.message || text.browserUnavailable}</div>
+                  ) : (geoCategoriesQuery.data?.categories ?? []).length === 0 ? (
+                    <div className="py-8 text-center text-xs text-muted-foreground">{text.noCategories}</div>
+                  ) : (
+                    (geoCategoriesQuery.data?.categories ?? []).map((category) => (
+                      <button key={category.name} type="button" onClick={() => { setSelectedCategory(category.name); setEntryPage(1); setEntrySearch(""); }} className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors ${selectedCategory === category.name ? "bg-primary/10 text-primary" : "hover:bg-muted/70"}`}>
+                        <span className="min-w-0 truncate font-mono">{category.name}</span>
+                        <Badge variant="secondary" className="shrink-0 font-mono text-[10px]">{category.entry_count.toLocaleString(locale)}</Badge>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="min-w-0 space-y-3 rounded-xl border border-border/60 p-3">
+                {!selectedCategory ? (
+                  <div className="py-12 text-center text-xs text-muted-foreground">{text.selectCategory}</div>
                 ) : (
-                  (geoCategoriesQuery.data?.categories ?? []).map((category) => (
-                    <button key={category.name} type="button" onClick={() => { setSelectedCategory(category.name); setEntryPage(1); setEntrySearch(""); }} className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors ${selectedCategory === category.name ? "bg-primary/10 text-primary" : "hover:bg-muted/70"}`}>
-                      <span className="min-w-0 truncate font-mono">{category.name}</span>
-                      <Badge variant="secondary" className="shrink-0 font-mono text-[10px]">{category.entry_count.toLocaleString(locale)}</Badge>
-                    </button>
-                  ))
+                  <>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold">{selectedCategory}</div>
+                        <div className="mt-1 font-mono text-[11px] text-muted-foreground">{browseKind},{selectedCategory}</div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="outline" size="sm" onClick={() => copyText(`${browseKind},${selectedCategory}`)}><Copy className="h-3.5 w-3.5" />{text.copyRule}</Button>
+                        <Button type="button" size="sm" onClick={() => createGeoRuleMutation.mutate()} disabled={createGeoRuleMutation.isPending}><WandSparkles className="h-3.5 w-3.5" />{createGeoRuleMutation.isPending ? text.creating : text.createRule}</Button>
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input className="h-8 pl-8 text-xs" value={entrySearch} onChange={(event) => { setEntrySearch(event.target.value); setEntryPage(1); }} placeholder={text.searchEntries} />
+                    </div>
+                    {geoEntriesQuery.isLoading ? (
+                      <div className="py-12 text-center text-xs text-muted-foreground">{text.reading}</div>
+                    ) : geoEntriesQuery.isError ? (
+                      <div className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{(geoEntriesQuery.error as any)?.message || text.browserUnavailable}</div>
+                    ) : (geoEntriesQuery.data?.entries ?? []).length === 0 ? (
+                      <div className="py-12 text-center text-xs text-muted-foreground">{text.noEntries}</div>
+                    ) : (
+                      <>
+                        <div className="max-h-[30rem] overflow-y-auto rounded-lg border border-border/50">
+                          {(geoEntriesQuery.data?.entries ?? []).map((entry) => (
+                            <button key={`${entry.entry_type}:${entry.value}`} type="button" onClick={() => copyText(entry.value)} title={text.copied} className="flex w-full items-center justify-between gap-3 border-b border-border/40 px-3 py-2 text-left last:border-b-0 hover:bg-muted/50">
+                              <span className="min-w-0 break-all font-mono text-xs">{entry.value}</span>
+                              <Badge variant="outline" className="shrink-0 text-[10px]">{entry.entry_type}</Badge>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                          <span>{text.pageInfo.replace("{page}", String(entryPage)).replace("{total}", String(entryTotalPages))} · {(geoEntriesQuery.data?.total ?? 0).toLocaleString(locale)} {text.entriesUnit}</span>
+                          <div className="flex items-center gap-1">
+                            <Button type="button" variant="ghost" size="iconSm" title={text.previousPage} onClick={() => setEntryPage((page) => Math.max(1, page - 1))} disabled={entryPage <= 1 || geoEntriesQuery.isFetching}><ChevronLeft className="h-3.5 w-3.5" /></Button>
+                            <Button type="button" variant="ghost" size="iconSm" title={text.nextPage} onClick={() => setEntryPage((page) => Math.min(entryTotalPages, page + 1))} disabled={entryPage >= entryTotalPages || geoEntriesQuery.isFetching}><ChevronRight className="h-3.5 w-3.5" /></Button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </>
                 )}
               </div>
             </div>
-
-            <div className="min-w-0 space-y-3 rounded-xl border border-border/60 p-3">
-              {!selectedCategory ? (
-                <div className="py-12 text-center text-xs text-muted-foreground">{text.selectCategory}</div>
-              ) : (
-                <>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold">{selectedCategory}</div>
-                      <div className="mt-1 font-mono text-[11px] text-muted-foreground">{browseKind},{selectedCategory}</div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" variant="outline" size="sm" onClick={() => copyText(`${browseKind},${selectedCategory}`)}><Copy className="h-3.5 w-3.5" />{text.copyRule}</Button>
-                      <Button type="button" size="sm" onClick={() => createGeoRuleMutation.mutate()} disabled={createGeoRuleMutation.isPending}><WandSparkles className="h-3.5 w-3.5" />{createGeoRuleMutation.isPending ? text.creating : text.createRule}</Button>
-                    </div>
-                  </div>
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input className="h-8 pl-8 text-xs" value={entrySearch} onChange={(event) => { setEntrySearch(event.target.value); setEntryPage(1); }} placeholder={text.searchEntries} />
-                  </div>
-                  {geoEntriesQuery.isLoading ? (
-                    <div className="py-12 text-center text-xs text-muted-foreground">{text.reading}</div>
-                  ) : geoEntriesQuery.isError ? (
-                    <div className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{(geoEntriesQuery.error as any)?.message || text.browserUnavailable}</div>
-                  ) : (geoEntriesQuery.data?.entries ?? []).length === 0 ? (
-                    <div className="py-12 text-center text-xs text-muted-foreground">{text.noEntries}</div>
-                  ) : (
-                    <>
-                      <div className="max-h-[30rem] overflow-y-auto rounded-lg border border-border/50">
-                        {(geoEntriesQuery.data?.entries ?? []).map((entry) => (
-                          <button key={`${entry.entry_type}:${entry.value}`} type="button" onClick={() => copyText(entry.value)} title={text.copied} className="flex w-full items-center justify-between gap-3 border-b border-border/40 px-3 py-2 text-left last:border-b-0 hover:bg-muted/50">
-                            <span className="min-w-0 break-all font-mono text-xs">{entry.value}</span>
-                            <Badge variant="outline" className="shrink-0 text-[10px]">{entry.entry_type}</Badge>
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                        <span>{text.pageInfo.replace("{page}", String(entryPage)).replace("{total}", String(entryTotalPages))} · {(geoEntriesQuery.data?.total ?? 0).toLocaleString(locale)} {text.entriesUnit}</span>
-                        <div className="flex items-center gap-1">
-                          <Button type="button" variant="ghost" size="iconSm" title={text.previousPage} onClick={() => setEntryPage((page) => Math.max(1, page - 1))} disabled={entryPage <= 1 || geoEntriesQuery.isFetching}><ChevronLeft className="h-3.5 w-3.5" /></Button>
-                          <Button type="button" variant="ghost" size="iconSm" title={text.nextPage} onClick={() => setEntryPage((page) => Math.min(entryTotalPages, page + 1))} disabled={entryPage >= entryTotalPages || geoEntriesQuery.isFetching}><ChevronRight className="h-3.5 w-3.5" /></Button>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
           </div>
-        </CardContent>
-      </Card>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
