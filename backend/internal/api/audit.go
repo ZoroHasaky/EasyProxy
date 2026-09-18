@@ -174,6 +174,10 @@ func auditRoute(pattern, method string) (category, event, summary string, ok boo
 		return "operation", "config_export.link_rotate", "配置订阅链接已重新生成", true
 	case "/api/settings":
 		return "operation", "settings.changed", "系统设置已保存", true
+	case "/api/proxy-ports", "/api/proxy-ports/{id}":
+		return "operation", "settings.proxy_ports", "代理端口配置已更新", true
+	case "/api/proxy-ports/{id}/rules":
+		return "operation", "routing.proxy_port_rules", "端口分流规则已更新", true
 	case "/api/password":
 		return "operation", "security.password", "管理密码已修改", true
 	case "/api/logout":

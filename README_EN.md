@@ -77,6 +77,23 @@ After startup:
 - Initial password: shown in docker logs easyproxy; you must change it after the first sign-in.
 - Persistent data: ./data in the current directory.
 
+#### Multi-port routing
+
+Open the **Kernel** page and enable **Multi-Port Routing** to assign independent recognition rules and outbound targets to port 7890 and additional mixed ports. When the switch is disabled, extra port settings are retained but Mihomo does not listen on them.
+
+Docker bridge mode does not expose newly added ports automatically. If you add port 7891, add the mapping manually to the Compose service:
+
+~~~yaml
+ports:
+  - "8080:8080"
+  - "7890:7890"
+  - "7891:7891"
+~~~
+
+No extra Compose mapping is needed when using `network_mode: host`.
+
+Port rules are evaluated from higher to lower recognition priority. If no enabled rule matches, the port's configured default outbound is used. A port rule set only affects proxy traffic entering through that port; TUN/transparent-proxy traffic continues to use the global rules.
+
 ### Transparent proxy mode (TUN / soft-router mode)
 
 Use this mode when the EasyProxy host will act as the default gateway and DNS server for LAN devices, so they do not need individual proxy settings.

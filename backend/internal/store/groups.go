@@ -98,6 +98,13 @@ func (s *Store) ReplaceGroups(groups []model.Group) error {
 			if references > 0 {
 				return fmt.Errorf("节点组合仍被 %d 条出站映射引用，无法删除", references)
 			}
+			var portReferences int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM proxy_port_rules WHERE group_id=? OR target=?`, id, model.GroupTargetRef(id)).Scan(&portReferences); err != nil {
+				return err
+			}
+			if portReferences > 0 {
+				return fmt.Errorf("节点组合仍被 %d 条端口分流规则引用，无法删除", portReferences)
+			}
 			deleteIDs = append(deleteIDs, "?")
 			args = append(args, id)
 		}

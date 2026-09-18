@@ -29,7 +29,7 @@ type PendingConfigChange struct {
 
 var configScopeSettings = map[string][]string{
 	ConfigScopeKernelNetwork: {
-		"mixed_port", "allow_lan", "log_level",
+		"mixed_port", "allow_lan", "log_level", "multi_port_routing", "proxy_ports_revision",
 	},
 	ConfigScopeTransparentProxy: {
 		"tun_enable", "tun_stack", "dns_enable", "dns_mode", "dns_nameserver", "dns_fallback",
@@ -40,18 +40,20 @@ var configScopeSettings = map[string][]string{
 }
 
 var configSettingDefaults = map[string]string{
-	"mixed_port":          "7890",
-	"allow_lan":           "1",
-	"log_level":           "info",
-	"tun_enable":          "0",
-	"tun_stack":           "mixed",
-	"dns_enable":          "1",
-	"dns_mode":            "fake-ip",
-	"dns_nameserver":      `["https://223.5.5.5/dns-query","https://doh.pub/dns-query"]`,
-	"dns_fallback":        `["223.5.5.5","119.29.29.29"]`,
-	"geo_enabled":         "1",
-	"geo_auto_update":     "1",
-	"geo_update_interval": "24",
+	"mixed_port":           "7890",
+	"multi_port_routing":   "0",
+	"proxy_ports_revision": "0",
+	"allow_lan":            "1",
+	"log_level":            "info",
+	"tun_enable":           "0",
+	"tun_stack":            "mixed",
+	"dns_enable":           "1",
+	"dns_mode":             "fake-ip",
+	"dns_nameserver":       `["https://223.5.5.5/dns-query","https://doh.pub/dns-query"]`,
+	"dns_fallback":         `["223.5.5.5","119.29.29.29"]`,
+	"geo_enabled":          "1",
+	"geo_auto_update":      "1",
+	"geo_update_interval":  "24",
 }
 
 // ConfigScopes 返回稳定的配置应用范围顺序。

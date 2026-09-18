@@ -143,6 +143,26 @@ func (s *Store) migrate() error {
 			enabled INTEGER NOT NULL DEFAULT 1,
 			FOREIGN KEY(recognition_id) REFERENCES recognition_rules(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS proxy_ports (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			port INTEGER NOT NULL UNIQUE,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			is_default INTEGER NOT NULL DEFAULT 0,
+			default_target TEXT NOT NULL DEFAULT 'PROXY',
+			position INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_proxy_ports_default ON proxy_ports(is_default) WHERE is_default=1`,
+		`CREATE TABLE IF NOT EXISTS proxy_port_rules (
+			port_id INTEGER NOT NULL,
+			recognition_id INTEGER NOT NULL,
+			group_id INTEGER NOT NULL,
+			target TEXT NOT NULL DEFAULT '',
+			enabled INTEGER NOT NULL DEFAULT 1,
+			PRIMARY KEY(port_id, recognition_id),
+			FOREIGN KEY(port_id) REFERENCES proxy_ports(id) ON DELETE CASCADE,
+			FOREIGN KEY(recognition_id) REFERENCES recognition_rules(id) ON DELETE CASCADE
+		)`,
 		`CREATE TABLE IF NOT EXISTS applied_config_settings (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL DEFAULT ''
@@ -198,6 +218,9 @@ func (s *Store) migrate() error {
 	if err := s.ensureColumn("recognition_rules", "source_interval", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
+	if err := s.ensureColumn("proxy_port_rules", "target", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
 	if err := s.migrateOutboundRulesBuiltinTargets(); err != nil {
 		return fmt.Errorf("migrate outbound builtin targets: %w", err)
 	}
@@ -221,6 +244,9 @@ func (s *Store) migrate() error {
 	}
 	if err := s.initializeAppliedConfigSettings(); err != nil {
 		return fmt.Errorf("initialize applied config settings: %w", err)
+	}
+	if err := s.initializeProxyPorts(); err != nil {
+		return fmt.Errorf("initialize proxy ports: %w", err)
 	}
 	if err := s.PruneAuditLogs(time.Now().Add(-AuditLogRetention)); err != nil {
 		return fmt.Errorf("prune audit logs: %w", err)
@@ -566,7 +592,7 @@ func (s *Store) ExportAll() (map[string]any, error) {
 	setRows.Close()
 	out["settings"] = settings
 
-	for _, table := range []string{"subscriptions", "nodes", "templates", "rules", "rule_providers", "proxy_groups", "recognition_rules", "outbound_rules"} {
+	for _, table := range []string{"subscriptions", "nodes", "templates", "rules", "rule_providers", "proxy_groups", "recognition_rules", "outbound_rules", "proxy_ports", "proxy_port_rules"} {
 		rows, err := s.db.Query(`SELECT * FROM ` + table)
 		if err != nil {
 			return nil, err
@@ -612,7 +638,7 @@ func (s *Store) ImportAll(data map[string]any, keepAuth bool) error {
 		return err
 	}
 	defer tx.Rollback()
-	for _, t := range []string{"outbound_rules", "recognition_rules", "rules", "rule_providers", "proxy_groups", "nodes", "subscriptions", "templates", "settings"} {
+	for _, t := range []string{"proxy_port_rules", "proxy_ports", "outbound_rules", "recognition_rules", "rules", "rule_providers", "proxy_groups", "nodes", "subscriptions", "templates", "settings"} {
 		if _, err := tx.Exec(`DELETE FROM ` + t); err != nil {
 			return err
 		}
@@ -642,7 +668,7 @@ func (s *Store) ImportAll(data map[string]any, keepAuth bool) error {
 		}
 		return nil
 	}
-	for _, t := range []string{"settings", "subscriptions", "nodes", "templates", "rules", "rule_providers", "proxy_groups", "recognition_rules", "outbound_rules"} {
+	for _, t := range []string{"settings", "subscriptions", "nodes", "templates", "rules", "rule_providers", "proxy_groups", "recognition_rules", "outbound_rules", "proxy_ports", "proxy_port_rules"} {
 		raw, ok := data[t].([]any)
 		if !ok {
 			continue
@@ -668,7 +694,10 @@ func (s *Store) ImportAll(data map[string]any, keepAuth bool) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	return s.migrateCurrentRuleSet()
+	if err := s.migrateCurrentRuleSet(); err != nil {
+		return err
+	}
+	return s.initializeProxyPorts()
 }
 
 func joinComma(ss []string) string {

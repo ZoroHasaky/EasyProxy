@@ -134,6 +134,32 @@ type OutboundRule struct {
 	Enabled       bool  `json:"enabled"`
 }
 
+// ProxyPort describes one local mixed-proxy listener. The default target uses
+// the same built-in names as Mihomo (DIRECT/REJECT/PROXY) or an EasyProxy group
+// target reference such as @easyproxy/group/1.
+type ProxyPort struct {
+	ID            int64           `json:"id"`
+	Name          string          `json:"name"`
+	Port          int             `json:"port"`
+	Enabled       bool            `json:"enabled"`
+	IsDefault     bool            `json:"is_default"`
+	DefaultTarget string          `json:"default_target"`
+	Position      int             `json:"position"`
+	Rules         []ProxyPortRule `json:"rules,omitempty"`
+}
+
+// ProxyPortRule reuses an existing recognition rule while allowing the port
+// to choose a different outbound target.
+type ProxyPortRule struct {
+	RecognitionID int64 `json:"recognition_id"`
+	// GroupID is retained for compatibility with the original API/database
+	// shape. New values should use Target so a rule can point at a node as
+	// well as a proxy group.
+	GroupID int64  `json:"group_id,omitempty"`
+	Target  string `json:"target,omitempty"`
+	Enabled bool   `json:"enabled"`
+}
+
 type Group struct {
 	ID           int64   `json:"id"`
 	Name         string  `json:"name"`

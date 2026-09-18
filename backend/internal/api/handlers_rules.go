@@ -574,7 +574,7 @@ func (s *Server) applyConfigWithSettings(includePending bool) (string, map[strin
 		) {
 			needRestart = true
 		}
-		if mp, ok := running["mixed-port"].(float64); ok && int(mp) != configInt(values, "mixed_port", 7890) {
+		if inboundListenerTopologyNeedsRestart(running, values, s.st) {
 			needRestart = true
 		}
 	}
@@ -605,6 +605,45 @@ func (s *Server) applyConfigWithSettings(includePending bool) (string, map[strin
 
 // applyChangedConfig 将节点、订阅或规则的保存立即同步至内核。失败时保留编辑，
 // 并在顶栏待应用清单中提供稍后重试入口。
+func inboundListenerTopologyNeedsRestart(running map[string]any, values map[string]string, st *store.Store) bool {
+	multi := configBool(values, "multi_port_routing", false)
+	listeners, hasListeners := running["listeners"].([]any)
+	if !multi {
+		if hasListeners && len(listeners) > 0 {
+			return true
+		}
+		if mp, ok := running["mixed-port"].(float64); ok && int(mp) != configInt(values, "mixed_port", 7890) {
+			return true
+		}
+		return false
+	}
+	ports, err := st.ListProxyPorts()
+	if err != nil {
+		return true
+	}
+	expected := make(map[int]bool)
+	for _, port := range ports {
+		if port.Enabled {
+			expected[port.Port] = true
+		}
+	}
+	if !hasListeners || len(listeners) != len(expected) {
+		return true
+	}
+	for _, item := range listeners {
+		listener, ok := item.(map[string]any)
+		if !ok {
+			return true
+		}
+		portValue, ok := listener["port"].(float64)
+		if !ok || !expected[int(portValue)] {
+			return true
+		}
+		delete(expected, int(portValue))
+	}
+	return len(expected) > 0
+}
+
 func (s *Server) applyChangedConfig(scope string, fields []string) (string, string) {
 	refreshRuleProviders := scope == "recognition_rules" || scope == "outbound_rules"
 	result, err := s.applyAppliedConfig(refreshRuleProviders)

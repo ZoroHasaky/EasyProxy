@@ -483,6 +483,7 @@ func (s *Server) handleUpdateRestart(w http.ResponseWriter, r *http.Request) {
 
 type settingsPayload struct {
 	MixedPort         *int                `json:"mixed_port"`
+	MultiPortRouting  *bool               `json:"multi_port_routing"`
 	AllowLan          *bool               `json:"allow_lan"`
 	LogLevel          *string             `json:"log_level"`
 	TunEnable         *bool               `json:"tun_enable"`
@@ -691,6 +692,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	geox := service.GeoxSources(s.st)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"mixed_port":          s.st.GetSettingInt("mixed_port", 7890),
+		"multi_port_routing":  s.st.GetSettingBool("multi_port_routing", false),
 		"allow_lan":           s.st.GetSettingBool("allow_lan", true),
 		"log_level":           s.st.GetSetting("log_level", "info"),
 		"tun_enable":          s.st.GetSettingBool("tun_enable", false),
@@ -757,6 +759,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if p.MixedPort != nil {
+		if err := s.st.UpdateDefaultProxyPort(*p.MixedPort); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
 	var geoxURLs map[string][]string
 	if p.GeoxUrls != nil {
 		var err error
@@ -770,6 +779,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	configValues := map[string]string{}
 	if p.MixedPort != nil {
 		configValues["mixed_port"] = strconv.Itoa(*p.MixedPort)
+	}
+	if p.MultiPortRouting != nil {
+		configValues["multi_port_routing"] = boolStr(*p.MultiPortRouting)
 	}
 	if p.AllowLan != nil {
 		configValues["allow_lan"] = boolStr(*p.AllowLan)

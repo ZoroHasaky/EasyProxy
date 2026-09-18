@@ -324,6 +324,7 @@ export interface CoreDownloadAsset {
 
 export interface Settings {
   mixed_port: number;
+  multi_port_routing: boolean;
   allow_lan: boolean;
   log_level: string;
   tun_enable: boolean;
@@ -338,6 +339,28 @@ export interface Settings {
   geox_urls: Record<string, string[]>;
   default_geox_urls: Record<string, string[]>;
   core_mirror: string;
+}
+
+export interface ProxyPortRule {
+  recognition_id: number;
+  group_id?: number;
+  target?: string;
+  enabled: boolean;
+}
+
+export interface ProxyPort {
+  id: number;
+  name: string;
+  port: number;
+  enabled: boolean;
+  is_default: boolean;
+  default_target: string;
+  position: number;
+  rules: ProxyPortRule[];
+}
+
+export interface ProxyPortsResponse {
+  items: ProxyPort[];
 }
 
 export interface PendingConfigItem {

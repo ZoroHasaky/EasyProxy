@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn, formatBytes, formatCoreVersion } from "@/lib/utils";
 import { defineMessages, useMessages } from "@/contexts/language";
+import ProxyPortManager from "@/components/proxy-port-manager";
 
 const LOG_LEVELS = [
   { value: "silent", label: "logSilent" }, { value: "error", label: "logError" },
@@ -110,9 +111,10 @@ export default function KernelPage() {
   const saveMutation = useMutation({
     mutationFn: (payload: Partial<Settings>) => api.put("/api/settings", payload),
     onSuccess: (_result, payload) => {
-      const requiresApply = ["mixed_port", "allow_lan", "log_level"].some((key) => key in payload);
+      const requiresApply = ["mixed_port", "multi_port_routing", "allow_lan", "log_level"].some((key) => key in payload);
       toast.success(requiresApply ? text.basicSaved : text.downloadSaved);
       qc.invalidateQueries({ queryKey: ["settings"] });
+      if ("mixed_port" in payload) qc.invalidateQueries({ queryKey: ["proxyPorts"] });
       qc.invalidateQueries({ queryKey: ["config-pending"] });
     },
     onError: (e: any) => toast.error(e.message),
@@ -373,6 +375,17 @@ export default function KernelPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {form && (
+        <ProxyPortManager
+          enabled={form.multi_port_routing}
+          onEnabledChange={(value) => {
+            patch({ multi_port_routing: value });
+            saveMutation.mutate({ multi_port_routing: value });
+          }}
+          onDefaultPortChange={(port) => patch({ mixed_port: port })}
+        />
       )}
 
       {/* 预览配置 Modal */}

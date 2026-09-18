@@ -117,6 +117,13 @@ func (s *Store) UpdateNode(n *model.Node) error {
 }
 
 func (s *Store) DeleteNode(id int64) error {
+	var portReferences int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM proxy_port_rules WHERE target=?`, model.NodeTargetRef(id)).Scan(&portReferences); err != nil {
+		return err
+	}
+	if portReferences > 0 {
+		return fmt.Errorf("节点仍被 %d 条端口分流规则引用，无法删除", portReferences)
+	}
 	_, err := s.db.Exec(`DELETE FROM nodes WHERE id=?`, id)
 	return err
 }

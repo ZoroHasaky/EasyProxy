@@ -299,6 +299,7 @@ func (s *Server) Handler() http.Handler {
 	route("POST /api/recognition-rules/generate-geo-routing", s.handleGenerateQuickGeoRouting)
 	route("GET /api/outbound-rules", s.handleGetOutboundRules)
 	route("PUT /api/outbound-rules", s.handlePutOutboundRules)
+	route("GET /api/rule-targets", s.handleGetRuleTargets)
 	// 这是纯本地推演查询，不写操作日志，也不会访问用户填写的目标地址。
 	mux.Handle("POST /api/outbound-rules/simulate", s.auth(http.HandlerFunc(s.handleSimulateOutbound)))
 	route("GET /api/groups", s.handleGetGroups)
@@ -326,6 +327,12 @@ func (s *Server) Handler() http.Handler {
 
 	route("GET /api/settings", s.handleGetSettings)
 	route("PUT /api/settings", s.handlePutSettings)
+	route("GET /api/proxy-ports", s.handleGetProxyPorts)
+	route("POST /api/proxy-ports", s.handleCreateProxyPort)
+	route("PUT /api/proxy-ports/{id}", s.handleUpdateProxyPort)
+	route("DELETE /api/proxy-ports/{id}", s.handleDeleteProxyPort)
+	route("GET /api/proxy-ports/{id}/rules", s.handleGetProxyPortRules)
+	route("PUT /api/proxy-ports/{id}/rules", s.handlePutProxyPortRules)
 	route("GET /api/geo/status", s.handleGeoDataStatus)
 	route("GET /api/geo/categories", s.handleGeoDataCategories)
 	route("GET /api/geo/entries", s.handleGeoDataEntries)

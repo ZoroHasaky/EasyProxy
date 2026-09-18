@@ -323,6 +323,13 @@ func (s *Store) ReplaceRecognitionRules(rules []model.RecognitionRule) error {
 		if references > 0 {
 			return fmt.Errorf("识别规则仍被 %d 条出站映射引用，无法删除", references)
 		}
+		var portReferences int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM proxy_port_rules WHERE recognition_id=?`, id).Scan(&portReferences); err != nil {
+			return err
+		}
+		if portReferences > 0 {
+			return fmt.Errorf("识别规则仍被 %d 条端口分流规则引用，无法删除", portReferences)
+		}
 		if _, err := tx.Exec(`DELETE FROM recognition_rules WHERE id=?`, id); err != nil {
 			return err
 		}

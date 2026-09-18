@@ -337,9 +337,14 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 
 	mixedPort := settings.getInt("mixed_port", 7890)
 	allowLan := settings.getBool("allow_lan", true)
+	multiPortRouting := settings.getBool("multi_port_routing", false)
 	logLevel := settings.get("log_level", "info")
-	fmt.Fprintf(&sb, "mixed-port: %d\nallow-lan: %t\nbind-address: '*'\nmode: rule\nlog-level: %s\nipv6: true\n\n",
-		mixedPort, allowLan, logLevel)
+	if multiPortRouting {
+		fmt.Fprintf(&sb, "allow-lan: %t\nbind-address: '*'\nmode: rule\nlog-level: %s\nipv6: true\n\n", allowLan, logLevel)
+	} else {
+		fmt.Fprintf(&sb, "mixed-port: %d\nallow-lan: %t\nbind-address: '*'\nmode: rule\nlog-level: %s\nipv6: true\n\n",
+			mixedPort, allowLan, logLevel)
+	}
 	// 保留 select 组的运行时选择，避免 PROXY 在热重载或重启后回到默认项。
 	sb.WriteString("profile:\n  store-selected: true\n\n")
 
@@ -477,16 +482,53 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 	for _, outbound := range outboundRules {
 		outboundByRecognition[outbound.RecognitionID] = outbound
 	}
-	remoteRecognitionRules := make([]model.RecognitionRule, 0)
+	proxyPorts := []model.ProxyPort{}
+	if multiPortRouting {
+		proxyPorts, err = st.ListProxyPorts()
+		if err != nil {
+			return nil, err
+		}
+		if len(proxyPorts) == 0 {
+			return nil, fmt.Errorf("多端口模式未找到代理端口")
+		}
+		listenAddr := "127.0.0.1"
+		if allowLan {
+			listenAddr = "0.0.0.0"
+		}
+		sb.WriteString("listeners:\n")
+		for _, port := range proxyPorts {
+			if !port.Enabled {
+				continue
+			}
+			name := "easyproxy-port-" + strconv.FormatInt(port.ID, 10)
+			fmt.Fprintf(&sb, "  - name: %s\n    type: mixed\n    port: %d\n    listen: %s\n    udp: true\n    rule: %s\n", quote(name), port.Port, listenAddr, quote(name))
+		}
+		sb.WriteString("\n")
+	}
+	providerNeeded := make(map[int64]bool)
 	for _, recognition := range recognitionRules {
 		if !recognition.Enabled || recognition.SourceURL == "" {
 			continue
 		}
 		outbound, exists := outboundByRecognition[recognition.ID]
-		if !exists || !outbound.Enabled {
-			continue
+		if exists && outbound.Enabled {
+			providerNeeded[recognition.ID] = true
 		}
-		remoteRecognitionRules = append(remoteRecognitionRules, recognition)
+		if multiPortRouting {
+			for _, port := range proxyPorts {
+				for _, mapping := range port.Rules {
+					if mapping.RecognitionID == recognition.ID && mapping.Enabled {
+						providerNeeded[recognition.ID] = true
+					}
+				}
+			}
+		}
+	}
+	remoteRecognitionRules := make([]model.RecognitionRule, 0)
+	for _, recognition := range recognitionRules {
+		if providerNeeded[recognition.ID] {
+			remoteRecognitionRules = append(remoteRecognitionRules, recognition)
+		}
 	}
 	if len(remoteRecognitionRules) > 0 {
 		sb.WriteString("rule-providers:\n")
@@ -498,6 +540,35 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 			fmt.Fprintf(&sb, "    path: %s\n", quote("./ruleset/recognition-"+strconv.FormatInt(recognition.ID, 10)+".yaml"))
 			fmt.Fprintf(&sb, "    interval: %d\n", recognition.SourceInterval)
 			sb.WriteString("    format: yaml\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	if multiPortRouting {
+		recognitionByID := make(map[int64]model.RecognitionRule, len(recognitionRules))
+		for _, recognition := range recognitionRules {
+			recognitionByID[recognition.ID] = recognition
+		}
+		sb.WriteString("sub-rules:\n")
+		for _, port := range proxyPorts {
+			if !port.Enabled {
+				continue
+			}
+			name := "easyproxy-port-" + strconv.FormatInt(port.ID, 10)
+			fmt.Fprintf(&sb, "  %s:\n", quote(name))
+			for _, mapping := range port.Rules {
+				if !mapping.Enabled {
+					continue
+				}
+				recognition, exists := recognitionByID[mapping.RecognitionID]
+				if !exists || !recognition.Enabled {
+					continue
+				}
+				target := resolveProxyPortRuleTarget(mapping, targetResolver, deduped)
+				writeRecognitionRules(&sb, recognition, target, "    - ")
+			}
+			defaultTarget := resolveProxyPortDefaultTarget(port.DefaultTarget, targetResolver, deduped)
+			sb.WriteString("    - " + quote("MATCH,"+defaultTarget) + "\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -732,6 +803,68 @@ func (r *ruleTargetResolver) resolve(target string) string {
 		return g.Name
 	}
 	return GroupPROXY
+}
+
+func writeRecognitionRules(sb *strings.Builder, recognition model.RecognitionRule, target, prefix string) {
+	if recognition.SourceURL != "" {
+		parts := []string{"RULE-SET", recognition.Name, target}
+		if recognition.SourceBehavior == "ipcidr" {
+			parts = append(parts, "no-resolve")
+		}
+		sb.WriteString(prefix + quote(strings.Join(parts, ",")) + "\n")
+		return
+	}
+	kind := strings.ToUpper(recognition.Kind)
+	if kind == "MATCH" {
+		sb.WriteString(prefix + quote("MATCH,"+target) + "\n")
+		return
+	}
+	for _, condition := range recognition.Conditions {
+		condition = strings.TrimSpace(condition)
+		if condition == "" {
+			continue
+		}
+		sb.WriteString(prefix + quote(strings.Join([]string{kind, condition, target}, ",")) + "\n")
+	}
+}
+
+func resolveProxyPortGroupTarget(groupID int64, resolver *ruleTargetResolver, nodes []model.Node) string {
+	target, builtin := model.BuiltinOutboundTarget(groupID)
+	if !builtin {
+		target = resolver.resolve(model.GroupTargetRef(groupID))
+	}
+	if len(nodes) == 0 && (target == GroupPROXY || target == GroupAUTO) {
+		return model.BuiltinDirect
+	}
+	return target
+}
+
+func resolveProxyPortRuleTarget(rule model.ProxyPortRule, resolver *ruleTargetResolver, nodes []model.Node) string {
+	if strings.TrimSpace(rule.Target) != "" {
+		target := strings.TrimSpace(rule.Target)
+		if !model.IsBuiltinTarget(target) {
+			target = resolver.resolve(target)
+		}
+		if len(nodes) == 0 && (target == GroupPROXY || target == GroupAUTO) {
+			return model.BuiltinDirect
+		}
+		return target
+	}
+	return resolveProxyPortGroupTarget(rule.GroupID, resolver, nodes)
+}
+
+func resolveProxyPortDefaultTarget(raw string, resolver *ruleTargetResolver, nodes []model.Node) string {
+	target := strings.TrimSpace(raw)
+	if target == "" {
+		target = GroupPROXY
+	}
+	if !model.IsBuiltinTarget(target) {
+		target = resolver.resolve(target)
+	}
+	if len(nodes) == 0 && (target == GroupPROXY || target == GroupAUTO) {
+		return model.BuiltinDirect
+	}
+	return target
 }
 
 func quote(s string) string { return strconv.Quote(s) }
