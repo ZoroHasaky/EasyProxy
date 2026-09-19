@@ -25,9 +25,21 @@ import (
 
 func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	st := s.mgr.Status()
+	mode := "server"
+	if s.desktopMode {
+		mode = "desktop"
+	}
+	proxyStatus := s.systemProxy.Status()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"version": s.version,
-		"system":  s.systemInfo(),
+		"version":  s.version,
+		"mode":     mode,
+		"platform": runtime.GOOS,
+		"capabilities": map[string]any{
+			"system_proxy": proxyStatus.Supported,
+			"tun":          runtime.GOOS == "linux" && !s.desktopMode,
+			"tray":         s.desktopMode,
+		},
+		"system": s.systemInfo(),
 		"core": map[string]any{
 			"installed":    s.coreInstalled(),
 			"version":      core.InstalledCoreVersion(s.dataDir),

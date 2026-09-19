@@ -72,7 +72,8 @@ func randPassword(n int) string {
 
 // InitPassword 首次启动生成随机密码并打印到控制台
 func (s *Server) InitPassword() {
-	if s.st.GetSetting("password_hash", "") != "" {
+	// 桌面版没有可靠的控制台入口，首次密码由 /api/bootstrap 页面设置。
+	if s.desktopMode || s.st.GetSetting("password_hash", "") != "" {
 		return
 	}
 	pw := randPassword(12)
@@ -92,6 +93,61 @@ func (s *Server) InitPassword() {
 	fmt.Println("  （此密码仅显示一次，可在 docker logs 中回看本次输出）")
 	fmt.Println("==========================================================")
 	fmt.Println()
+}
+
+// handleBootstrap exposes the desktop first-run password setup. It remains
+// harmless for server deployments because InitPassword initializes the hash
+// before the service starts.
+func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
+	hash := s.st.GetSetting("password_hash", "")
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, map[string]any{"required": hash == "", "desktop": s.desktopMode})
+		return
+	}
+	if hash != "" {
+		writeErr(w, http.StatusConflict, "管理员密码已经设置")
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+	if len(req.Password) < 8 {
+		writeErr(w, http.StatusBadRequest, "管理员密码至少 8 位")
+		return
+	}
+	newHash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "密码加密失败")
+		return
+	}
+	if err := s.st.SetSetting("password_hash", string(newHash)); err != nil {
+		writeErr(w, http.StatusInternalServerError, "保存密码失败")
+		return
+	}
+	if err := s.st.SetSetting("must_change_password", "0"); err != nil {
+		writeErr(w, http.StatusInternalServerError, "保存密码状态失败")
+		return
+	}
+	s.mustChangePw.Store(false)
+	s.setSessionCookie(w)
+	s.audit("operation", "security.bootstrap_password", "success", "桌面版管理员密码初始化成功", nil)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) setSessionCookie(w http.ResponseWriter) {
+	token := s.sessions.Create()
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   7 * 24 * 3600,
+	})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -115,15 +171,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "密码错误")
 		return
 	}
-	token := s.sessions.Create()
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookie,
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   7 * 24 * 3600,
-	})
+	s.setSessionCookie(w)
 	s.audit("operation", "security.login", "success", "管理员登录成功", nil)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":                   true,

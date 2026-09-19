@@ -5,7 +5,7 @@ import {
   Network,
   AlertTriangle,
 } from "lucide-react";
-import { api, Settings } from "@/lib/api";
+import { api, MetaInfo, Settings } from "@/lib/api";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select } from "@/components/ui/select";
@@ -23,7 +23,7 @@ const messages = defineMessages({
   dnsDescription: "配合 TUN 模式实现国内分流与海外域名 Fake-IP 防污染解析", enableDNS: "启用内置 DNS 服务",
   enableDNSHint: "接管系统 DNS 请求并实现 Fake-IP / REDIR-HOST", dnsMode: "DNS 模式",
   fakeIP: "fake-ip（速度极快，推荐）", redirHost: "redir-host（真实解析回退）",
-  primaryNS: "主 Nameserver（每行一个）", fallbackNS: "备用 Nameserver（每行一个）",
+  primaryNS: "主 Nameserver（每行一个）", fallbackNS: "备用 Nameserver（每行一个）", desktopUnsupported: "桌面版首期暂不支持 TUN 透明代理，请使用系统代理开关。",
 }, {
   saved: "Transparent proxy settings saved and waiting to be applied", cannotEnable: "Unable to enable TUN", checkFailed: "TUN environment check failed; enabling was cancelled",
   loading: "Loading settings…", title: "Transparent Proxy & Router Mode",
@@ -36,7 +36,7 @@ const messages = defineMessages({
   dnsDescription: "Use Fake-IP with TUN routing for domestic and international domain resolution", enableDNS: "Enable Built-in DNS",
   enableDNSHint: "Handle system DNS requests with Fake-IP or REDIR-HOST", dnsMode: "DNS Mode",
   fakeIP: "fake-ip (fast, recommended)", redirHost: "redir-host (real address fallback)",
-  primaryNS: "Primary Nameserver (one per line)", fallbackNS: "Fallback Nameserver (one per line)",
+  primaryNS: "Primary Nameserver (one per line)", fallbackNS: "Fallback Nameserver (one per line)", desktopUnsupported: "TUN transparent proxy is not available in the first desktop release. Use the system proxy switch instead.",
 });
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -77,6 +77,11 @@ export default function TransparentProxyPage() {
     queryKey: ["settings"],
     queryFn: () => api.get<Settings>("/api/settings"),
   });
+  const meta = useQuery({
+    queryKey: ["meta"],
+    queryFn: () => api.get<MetaInfo>("/api/meta"),
+  });
+  const tunSupported = meta.data?.capabilities?.tun ?? true;
 
   useEffect(() => {
     if (!form && settings.data) setForm({ ...settings.data });
@@ -191,6 +196,7 @@ export default function TransparentProxyPage() {
           <CardDescription>
             {text.tunDescription}
           </CardDescription>
+          {!tunSupported && <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-300">{text.desktopUnsupported}</div>}
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between p-3.5 rounded-xl bg-card border border-border/60 shadow-xs">

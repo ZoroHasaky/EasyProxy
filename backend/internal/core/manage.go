@@ -2,6 +2,7 @@ package core
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -29,7 +30,13 @@ const (
 	CoreDownloadOverallTimeout = 5 * time.Minute
 )
 
-func CorePath(dataDir string) string { return filepath.Join(dataDir, "core", "mihomo") }
+func CorePath(dataDir string) string {
+	name := "mihomo"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(dataDir, "core", name)
+}
 
 // InstalledCoreVersion 执行 mihomo -v 解析版本；不存在返回空
 func InstalledCoreVersion(dataDir string) string {
@@ -358,33 +365,38 @@ func DownloadCoreWithProgress(dataDir, version, mirror string, progress func(Dow
 
 	sources := coreDownloadSources(mirror)
 
+	candidates := coreAssetCandidates(runtime.GOOS, asset.AssetArch, version)
 	deadline := time.Now().Add(CoreDownloadOverallTimeout)
 	var lastErr error
-	for i, source := range sources {
-		if time.Now().After(deadline) {
-			break
-		}
-		u := fmt.Sprintf("%s/%s/releases/download/%s/mihomo-linux-%s-%s.gz",
-			source.base, CoreRepo, version, asset.AssetArch, version)
-		update := DownloadProgress{Source: source.label, Attempt: i + 1, Total: len(sources), Version: version}
-		reportDownloadProgress(progress, DownloadProgress{Stage: "attempt", Source: update.Source, Attempt: update.Attempt, Total: update.Total, Version: update.Version})
-		log.Printf("[core] 尝试下载源: %s", u)
-		data, err := fetchCoreAsset(u)
-		if err != nil {
-			lastErr = err
-			log.Printf("[core] 该源失败: %v", err)
-			update.Stage, update.Err = "failed", err
+	attempt := 0
+	total := len(sources) * len(candidates)
+	for _, source := range sources {
+		for _, candidate := range candidates {
+			if time.Now().After(deadline) {
+				break
+			}
+			attempt++
+			u := fmt.Sprintf("%s/%s/releases/download/%s/%s", source.base, CoreRepo, version, candidate)
+			update := DownloadProgress{Source: source.label, Attempt: attempt, Total: total, Version: version}
+			reportDownloadProgress(progress, DownloadProgress{Stage: "attempt", Source: update.Source, Attempt: update.Attempt, Total: update.Total, Version: update.Version})
+			log.Printf("[core] 尝试下载源: %s", u)
+			data, err := fetchCoreAsset(u)
+			if err != nil {
+				lastErr = err
+				log.Printf("[core] 该源失败: %v", err)
+				update.Stage, update.Err = "failed", err
+				reportDownloadProgress(progress, update)
+				continue
+			}
+			if err := installCoreBytes(dataDir, data); err != nil {
+				update.Stage, update.Err = "verification_failed", err
+				reportDownloadProgress(progress, update)
+				return fmt.Errorf("%s 返回的内核无法通过校验: %w", source.label, err)
+			}
+			update.Stage = "completed"
 			reportDownloadProgress(progress, update)
-			continue
+			return nil
 		}
-		if err := installCoreBytes(dataDir, data); err != nil {
-			update.Stage, update.Err = "verification_failed", err
-			reportDownloadProgress(progress, update)
-			return fmt.Errorf("%s 返回的内核无法通过校验: %w", source.label, err)
-		}
-		update.Stage = "completed"
-		reportDownloadProgress(progress, update)
-		return nil
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("下载总时限 %s 已到", CoreDownloadOverallTimeout)
@@ -405,11 +417,74 @@ func fetchCoreAsset(u string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d (%s)", resp.StatusCode, u)
 	}
-	gz, err := gzip.NewReader(io.LimitReader(resp.Body, 200<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 500<<20))
 	if err != nil {
 		return nil, err
 	}
-	return io.ReadAll(gz)
+	return unpackCorePayload(data, u)
+}
+
+func coreAssetCandidates(goos, arch, version string) []string {
+	base := fmt.Sprintf("mihomo-%s-%s-%s", goos, arch, version)
+	if goos == "windows" {
+		return []string{base + ".zip", base + ".gz", base + ".tar.gz"}
+	}
+	return []string{base + ".gz", base + ".tar.gz", base + ".zip"}
+}
+
+func unpackCorePayload(data []byte, filename string) ([]byte, error) {
+	lower := strings.ToLower(filename)
+	if strings.HasSuffix(lower, ".zip") || bytes.HasPrefix(data, []byte("PK\x03\x04")) {
+		reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			return nil, err
+		}
+		for _, file := range reader.File {
+			if file.FileInfo().IsDir() || file.UncompressedSize64 < 1<<20 {
+				continue
+			}
+			r, err := file.Open()
+			if err != nil {
+				return nil, err
+			}
+			payload, readErr := io.ReadAll(io.LimitReader(r, 500<<20))
+			_ = r.Close()
+			if readErr != nil {
+				return nil, readErr
+			}
+			return unpackCorePayload(payload, file.Name)
+		}
+		return nil, fmt.Errorf("压缩包内未找到内核")
+	}
+	if strings.HasSuffix(lower, ".gz") || bytes.HasPrefix(data, []byte{0x1f, 0x8b}) {
+		gz, err := gzip.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		decoded, readErr := io.ReadAll(io.LimitReader(gz, 500<<20))
+		_ = gz.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		return unpackCorePayload(decoded, strings.TrimSuffix(filename, filepath.Ext(filename)))
+	}
+	if len(data) > 512 && string(data[257:262]) == "ustar" {
+		tr := tar.NewReader(bytes.NewReader(data))
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+			if hdr.Typeflag == tar.TypeReg && hdr.Size > 1<<20 {
+				return io.ReadAll(io.LimitReader(tr, 500<<20))
+			}
+		}
+		return nil, fmt.Errorf("压缩包内未找到内核")
+	}
+	return data, nil
 }
 
 // InstallCoreFromUpload 用户手动上传的内核文件（裸二进制或 .gz）
@@ -418,32 +493,9 @@ func InstallCoreFromUpload(dataDir, filename string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	if strings.HasSuffix(strings.ToLower(filename), ".gz") {
-		gz, err := gzip.NewReader(bytes.NewReader(data))
-		if err != nil {
-			return err
-		}
-		if data, err = io.ReadAll(gz); err != nil {
-			return err
-		}
-	} else if strings.HasSuffix(strings.ToLower(filename), ".tar.gz") || strings.HasSuffix(strings.ToLower(filename), ".tgz") {
-		tr := tar.NewReader(bytes.NewReader(data))
-		for {
-			hdr, err := tr.Next()
-			if err == io.EOF {
-				return fmt.Errorf("压缩包内未找到二进制")
-			}
-			if err != nil {
-				return err
-			}
-			if hdr.Typeflag == tar.TypeReg && hdr.Size > 1<<20 {
-				data, err = io.ReadAll(tr)
-				if err != nil {
-					return err
-				}
-				break
-			}
-		}
+	data, err = unpackCorePayload(data, filename)
+	if err != nil {
+		return err
 	}
 	return installCoreBytes(dataDir, data)
 }
@@ -460,8 +512,8 @@ func installCoreBytes(dataDir string, data []byte) error {
 	if err := os.WriteFile(tmp, data, 0o755); err != nil {
 		return err
 	}
-	// 非 Linux 开发环境跳过可执行校验（无法运行 Linux 二进制）
-	if runtime.GOOS == "linux" {
+	// 在当前平台执行版本检查；跨平台构建时不会执行该函数。
+	if runtime.GOOS == "linux" || runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		out, err := exec.CommandContext(ctx, tmp, "-v").CombinedOutput()

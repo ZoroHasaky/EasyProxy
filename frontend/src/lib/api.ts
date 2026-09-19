@@ -275,6 +275,13 @@ export interface GenResult {
 
 export interface MetaInfo {
   version: string;
+  mode?: "server" | "desktop";
+  platform?: string;
+  capabilities?: {
+    system_proxy: boolean;
+    tun: boolean;
+    tray: boolean;
+  };
   system: {
     release_repo: string;
     commit: string;
@@ -293,6 +300,15 @@ export interface MetaInfo {
     restarts: number;
     last_error: string;
   };
+}
+
+
+export interface SystemProxyStatus {
+  supported: boolean;
+  enabled: boolean;
+  host?: string;
+  port?: number;
+  warning?: string;
 }
 
 export interface CoreStatus {

@@ -107,8 +107,105 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  desktop-windows:
+    needs: gate
+    if: needs.gate.outputs.should_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.0"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Build backend server
+        shell: pwsh
+        working-directory: backend
+        env:
+          CGO_ENABLED: "0"
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          $version = (Get-Content ../VERSION).Trim()
+          New-Item -ItemType Directory -Force -Path internal/web/dist | Out-Null
+          Copy-Item -Recurse -Force ../frontend/dist/* internal/web/dist/
+          go build -trimpath -ldflags "-s -w -X main.version=$version" -o ../desktop/easyproxy-server.exe ./cmd/server
+      - name: Build Wails desktop shell
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          go run github.com/wailsapp/wails/v2/cmd/wails@v2.16.0 build -clean -platform windows/amd64
+          New-Item -ItemType Directory -Force -Path build/bin/resources | Out-Null
+          Copy-Item -Force easyproxy-server.exe build/bin/resources/easyproxy-server.exe
+          Compress-Archive -Path build/bin/* -DestinationPath ../easyproxy-windows-amd64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: easyproxy-desktop-windows-amd64
+          path: easyproxy-windows-amd64.zip
+
+  desktop-macos:
+    needs: gate
+    if: needs.gate.outputs.should_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-13
+            goarch: amd64
+            label: intel
+          - runner: macos-14
+            goarch: arm64
+            label: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.0"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Build backend server
+        working-directory: backend
+        env:
+          CGO_ENABLED: "0"
+          GOOS: darwin
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION=$(tr -d ' \n' < ../VERSION)
+          mkdir -p internal/web/dist
+          cp -a ../frontend/dist/. internal/web/dist/
+          go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o ../desktop/easyproxy-server ./cmd/server
+      - name: Build Wails desktop shell
+        working-directory: desktop
+        run: |
+          go run github.com/wailsapp/wails/v2/cmd/wails@v2.16.0 build -clean -platform darwin/${{ matrix.goarch }}
+          APP=$(find build/bin -maxdepth 1 -name '*.app' -type d | head -n 1)
+          mkdir -p "$APP/Contents/Resources"
+          cp easyproxy-server "$APP/Contents/Resources/easyproxy-server"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "../easyproxy-macos-${{ matrix.label }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: easyproxy-desktop-macos-${{ matrix.label }}
+          path: easyproxy-macos-${{ matrix.label }}.zip
+
   release:
-    needs: [gate, binaries]
+    needs: [gate, binaries, desktop-windows, desktop-macos]
     if: needs.gate.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -119,8 +216,8 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-          # 只取二进制包；不带 pattern 会连 buildx 的 *.dockerbuild 记录 artifact 一起抓，导致下载失败
-          pattern: easyproxy-linux-*
+          # 只取 EasyProxy 二进制与桌面包，避免下载 buildx 的 *.dockerbuild 记录。
+          pattern: easyproxy-*
       - name: Generate docker-compose.yml
         run: |
           cp deploy/docker-compose.release.yml docker-compose.yml

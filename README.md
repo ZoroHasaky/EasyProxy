@@ -19,6 +19,21 @@ EasyProxy 是一个基于 [Mihomo](https://github.com/MetaCubeX/mihomo) 的可�
 
 官方 Docker 镜像支持 `linux/amd64` 和 `linux/arm64`。所有数据默认保存在 Compose 文件所在目录的 `./data` 中，升级或重建容器不会丢失配置。
 
+## PC 桌面客户端
+
+从 0.3.1 开始，EasyProxy 除 Docker 版本外，还提供 Windows x64 和 macOS（Intel / Apple Silicon）桌面客户端。桌面客户端复用当前 Web 管理界面，在本机启动 EasyProxy 后端和 Mihomo 内核，并支持托盘驻留。
+
+桌面版特点：
+
+- 首次启动时设置管理员密码，不依赖控制台查看初始密码。
+- Mihomo 内核在首次运行时按当前系统和架构下载，也支持手动上传。
+- 在“设置”中可以一键开启或关闭当前电脑的 HTTP/HTTPS 系统代理。
+- 关闭窗口后继续驻留托盘；从托盘退出时停止本地服务。
+- 首版桌面客户端不提供 TUN 透明代理。
+- 桌面数据保存在系统用户目录：Windows 为 `%LOCALAPPDATA%\\EasyProxy`，macOS 为 `~/Library/Application Support/EasyProxy`；不会自动读取 Docker 的 `./data`，迁移配置请使用备份导出与恢复功能。
+
+Docker 版本和桌面版本使用不同的数据目录，但节点、规则、Geo 数据和配置逻辑保持一致。
+
 ## 2. 部署方式（Docker）
 
 ### 环境要求

@@ -19,6 +19,21 @@ Key features:
 
 The official Docker image supports linux/amd64 and linux/arm64. By default, all data is stored in ./data next to the Compose file, so configuration persists across upgrades and container recreation.
 
+## PC Desktop Client
+
+Starting with 0.3.1, EasyProxy is also available as a desktop client for Windows x64 and macOS (Intel / Apple Silicon), in addition to the Docker release. The desktop client reuses the existing web interface, starts the local EasyProxy backend and Mihomo core, and can stay in the system tray.
+
+Desktop client highlights:
+
+- Set the administrator password on first launch without relying on a console.
+- Download the Mihomo core for the current OS and architecture on first run, with manual upload as a fallback.
+- Enable or disable the current computer's HTTP/HTTPS system proxy from Settings.
+- Closing the window keeps the client in the tray; quitting from the tray stops the local service.
+- TUN transparent proxy is not included in the first desktop release.
+- Desktop data is stored in the OS user data directory (`%LOCALAPPDATA%\\EasyProxy` on Windows and `~/Library/Application Support/EasyProxy` on macOS) and is not automatically shared with Docker's `./data`; use backup export and restore to migrate configuration.
+
+Docker and desktop releases use separate data directories while sharing the same node, rule, Geo data, and configuration logic.
+
 ## 2. Deployment (Docker)
 
 ### Requirements

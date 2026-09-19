@@ -4,9 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 
 	"easyproxy/internal/api"
 	"easyproxy/internal/store"
@@ -29,6 +31,8 @@ func main() {
 	}
 	dataDir := flag.String("data", envOr("EASYPROXY_DATA", defData), "数据目录")
 	addr := flag.String("addr", envOr("EASYPROXY_ADDR", ":8080"), "监听地址")
+	desktopMode := flag.Bool("desktop-mode", false, "以桌面客户端模式运行")
+	readyFile := flag.String("ready-file", envOr("EASYPROXY_READY_FILE", ""), "服务就绪文件路径")
 	showVersion := flag.Bool("version", false, "显示版本号")
 	flag.Parse()
 
@@ -37,9 +41,13 @@ func main() {
 		return
 	}
 
+	if *desktopMode {
+		*addr = desktopListenAddr(*addr)
+	}
+
 	log.SetFlags(log.LstdFlags)
-	log.Printf("EasyProxy %s 启动中 (data=%s, addr=%s, %s/%s)",
-		version, *dataDir, *addr, runtime.GOOS, runtime.GOARCH)
+	log.Printf("EasyProxy %s 启动中 (data=%s, addr=%s, desktop=%t, %s/%s)",
+		version, *dataDir, *addr, *desktopMode, runtime.GOOS, runtime.GOARCH)
 
 	// 若 /data/bin 中存在更新版本的面板二进制则切换（Linux）
 	update.ExecNewest(*dataDir, version)
@@ -50,11 +58,24 @@ func main() {
 	}
 	defer st.Close()
 
-	srv := api.New(st, *dataDir, version)
+	srv := api.NewWithOptions(st, *dataDir, version, api.Options{
+		DesktopMode: *desktopMode,
+		ReadyFile:   *readyFile,
+	})
 	srv.InitPassword()
 	go srv.EnsureCoreStarted()
 
 	if err := srv.Run(*addr); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("HTTP 服务异常: %v", err)
 	}
+}
+
+func desktopListenAddr(addr string) string {
+	if _, port, err := net.SplitHostPort(addr); err == nil {
+		return net.JoinHostPort("127.0.0.1", port)
+	}
+	if strings.HasPrefix(addr, ":") {
+		return "127.0.0.1" + addr
+	}
+	return "127.0.0.1:0"
 }

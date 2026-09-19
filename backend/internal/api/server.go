@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -29,13 +30,19 @@ import (
 )
 
 type Server struct {
-	st         *store.Store
-	dataDir    string
-	version    string
-	mgr        *core.Manager
-	client     *core.Client
-	sessions   *SessionManager
-	geoBrowser *service.GeoDataBrowser
+	st           *store.Store
+	dataDir      string
+	version      string
+	desktopMode  bool
+	readyFile    string
+	controlToken string
+	mgr          *core.Manager
+	shutdownMu   sync.Mutex
+	shutdownFunc func()
+	client       *core.Client
+	sessions     *SessionManager
+	geoBrowser   *service.GeoDataBrowser
+	systemProxy  service.SystemProxyManager
 
 	mihomoRP *httputil.ReverseProxy
 
@@ -65,7 +72,18 @@ type updateTaskStatus struct {
 	ViaProxy  bool   `json:"via_proxy"`
 }
 
+// Options controls deployment-specific behavior without changing the existing
+// server constructor used by the Docker/server build and tests.
+type Options struct {
+	DesktopMode bool
+	ReadyFile   string
+}
+
 func New(st *store.Store, dataDir, version string) *Server {
+	return NewWithOptions(st, dataDir, version, Options{})
+}
+
+func NewWithOptions(st *store.Store, dataDir, version string, options Options) *Server {
 	secret := st.GetSetting("controller_secret", "")
 	if secret == "" {
 		b := make([]byte, 16)
@@ -75,14 +93,18 @@ func New(st *store.Store, dataDir, version string) *Server {
 	}
 	port := st.GetSettingInt("controller_port", 9095)
 	s := &Server{
-		st:         st,
-		dataDir:    dataDir,
-		version:    version,
-		mgr:        core.NewManager(core.CorePath(dataDir), dataDir),
-		client:     core.NewClient(port, secret),
-		sessions:   NewSessionManager(),
-		geoBrowser: service.NewGeoDataBrowser(dataDir),
-		updateTask: updateTaskStatus{State: "idle"},
+		st:           st,
+		dataDir:      dataDir,
+		version:      version,
+		desktopMode:  options.DesktopMode,
+		readyFile:    options.ReadyFile,
+		controlToken: secret,
+		mgr:          core.NewManager(core.CorePath(dataDir), dataDir),
+		client:       core.NewClient(port, secret),
+		sessions:     NewSessionManager(),
+		geoBrowser:   service.NewGeoDataBrowser(dataDir),
+		systemProxy:  service.NewSystemProxy(dataDir),
+		updateTask:   updateTaskStatus{State: "idle"},
 	}
 	s.mustChangePw.Store(st.GetSettingBool("must_change_password", false))
 	u, _ := url.Parse(s.client.BaseURL())
@@ -119,8 +141,8 @@ func (s *Server) EnsureCoreStarted() {
 		}
 		return
 	}
-	if runtime.GOOS != "linux" {
-		log.Println("[core] 非 Linux 开发环境且内核不存在，跳过自动下载（生产环境为 Docker/Linux）")
+	if runtime.GOOS != "linux" && !s.desktopMode {
+		log.Println("[core] 非 Linux 服务器环境且内核不存在，跳过自动下载（桌面模式支持 Windows/macOS）")
 		return
 	}
 	go func() {
@@ -183,34 +205,88 @@ func (s *Server) writeConfigYAML(yaml string) bool {
 	return true
 }
 
-// Run 启动 HTTP 服务，收到退出信号时停内核
+// Run 启动 HTTP 服务，收到退出信号时停内核。
 func (s *Server) Run(addr string) error {
-	srv := &http.Server{Addr: addr, Handler: s.Handler()}
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return s.Serve(listener)
+}
+
+// Serve 在已经创建好的 listener 上运行 HTTP 服务。桌面壳使用它对应的
+// ready-file 来发现随机端口；服务器/Docker 仍通过 Run 使用固定端口。
+func (s *Server) Serve(listener net.Listener) error {
+	srv := &http.Server{Handler: s.Handler()}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s.audit("operation", "panel.started", "info", "EasyProxy 面板已启动", map[string]any{"version": s.version})
 	s.startAuditWatchers(ctx)
 	go s.subscriptionLoop(ctx)
+	if s.readyFile != "" {
+		if err := s.writeReadyFile(listener.Addr().String()); err != nil {
+			_ = listener.Close()
+			return fmt.Errorf("写入服务就绪文件失败: %w", err)
+		}
+		defer os.Remove(s.readyFile)
+	}
 
-	done := make(chan struct{})
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		cancel()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-		_ = s.mgr.Stop()
-		close(done)
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			cancel()
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			_ = srv.Shutdown(shutdownCtx)
+			_ = s.mgr.Stop()
+		})
+	}
+	s.shutdownMu.Lock()
+	s.shutdownFunc = stop
+	s.shutdownMu.Unlock()
+	defer func() {
+		s.shutdownMu.Lock()
+		s.shutdownFunc = nil
+		s.shutdownMu.Unlock()
 	}()
 
-	err := srv.ListenAndServe()
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	go func() {
+		<-sigCh
+		stop()
+	}()
+
+	err := srv.Serve(listener)
+	stop()
 	if err == http.ErrServerClosed {
-		<-done
 		return nil
 	}
 	return err
+}
+
+func (s *Server) writeReadyFile(addr string) error {
+	if err := os.MkdirAll(filepath.Dir(s.readyFile), 0o755); err != nil {
+		return err
+	}
+	payload := map[string]any{
+		"addr": addr,
+		"url":  "http://" + addr,
+		"pid":  os.Getpid(),
+	}
+	if s.desktopMode {
+		payload["control_token"] = s.controlToken
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	tmp := s.readyFile + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.readyFile)
 }
 
 // subscriptionLoop 订阅定时更新
@@ -265,6 +341,11 @@ func (s *Server) Handler() http.Handler {
 
 	// 公开
 	mux.HandleFunc("POST /api/login", s.handleLogin)
+	mux.HandleFunc("GET /api/bootstrap", s.handleBootstrap)
+	mux.HandleFunc("POST /api/bootstrap", s.handleBootstrap)
+	mux.HandleFunc("GET /api/desktop/system-proxy", s.handleDesktopSystemProxyStatus)
+	mux.HandleFunc("PUT /api/desktop/system-proxy", s.handleDesktopSystemProxyUpdate)
+	mux.HandleFunc("POST /api/desktop/shutdown", s.handleDesktopShutdown)
 	mux.HandleFunc("GET /api/meta", s.handleMeta)
 	mux.HandleFunc("GET /api/regions", s.handleRegions)
 	mux.HandleFunc("GET /api/clash-config/subscription/{token}", s.handleClashConfigSubscription)
@@ -276,6 +357,8 @@ func (s *Server) Handler() http.Handler {
 	route("GET /api/me", s.handleMe)
 	route("POST /api/logout", s.handleLogout)
 	route("POST /api/password", s.handleChangePassword)
+	route("GET /api/system-proxy", s.handleSystemProxyStatus)
+	route("PUT /api/system-proxy", s.handleSystemProxyUpdate)
 
 	route("GET /api/subscriptions", s.handleListSubs)
 	route("POST /api/subscriptions", s.handleCreateSub)
@@ -432,4 +515,13 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMihomoProxy(w http.ResponseWriter, r *http.Request) {
 	s.mihomoRP.ServeHTTP(w, r)
+}
+
+func (s *Server) requestShutdown() {
+	s.shutdownMu.Lock()
+	shutdown := s.shutdownFunc
+	s.shutdownMu.Unlock()
+	if shutdown != nil {
+		shutdown()
+	}
 }

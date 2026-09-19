@@ -38,3 +38,18 @@ jobs:
 
       - name: Build docker image (verify only)
         run: docker build -f deploy/Dockerfile -t easyproxy-ci .
+
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.0"
+          cache-dependency-path: desktop/go.sum
+      - name: Test desktop shell
+        working-directory: desktop
+        run: |
+          go mod download
+          go test ./...
+          go build -ldflags "-X main.version=0.3.1" .

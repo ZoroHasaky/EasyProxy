@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EasyProxy</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; }
+    main { display: grid; place-items: center; height: 100%; gap: 12px; }
+    p { margin: 0; color: #94a3b8; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main>
+    <strong>EasyProxy 正在启动…</strong>
+    <p id="status">正在连接本地服务</p>
+  </main>
+  <script>
+    (async function () {
+      const status = document.getElementById("status");
+      for (let i = 0; i < 120; i += 1) {
+        try {
+          if (window.go && window.go.main && window.go.main.App) {
+            const url = await window.go.main.App.BackendURL();
+            if (url) {
+              window.location.replace(url);
+              return;
+            }
+          }
+        } catch (error) {
+          status.textContent = "本地服务启动失败，请从托盘退出后重试";
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      status.textContent = "本地服务启动超时，请从托盘退出后重试";
+    })();
+  </script>
+</body>
+</html>

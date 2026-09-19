@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock, Copy, Download, KeyRound, Link2, Loader2, Lock, RefreshCw, Server, ShieldCheck } from "lucide-react";
+import { Clock, Copy, Download, KeyRound, Link2, Loader2, Lock, RefreshCw, Server, ShieldCheck, Wifi } from "lucide-react";
 import { toast } from "sonner";
-import { api, ClashConfigLink, MetaInfo } from "@/lib/api";
+import { api, ClashConfigLink, MetaInfo, SystemProxyStatus } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useUpdate } from "@/contexts/update-state";
+import { Switch } from "@/components/ui/switch";
 import { defineMessages, useLanguage, useMessages } from "@/contexts/language";
 
 const messages = defineMessages({
@@ -27,6 +28,7 @@ const messages = defineMessages({
   refreshHint: "节点或规则保存后，Clash Verge 下次刷新订阅即可获得最新配置；重新生成链接会立即使旧链接失效。",
   regenerate: "重新生成链接", copy: "复制链接",
   releaseBuild: "正式发布", developmentBuild: "开发构建", dockerContainer: "Docker 容器", containerEnvironment: "容器环境", localRun: "本地运行",
+  systemProxy: "系统代理", systemProxyDescription: "将当前电脑的 HTTP/HTTPS 代理指向 EasyProxy 默认代理端口。", systemProxyEnabled: "已开启", systemProxyDisabled: "未开启", systemProxyUnsupported: "当前部署方式不支持桌面系统代理", systemProxyWarning: "系统代理已被其他程序修改", systemProxyPort: "代理端口", systemProxySaving: "更新中…", desktopUpdateUnavailable: "桌面版请通过安装包更新",
 }, {
   notRecorded: "Not recorded", passwordChanged: "Management password changed", linkRotated: "Configuration subscription link regenerated; the old link is now invalid",
   passwordLength: "The new password must be at least 8 characters", mismatch: "The new passwords do not match", copied: "Configuration link copied",
@@ -43,6 +45,7 @@ const messages = defineMessages({
   refreshHint: "After nodes or rules change, refresh the subscription in Clash Verge. Regenerating the link immediately invalidates the old one.",
   regenerate: "Regenerate Link", copy: "Copy Link",
   releaseBuild: "Release", developmentBuild: "Development Build", dockerContainer: "Docker Container", containerEnvironment: "Container Environment", localRun: "Local Run",
+  systemProxy: "System Proxy", systemProxyDescription: "Route this computer’s HTTP/HTTPS traffic through EasyProxy’s default proxy port.", systemProxyEnabled: "Enabled", systemProxyDisabled: "Disabled", systemProxyUnsupported: "Desktop system proxy is unavailable in this deployment", systemProxyWarning: "System proxy was changed by another application", systemProxyPort: "Proxy port", systemProxySaving: "Updating…", desktopUpdateUnavailable: "Use the desktop installer to update",
 });
 
 type SystemValueKey = "releaseBuild" | "developmentBuild" | "dockerContainer" | "containerEnvironment" | "localRun";
@@ -79,6 +82,16 @@ export default function SettingsPage() {
     queryKey: ["meta"],
     queryFn: () => api.get<MetaInfo>("/api/meta"),
     refetchInterval: 30_000,
+  });
+  const systemProxyQuery = useQuery({
+    queryKey: ["system-proxy"],
+    queryFn: () => api.get<SystemProxyStatus>("/api/system-proxy"),
+    refetchInterval: 15_000,
+  });
+  const systemProxyMutation = useMutation({
+    mutationFn: (enabled: boolean) => api.put<SystemProxyStatus>("/api/system-proxy", { enabled }),
+    onSuccess: (status) => queryClient.setQueryData(["system-proxy"], status),
+    onError: (error: any) => toast.error(error.message),
   });
   const passwordMutation = useMutation({
     mutationFn: () => api.post<{ ok: boolean }>("/api/password", { old_password: oldPassword, new_password: newPassword }),
@@ -118,6 +131,10 @@ export default function SettingsPage() {
   };
 
   const openUpdateDialog = () => {
+    if (metaQuery.data?.mode === "desktop") {
+      toast.info(text.desktopUpdateUnavailable);
+      return;
+    }
     setDialogOpen(true);
     void checkForUpdates();
   };
@@ -197,6 +214,25 @@ export default function SettingsPage() {
           ))}
         </div>
       </section>
+
+      <Card className="border-border/80">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600 dark:text-emerald-400"><Wifi className="h-4.5 w-4.5" /></div>
+            <div>
+              <CardTitle className="text-base font-bold">{text.systemProxy}</CardTitle>
+              <CardDescription>{text.systemProxyDescription}</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
+          <div className="space-y-1 text-[11px] text-muted-foreground">
+            {!systemProxyQuery.data?.supported ? <div>{text.systemProxyUnsupported}</div> : <div>{systemProxyQuery.data?.enabled ? text.systemProxyEnabled : text.systemProxyDisabled} · {text.systemProxyPort}: {systemProxyQuery.data?.port || "-"}</div>}
+            {systemProxyQuery.data?.warning && <div className="text-amber-600 dark:text-amber-400">{text.systemProxyWarning}</div>}
+          </div>
+          <Switch checked={Boolean(systemProxyQuery.data?.enabled)} disabled={!systemProxyQuery.data?.supported || systemProxyMutation.isPending} onCheckedChange={(value) => systemProxyMutation.mutate(value)} aria-label={text.systemProxy} />
+        </CardContent>
+      </Card>
 
       <Card className="border-border/80">
         <CardHeader className="pb-3">

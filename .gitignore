@@ -14,6 +14,8 @@ data/
 *.db-shm
 
 # build artifacts
+desktop/build/
+desktop/assets/wailsjs/
 *.exe
 *.tar.gz
 *.gz
@@ -24,3 +26,6 @@ data/
 
 # ZCode 会话产物
 .zcode/
+
+# local Go cache
+.gocache/

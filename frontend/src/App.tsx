@@ -5,6 +5,7 @@ import { api, ApiError } from "@/lib/api";
 import { Layout } from "@/components/layout";
 import LoginPage from "@/pages/Login";
 import ChangePasswordPage from "@/pages/ChangePassword";
+import BootstrapPage from "@/pages/Bootstrap";
 import DashboardPage from "@/pages/Dashboard";
 import NodesPage from "@/pages/Nodes";
 import RulesPage from "@/pages/Rules";
@@ -29,17 +30,26 @@ const messages = defineMessages({
 
 function Me() {
   const text = useMessages(messages);
+  const bootstrap = useQuery({
+    queryKey: ["bootstrap"],
+    queryFn: () => api.get<{ required: boolean; desktop: boolean }>("/api/bootstrap"),
+    retry: false,
+  });
   const me = useQuery({
     queryKey: ["me"],
     queryFn: () =>
       api.get<{ authenticated: boolean; must_change_password: boolean }>(
         "/api/me",
       ),
+    enabled: !bootstrap.isLoading && !bootstrap.isError && !bootstrap.data?.required,
     retry: false,
     refetchInterval: 30_000,
   });
 
-  if (me.isLoading) {
+  if (bootstrap.isLoading || (bootstrap.data?.required && !bootstrap.isError)) {
+    if (bootstrap.data?.required) {
+      return <BootstrapPage onDone={() => { void bootstrap.refetch(); void me.refetch(); }} />;
+    }
     return (
       <div className="flex h-screen items-center justify-center bg-background text-muted-foreground font-mono text-sm">
         <div className="flex items-center gap-2">
