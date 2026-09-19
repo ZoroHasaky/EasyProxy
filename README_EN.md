@@ -29,6 +29,7 @@ Desktop client highlights:
 - Download the Mihomo core for the current OS and architecture on first run, with manual upload as a fallback.
 - Enable or disable the current computer's HTTP/HTTPS system proxy from Settings.
 - Closing the window keeps the client in the tray; quitting from the tray stops the local service.
+- On Windows, right-click the tray icon and choose “Quit EasyProxy” to exit; on macOS, use the menu bar icon menu.
 - TUN transparent proxy is not included in the first desktop release.
 - Desktop data is stored in the OS user data directory (`%LOCALAPPDATA%\\EasyProxy` on Windows and `~/Library/Application Support/EasyProxy` on macOS) and is not automatically shared with Docker's `./data`; use backup export and restore to migrate configuration.
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"sync/atomic"
 
 	"github.com/getlantern/systray"
 	"github.com/wailsapp/wails/v2"
@@ -18,12 +19,21 @@ import (
 //go:embed assets/*
 var assets embed.FS
 
+//go:embed assets/tray.ico
+var trayICO []byte
+
+//go:embed assets/tray.png
+var trayRegular []byte
+
+//go:embed assets/tray-template.png
+var trayTemplate []byte
+
 var version = "dev"
 
 type App struct {
 	ctx      context.Context
 	backend  *BackendProcess
-	quitting bool
+	quitting atomic.Bool
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -52,14 +62,33 @@ func (a *App) shutdown(_ context.Context) {
 			log.Printf("[desktop] 后端停止失败: %v", err)
 		}
 	}
+	if a.quitting.Load() {
+		// Remove the tray icon after the backend has had a chance to restore
+		// the system proxy and stop Mihomo.
+		systray.Quit()
+	}
 }
 
 func (a *App) beforeClose(ctx context.Context) bool {
-	if a.quitting {
+	if a.quitting.Load() {
 		return false
 	}
 	wailsruntime.WindowHide(ctx)
 	return true
+}
+
+func (a *App) requestQuit() {
+	if !a.quitting.CompareAndSwap(false, true) {
+		return
+	}
+	// The shutdown callback stops the backend first and then removes the tray
+	// icon. Closing the window alone never reaches this method and therefore
+	// only hides the UI.
+	if a.ctx != nil {
+		wailsruntime.Quit(a.ctx)
+	} else {
+		systray.Quit()
+	}
 }
 
 // BackendURL is called by the tiny embedded boot page before navigating to the
@@ -73,6 +102,13 @@ func (a *App) BackendURL() string {
 
 func (a *App) runTray() {
 	systray.Run(func() {
+		systray.SetTemplateIcon(trayTemplate, trayRegular)
+		// Windows requires an ICO resource for the notification area. The
+		// cross-platform tray implementation uses the regular PNG fallback on
+		// macOS and Linux.
+		if goruntime.GOOS == "windows" {
+			systray.SetIcon(trayICO)
+		}
 		systray.SetTitle("EasyProxy")
 		systray.SetTooltip("EasyProxy")
 		open := systray.AddMenuItem("打开 EasyProxy", "显示管理面板")
@@ -100,18 +136,13 @@ func (a *App) runTray() {
 						}
 					}
 				case <-quit.ClickedCh:
-					a.quitting = true
-					if a.ctx != nil {
-						wailsruntime.Quit(a.ctx)
-					}
+					a.requestQuit()
 					return
 				}
 			}
 		}()
 	}, func() {
-		if a.quitting && a.ctx != nil {
-			wailsruntime.Quit(a.ctx)
-		}
+		log.Printf("[desktop] 托盘已退出")
 	})
 }
 
