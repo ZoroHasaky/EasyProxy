@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useUpdate } from "@/contexts/update-state";
 import { ArrowUpCircle, CheckCircle2, Loader2, Sparkles } from "lucide-react";
@@ -24,6 +25,8 @@ const messages = defineMessages({
   unknown: "未知", title: "系统更新与版本", description: "检测并升级 EasyProxy 面板至最新稳定版",
   current: "当前运行版本", latest: "最新可用版本", newVersion: "新版本", notes: "版本更新日志", status: "状态",
   checkFailed: "检查更新失败", upToDate: "当前已是最新版本，无需更新", recheck: "重新检查",
+  proxyUpdate: "通过代理更新", proxyUpdateHint: "通过当前 Mihomo 代理端口检查并下载 EasyProxy 更新",
+  currentProxy: "当前代理端口", proxyUnavailable: "需要先启动 Mihomo 内核才能通过代理更新", viaProxy: "经代理", direct: "直连",
   restarting: "正在重启…", restart: "重启并完成更新", updating: "正在更新…", updateTo: "一键更新到",
 }, {
   statusIdle: "Waiting", statusChecking: "Checking", statusDownloading: "Downloading", statusVerifying: "Verifying Package",
@@ -31,6 +34,8 @@ const messages = defineMessages({
   unknown: "Unknown", title: "System Update & Version", description: "Check for and install the latest stable EasyProxy release",
   current: "Current Version", latest: "Latest Version", newVersion: "New", notes: "Release Notes", status: "Status",
   checkFailed: "Update check failed", upToDate: "EasyProxy is up to date", recheck: "Check Again",
+  proxyUpdate: "Update through proxy", proxyUpdateHint: "Check for and download EasyProxy updates through the current Mihomo proxy port",
+  currentProxy: "Current proxy", proxyUnavailable: "Start the Mihomo core before updating through the proxy", viaProxy: "Via proxy", direct: "Direct",
   restarting: "Restarting…", restart: "Restart to Finish", updating: "Updating…", updateTo: "Update to",
 });
 
@@ -48,6 +53,11 @@ export function UpdateDialog() {
     isRestarting,
     isChecking,
     checkForUpdates,
+    updateSettings,
+    isUpdateSettingsLoading,
+    isSavingUpdateSettings,
+    proxyUnavailable,
+    setUpdateViaProxy,
   } = useUpdate();
 
   const hasUpdate = checkData?.has_update;
@@ -92,6 +102,25 @@ export function UpdateDialog() {
             </div>
           </div>
 
+          <div className="flex items-start justify-between gap-3 rounded-xl border border-border/60 bg-muted/30 p-3.5">
+            <div className="space-y-1">
+              <div className="text-sm font-semibold">{text.proxyUpdate}</div>
+              <div className="text-xs text-muted-foreground">{text.proxyUpdateHint}</div>
+              {updateSettings?.via_proxy && updateSettings.proxy_available && updateSettings.proxy_addr && (
+                <div className="text-[11px] text-muted-foreground">{text.currentProxy}: {updateSettings.proxy_addr}</div>
+              )}
+              {proxyUnavailable && (
+                <div className="text-[11px] text-destructive">{text.proxyUnavailable}</div>
+              )}
+            </div>
+            <Switch
+              checked={updateSettings?.via_proxy ?? false}
+              onCheckedChange={(checked) => { void setUpdateViaProxy(checked); }}
+              disabled={isUpdateSettingsLoading || isSavingUpdateSettings || isUpdating}
+              aria-label={text.proxyUpdate}
+            />
+          </div>
+
           {checkData?.notes && (
             <div className="space-y-1.5">
               <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -109,6 +138,7 @@ export function UpdateDialog() {
                 <span className="flex items-center gap-1.5 text-primary">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   {text.status}: {statusLabel}
+                  <span className="text-[11px] opacity-80">({status.via_proxy ? text.viaProxy : text.direct})</span>
                 </span>
                 <span>{status.percent}%</span>
               </div>
@@ -145,7 +175,7 @@ export function UpdateDialog() {
             variant="outline"
             size="sm"
             onClick={() => checkForUpdates()}
-            disabled={isChecking || isUpdating}
+            disabled={isChecking || isUpdating || proxyUnavailable || isUpdateSettingsLoading}
           >
             {isChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : text.recheck}
           </Button>
@@ -167,7 +197,7 @@ export function UpdateDialog() {
             <Button
               size="sm"
               onClick={() => startUpdate()}
-              disabled={isUpdating}
+              disabled={isUpdating || proxyUnavailable}
             >
               {isUpdating ? (
                 <>

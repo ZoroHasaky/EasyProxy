@@ -62,8 +62,8 @@ func TestSettingsPutReturnsAndMaintainsPendingConfigChanges(t *testing.T) {
 	if got := srv.updateRepo(); got != DefaultUpdateRepo {
 		t.Fatalf("update repo=%q, want fixed %q", got, DefaultUpdateRepo)
 	}
-	if proxy := srv.updateProxyAddr(); proxy != "" {
-		t.Fatalf("panel update must use direct connection, got proxy %q", proxy)
+	if proxy, err := srv.updateProxyAddr(); err != nil || proxy != "" {
+		t.Fatalf("panel update must use direct connection, got proxy=%q err=%v", proxy, err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config/pending", nil)

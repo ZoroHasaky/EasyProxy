@@ -2,7 +2,7 @@ package store
 
 import "testing"
 
-func TestOpenRemovesDeprecatedPanelUpdateSettings(t *testing.T) {
+func TestOpenRemovesDeprecatedPanelUpdateRepositoryKeepsProxyPreference(t *testing.T) {
 	dir := t.TempDir()
 	st, err := Open(dir)
 	if err != nil {
@@ -26,7 +26,7 @@ func TestOpenRemovesDeprecatedPanelUpdateSettings(t *testing.T) {
 	if got := st.GetSetting("update_repo", ""); got != "" {
 		t.Fatalf("update_repo=%q, want removed", got)
 	}
-	if got := st.GetSetting("update_via_proxy", ""); got != "" {
-		t.Fatalf("update_via_proxy=%q, want removed", got)
+	if got := st.GetSetting("update_via_proxy", ""); got != "1" {
+		t.Fatalf("update_via_proxy=%q, want preserved", got)
 	}
 }

@@ -390,11 +390,57 @@ func (s *Server) updateRepo() string {
 	return DefaultUpdateRepo
 }
 
-// updateProxyAddr 面板更新固定直连，不再支持经本地 Mihomo 代理下载。
-func (s *Server) updateProxyAddr() string { return "" }
+// updateProxyAddr 返回面板更新本次应使用的代理地址。
+// 代理更新是显式设置：关闭时保持直连，开启但内核未运行时直接报错，
+// 避免代理不可用时静默回退直连。
+func (s *Server) updateProxyAddr() (string, error) {
+	if !s.st.GetSettingBool("update_via_proxy", false) {
+		return "", nil
+	}
+	proxy := s.runningCoreProxyAddr()
+	if proxy == "" {
+		return "", fmt.Errorf("通过代理更新需要先启动 Mihomo 内核")
+	}
+	return proxy, nil
+}
+
+type updateSettingsPayload struct {
+	ViaProxy *bool `json:"via_proxy"`
+}
+
+func (s *Server) updateSettingsResponse() map[string]any {
+	proxy := s.runningCoreProxyAddr()
+	return map[string]any{
+		"via_proxy":       s.st.GetSettingBool("update_via_proxy", false),
+		"proxy_available": proxy != "",
+		"proxy_addr":      proxy,
+	}
+}
+
+func (s *Server) handleGetUpdateSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.updateSettingsResponse())
+}
+
+func (s *Server) handlePutUpdateSettings(w http.ResponseWriter, r *http.Request) {
+	var payload updateSettingsPayload
+	if err := readJSON(r, &payload); err != nil || payload.ViaProxy == nil {
+		writeErr(w, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+	if err := s.st.SetSetting("update_via_proxy", boolStr(*payload.ViaProxy)); err != nil {
+		writeErr(w, http.StatusInternalServerError, "保存更新设置失败: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "settings": s.updateSettingsResponse()})
+}
 
 func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, update.Check(s.updateRepo(), s.version, s.updateProxyAddr()))
+	proxy, err := s.updateProxyAddr()
+	if err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, update.Check(s.updateRepo(), s.version, proxy))
 }
 
 func (s *Server) setUpdateProgress(stage string, completed, total int64) {
@@ -423,7 +469,11 @@ func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
-	proxy := s.updateProxyAddr()
+	proxy, err := s.updateProxyAddr()
+	if err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
 	s.updateMu.Lock()
 	if s.updateTask.Running {
 		s.updateMu.Unlock()
@@ -435,7 +485,7 @@ func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 	s.updateMu.Unlock()
 
 	repo := s.updateRepo()
-	s.audit("operation", "panel.update", "info", "已开始下载面板版本升级", nil)
+	s.audit("operation", "panel.update", "info", "已开始下载面板版本升级", map[string]any{"via_proxy": proxy != ""})
 	go func() {
 		rel, err := update.Apply(repo, s.version, s.dataDir, proxy, s.setUpdateProgress)
 		if err != nil {

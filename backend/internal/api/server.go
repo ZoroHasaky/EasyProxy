@@ -404,6 +404,8 @@ func (s *Server) Handler() http.Handler {
 	route("GET /api/tun/check", s.handleTunCheck)
 
 	route("GET /api/update/check", s.handleUpdateCheck)
+	route("GET /api/update/settings", s.handleGetUpdateSettings)
+	route("PUT /api/update/settings", s.handlePutUpdateSettings)
 	route("GET /api/update/status", s.handleUpdateStatus)
 	route("POST /api/update/apply", s.handleUpdateApply)
 	route("POST /api/update/restart", s.handleUpdateRestart)

@@ -501,6 +501,12 @@ export interface ClashConfigLink {
   path: string;
 }
 
+export interface UpdateSettings {
+  via_proxy: boolean;
+  proxy_available: boolean;
+  proxy_addr: string;
+}
+
 export interface UpdateCheck {
   current: string;
   latest: string;

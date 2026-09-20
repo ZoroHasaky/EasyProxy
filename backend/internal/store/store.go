@@ -255,9 +255,9 @@ func (s *Store) migrate() error {
 }
 
 // removeObsoletePanelUpdateSettings 移除旧版可配置更新源。面板更新现在固定使用
-// 官方仓库并直连下载，旧值不应继续留在持久化设置中造成误导。
+// 官方仓库；update_via_proxy 是当前仍支持的代理更新偏好，需要保留。
 func (s *Store) removeObsoletePanelUpdateSettings() error {
-	_, err := s.db.Exec(`DELETE FROM settings WHERE key IN ('update_repo', 'update_via_proxy')`)
+	_, err := s.db.Exec(`DELETE FROM settings WHERE key = 'update_repo'`)
 	return err
 }
 
