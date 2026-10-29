@@ -134,6 +134,8 @@ export interface RuleTargetOption {
   available: boolean;
   alive?: boolean;
   latency?: number;
+  chain_upstream?: string;
+  chain_error?: string;
 }
 
 export interface RuleProvider {
@@ -253,6 +255,10 @@ export interface ProxyGroup {
   icon: string;
   position: number;
   enabled: boolean;
+  /** 链式代理第一跳：`node:<节点名>` 或 `group:<组合ID>`，空串表示不链式。 */
+  chain_upstream: string;
+  /** 仅响应填充：链式配置当前为何无法生成。 */
+  chain_error?: string;
 }
 
 // 仅用于界面展示；内核配置和 API 仍使用 Mihomo 原始类型值。

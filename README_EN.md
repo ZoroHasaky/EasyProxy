@@ -12,7 +12,7 @@ Key features:
 
 - Aggregate Clash subscriptions and common share links, with node de-duplication, region detection, scheduled updates, filtering, and concurrent latency tests.
 - Build traffic routing with Recognition Rules, Node Groups, and Outbound Mappings. GeoIP, GeoSite, remote YAML rule sets, and common Mihomo rule types are supported.
-- Choose nodes manually, by automatic latency testing, failover, or load balancing.
+- Choose nodes manually, by automatic latency testing, failover, or load balancing, with optional two-hop chained proxying through a dialer node or group.
 - Manage the Mihomo core with automatic downloads, manual uploads, configuration previews, and automatic configuration application.
 - Use TUN transparent proxying, LAN gateway mode, built-in DNS, and Fake-IP DNS pollution resistance.
 - Monitor real-time connections and traffic, audit logs, export configurations, create Clash Verge subscriptions, and update the panel online.
@@ -227,6 +227,24 @@ For example, to route GitHub through an automatically tested group:
 4. Use **Outbound Test** to verify the matched rule and simulated route, then apply the configuration.
 
 You can also select **Generate Recognition Rules from Geo** and choose individual local Geo categories. This creates recognition rules only; it does not create outbound mappings, so it is useful when you want to build the path manually.
+
+### Chained proxy (two-hop relay)
+
+In **Rules → Proxy Groups**, any proxy group can be given a **dialer** (upstream proxy), producing:
+
+```text
+client → dialer (node or group) → this group's landing node → target site
+```
+
+- The dialer can be a single node or another proxy group (which then picks the first hop at runtime).
+- Two hops only: a dialer group cannot itself be chained. Such a save is rejected, so three-hop chains and loops are impossible.
+- This uses Mihomo's `dialer-proxy` (the legacy `relay` group type is officially deprecated). For each landing node the panel emits a separate `<group> · <node>` clone entry carrying `dialer-proxy`. The original node is untouched and remains usable as a normal outbound.
+- A chained group works as an outbound target for recognition rules and per-port routing exactly like any other group. One clone entry is generated per landing node, so the configuration grows with the node count.
+- If the dialer becomes invalid (node deleted, disabled, or renamed by a subscription refresh), the group is omitted from the configuration and rules referencing it fall back to the main `PROXY` outlet; the group card shows the reason. Renaming a node manually rewrites the dialer reference automatically.
+
+::: tip
+Prefer `ss` or `vmess` on the dialer hop. Some relay servers do not forward `hy2`/`tuic`/`reality`, which will break the chain.
+:::
 
 ### Other features
 

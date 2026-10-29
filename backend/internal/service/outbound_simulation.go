@@ -58,6 +58,7 @@ func SimulateOutbound(st *store.Store, dataDir, rawTarget string) (*OutboundSimu
 		}
 	}
 	resolver := newRuleTargetResolver(nodes, groups)
+	chainPlan := BuildChainPlan(nodes, groups)
 	localData := newSimulationLocalData(dataDir)
 	limitations := []string{}
 	for _, recognition := range recognitions {
@@ -76,7 +77,9 @@ func SimulateOutbound(st *store.Store, dataDir, rawTarget string) (*OutboundSimu
 		if !matched {
 			continue
 		}
-		return simulationResult(target, targetType, recognition, condition, resolveSimulationTarget(resolver, outbound.GroupID), limitations), nil
+		result := simulationResult(target, targetType, recognition, condition, resolveSimulationTarget(resolver, outbound.GroupID), limitations)
+		appendChainHop(result, outbound.GroupID, chainPlan)
+		return result, nil
 	}
 
 	// 生成器会补上一条 MATCH 兜底；没有有效节点时该兜底会直接走 DIRECT。
@@ -117,6 +120,16 @@ func resolveSimulationTarget(resolver *ruleTargetResolver, groupID int64) string
 		return target
 	}
 	return resolver.resolve(model.GroupTargetRef(groupID))
+}
+
+// appendChainHop 在模拟链路末尾补上链式代理的第一跳，让「出站测试」能展示
+// 规则 → 链式组合 → 落地节点 → 前置节点 的完整路径。
+func appendChainHop(result *OutboundSimulationResult, groupID int64, plan ChainPlan) {
+	upstream, chained := plan.UpstreamByGroup[groupID]
+	if !chained || upstream == "" {
+		return
+	}
+	result.Chain = append(result.Chain, upstream)
 }
 
 func normalizeSimulationTarget(rawTarget string) (target, targetType string, address netip.Addr, err error) {

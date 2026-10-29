@@ -10,6 +10,8 @@ import {
   Zap,
   Check,
   RotateCcw,
+  Link2,
+  AlertTriangle,
 } from "lucide-react";
 import { api, autoApplyResultMessage, AutoApplyResponse, proxyGroupTypeLabel, ProxyGroup, ProxyNode, RegionInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -58,6 +60,11 @@ const messages = defineMessages({
   selectNodes: "勾选节点组合", selected: "已选 {count} 个", searchNodes: "搜索节点名称或地区…", noNodes: "未找到启用节点",
   testUrl: "测速目标地址 (Test URL)", testCycle: "测速周期 (秒)", toleranceMs: "公差 (ms)", enable: "启用此节点组合",
   enableHint: "禁用后生成配置时将被忽略", cancel: "取消", saving: "保存中…", save: "保存节点组合",
+  chainTitle: "链式代理（前置代理）", chainNone: "不链式（直连落地节点）",
+  chainNodesGroup: "以单个节点作为前置", chainGroupsGroup: "以节点组合作为前置",
+  chainHint: "链路为：客户端 → 前置 → 本组合的落地节点 → 目标。仅支持两跳；前置组合本身不能启用链式。建议前置链路使用 ss/vmess，hy2/tuic/reality 等协议可能不被前置服务器转发。",
+  chainBadge: "链式", chainVia: "前置：{name}", chainBroken: "链式配置失效：{reason}",
+  chainSelf: "前置不能选择自身", chainAlreadyChained: "该组合自身已启用链式，不能再作为前置",
 }, {
   typeSelect: "Manual Select (select)", typeUrlTest: "Auto Test", typeFallback: "Fallback", typeLoadBalance: "Load Balance",
   applyFailed: "{message}, but automatic apply failed and the change was added to the pending list", applied: "{message}; {result}", updated: "Proxy group updated",
@@ -73,6 +80,11 @@ const messages = defineMessages({
   selectNodes: "Select Nodes", selected: "{count} selected", searchNodes: "Search node name or region…", noNodes: "No enabled nodes found",
   testUrl: "Test URL", testCycle: "Test Interval (seconds)", toleranceMs: "Tolerance (ms)", enable: "Enable Proxy Group",
   enableHint: "Disabled groups are ignored when generating the configuration", cancel: "Cancel", saving: "Saving…", save: "Save Proxy Group",
+  chainTitle: "Chained Proxy (Dialer)", chainNone: "None (connect to landing node directly)",
+  chainNodesGroup: "Use a single node as the dialer", chainGroupsGroup: "Use a proxy group as the dialer",
+  chainHint: "Path: client → dialer → this group's landing node → target. Two hops only; a dialer group cannot itself be chained. Prefer ss/vmess on the dialer hop, since hy2/tuic/reality may not be forwarded by the dialer server.",
+  chainBadge: "Chained", chainVia: "Dialer: {name}", chainBroken: "Chain configuration broken: {reason}",
+  chainSelf: "A group cannot use itself as the dialer", chainAlreadyChained: "This group is already chained and cannot be used as a dialer",
 });
 
 export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
@@ -94,6 +106,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
   const [interval, setIntervalVal] = useState(300);
   const [tolerance, setTolerance] = useState(50);
   const [enabled, setEnabled] = useState(true);
+  const [chainUpstream, setChainUpstream] = useState("");
 
   const groups = useQuery({
     queryKey: ["groups"],
@@ -132,6 +145,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
     setIntervalVal(300);
     setTolerance(50);
     setEnabled(true);
+    setChainUpstream("");
     setModalOpen(true);
   };
 
@@ -150,6 +164,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
     setIntervalVal(g.interval);
     setTolerance(g.tolerance);
     setEnabled(g.enabled);
+    setChainUpstream(g.chain_upstream ?? "");
     setModalOpen(true);
   };
 
@@ -166,6 +181,7 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
         interval: Number(interval) || 300,
         tolerance: Number(tolerance) || 50,
         enabled,
+        chain_upstream: chainUpstream,
       };
       const current = groups.data ?? [];
       const nextGroups: ProxyGroup[] = editingGroup
@@ -227,6 +243,26 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
     return !keyword || node.name.toLocaleLowerCase().includes(keyword) || node.region.toLocaleLowerCase().includes(keyword);
   });
 
+  // 前置候选：自身与已启用链式的组合都要排除，避免自引用和三跳。
+  const chainGroupOptions = (groups.data ?? []).filter(
+    (g) => g.id !== editingGroup?.id && !g.chain_upstream,
+  );
+  const chainNodeOptions = nodes.data ?? [];
+
+  // 卡片徽章需要把 chain_upstream 解析成可读名称。
+  const chainLabel = (raw: string) => {
+    if (!raw) return "";
+    if (raw.startsWith("node:")) {
+      const nodeName = raw.slice("node:".length);
+      return nodeName || raw;
+    }
+    if (raw.startsWith("group:")) {
+      const groupID = Number(raw.slice("group:".length));
+      return (groups.data ?? []).find((g) => g.id === groupID)?.name ?? `#${groupID}`;
+    }
+    return raw;
+  };
+
   return (
     <div className="space-y-4">
       {/* 头部操作栏 */}
@@ -268,6 +304,12 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                   <div className="space-y-1">
                     <CardTitle className="text-base flex items-center gap-2">
                       <span className="truncate">{g.name}</span>
+                      {g.chain_upstream && (
+                        <Badge variant="secondary" className="gap-1 text-[10px]">
+                          <Link2 className="h-2.5 w-2.5" />
+                          {text.chainBadge}
+                        </Badge>
+                      )}
                       {!g.enabled && <Badge variant="secondary" className="text-[10px]">{text.disabled}</Badge>}
                     </CardTitle>
                     <CardDescription className="text-xs">
@@ -279,6 +321,17 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                         ? text.regexSummary.replace("{regex}", g.include_regex)
                         : text.allSummary}
                     </CardDescription>
+                    {g.chain_upstream && (
+                      <p className="text-[11px] text-primary">
+                        {text.chainVia.replace("{name}", chainLabel(g.chain_upstream))}
+                      </p>
+                    )}
+                    {g.chain_error && (
+                      <p className="flex items-start gap-1 text-[11px] text-amber-600 dark:text-amber-400">
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                        <span>{text.chainBroken.replace("{reason}", g.chain_error)}</span>
+                      </p>
+                    )}
                   </div>
                   <Badge variant="purple" className="font-mono text-xs uppercase">
                     {proxyGroupTypeLabel(g.type, language)}
@@ -454,6 +507,35 @@ export function GroupsPanel({ embedded = false }: { embedded?: boolean }) {
                 </div>
               </>
             )}
+
+            <div className="space-y-1.5 rounded-xl border border-border/60 bg-muted/30 p-3">
+              <Label className="flex items-center gap-1.5">
+                <Link2 className="h-3.5 w-3.5 text-primary" />
+                {text.chainTitle}
+              </Label>
+              <Select value={chainUpstream} onChange={(e) => setChainUpstream(e.target.value)}>
+                <option value="">{text.chainNone}</option>
+                {chainNodeOptions.length > 0 && (
+                  <optgroup label={text.chainNodesGroup}>
+                    {chainNodeOptions.map((node) => (
+                      <option key={`node-${node.id}`} value={`node:${node.name}`}>
+                        {node.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {chainGroupOptions.length > 0 && (
+                  <optgroup label={text.chainGroupsGroup}>
+                    {chainGroupOptions.map((g) => (
+                      <option key={`group-${g.id}`} value={`group:${g.id}`}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </Select>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">{text.chainHint}</p>
+            </div>
 
             <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/60">
               <div className="space-y-0.5">

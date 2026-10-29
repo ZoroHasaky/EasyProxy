@@ -325,8 +325,59 @@ func (s *Server) handleGetGroups(w http.ResponseWriter, r *http.Request) {
 	if groups == nil {
 		groups = []model.Group{}
 	}
+	annotateGroupChainErrors(groups, s.st)
 	writeJSON(w, http.StatusOK, groups)
 }
+
+// annotateGroupChainErrors 为响应补上链式配置当前无法生成的原因。
+// 该字段只在响应中填充，不落库；生成配置时 BuildChainPlan 会再独立计算一次，
+// 因此这里失败也不影响保存，避免把临时失效（节点被删）变成无法保存的编辑。
+func annotateGroupChainErrors(groups []model.Group, st *store.Store) {
+	nodes, err := service.EffectiveNodes(st)
+	if err != nil {
+		return
+	}
+	plan := service.BuildChainPlan(nodes, groups)
+	for i := range groups {
+		if reason, broken := plan.Unavailable[groups[i].ID]; broken {
+			groups[i].ChainError = reason
+		}
+	}
+}
+
+// validateGroupChains 在保存时拒绝必然无法成立的链式配置。运行期失效
+// （例如订阅刷新导致节点改名）仍走 BuildChainPlan 的静默回退。
+func validateGroupChains(groups []model.Group) error {
+	byID := make(map[int64]model.Group, len(groups))
+	for _, g := range groups {
+		byID[g.ID] = g
+	}
+	for _, g := range groups {
+		raw := strings.TrimSpace(g.ChainUpstream)
+		if raw == "" {
+			continue
+		}
+		kind, _, id, ok := model.ParseChainUpstream(raw)
+		if !ok {
+			return fmt.Errorf("节点组合「%s」的链式前置格式无效", g.Name)
+		}
+		if kind != "group" {
+			continue
+		}
+		if id == g.ID {
+			return fmt.Errorf("节点组合「%s」的链式前置不能是自身", g.Name)
+		}
+		upstream, exists := byID[id]
+		if !exists {
+			return fmt.Errorf("节点组合「%s」的链式前置组合不存在", g.Name)
+		}
+		if strings.TrimSpace(upstream.ChainUpstream) != "" {
+			return fmt.Errorf("节点组合「%s」的链式前置「%s」自身已启用链式，仅支持两跳", g.Name, upstream.Name)
+		}
+	}
+	return nil
+}
+
 
 func validGroupType(t string) bool {
 	switch t {
@@ -351,7 +402,8 @@ func (s *Server) handlePutGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	seen := map[string]bool{}
-	for _, g := range groups {
+	for i := range groups {
+		g := &groups[i]
 		if g.Name == "" || seen[g.Name] {
 			writeErr(w, http.StatusBadRequest, "策略组名称为空或重复")
 			return
@@ -372,6 +424,12 @@ func (s *Server) handlePutGroups(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "按名称正则筛选时必须填写正则")
 			return
 		}
+		g.ChainUpstream = strings.TrimSpace(g.ChainUpstream)
+		g.ChainError = ""
+	}
+	if err := validateGroupChains(groups); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	if err := s.st.ReplaceGroups(groups); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

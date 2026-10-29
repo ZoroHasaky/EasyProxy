@@ -24,6 +24,7 @@ func ListRuleTargetOptions(st *store.Store) ([]model.RuleTargetOption, error) {
 	}
 
 	out := make([]model.RuleTargetOption, 0, len(groups)+len(nodes))
+	chainPlan := BuildChainPlan(nodes, groups)
 	for _, g := range groups {
 		members := groupMembers(g, nodes)
 		kind := "group"
@@ -34,11 +35,20 @@ func ListRuleTargetOptions(st *store.Store) ([]model.RuleTargetOption, error) {
 		if icon == "" && g.Region != "" {
 			icon = parser.RegionFlag(g.Region)
 		}
-		out = append(out, model.RuleTargetOption{
+		option := model.RuleTargetOption{
 			Value: model.GroupTargetRef(g.ID), Kind: kind, Name: g.Name,
 			Region: g.Region, RegionName: parser.RegionCN(g.Region), Icon: icon,
 			MemberCount: len(members), Available: g.Enabled && len(members) > 0,
-		})
+		}
+		if upstream, chained := chainPlan.UpstreamByGroup[g.ID]; chained {
+			option.ChainUpstream = upstream
+			option.MemberCount = len(chainPlan.MembersByGroup[g.ID])
+		}
+		if reason, broken := chainPlan.Unavailable[g.ID]; broken {
+			option.Available = false
+			option.ChainError = reason
+		}
+		out = append(out, option)
 	}
 	sort.SliceStable(nodes, func(i, j int) bool {
 		if nodes[i].Region != nodes[j].Region {

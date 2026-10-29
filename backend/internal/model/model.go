@@ -76,6 +76,9 @@ type RuleTargetOption struct {
 	Available   bool   `json:"available"`
 	Alive       bool   `json:"alive,omitempty"`
 	Latency     int    `json:"latency,omitempty"`
+	// ChainUpstream / ChainError 仅链式组合填充，用于界面说明当前链路。
+	ChainUpstream string `json:"chain_upstream,omitempty"`
+	ChainError    string `json:"chain_error,omitempty"`
 }
 
 type RuleProvider struct {
@@ -174,6 +177,46 @@ type Group struct {
 	Icon         string  `json:"icon"`
 	Position     int     `json:"position"`
 	Enabled      bool    `json:"enabled"`
+	// ChainUpstream 指定链式代理的第一跳：NodeTargetRef 形式表示单个节点，
+	// GroupTargetRef 形式表示由既有组合在运行时决定第一跳。空值表示不链式。
+	ChainUpstream string `json:"chain_upstream"`
+	// ChainError 仅在响应中填充，说明链式配置当前为何无法生成（不落库）。
+	ChainError string `json:"chain_error,omitempty"`
+}
+
+const (
+	// ChainUpstreamNodePrefix / ChainUpstreamGroupPrefix 是 chain_upstream 的
+	// 持久化前缀。使用与出站目标相同的引用语法，便于复用 ParseTargetRef。
+	ChainUpstreamNodePrefix  = "node:"
+	ChainUpstreamGroupPrefix = "group:"
+)
+
+// NodeChainUpstream 构造以节点为第一跳的链式引用。
+func NodeChainUpstream(name string) string { return ChainUpstreamNodePrefix + name }
+
+// GroupChainUpstream 构造以策略组为第一跳的链式引用。
+func GroupChainUpstream(id int64) string {
+	return ChainUpstreamGroupPrefix + strconv.FormatInt(id, 10)
+}
+
+// ParseChainUpstream 解析 chain_upstream。空值返回 kind="" 表示未启用链式。
+func ParseChainUpstream(raw string) (kind string, value string, id int64, ok bool) {
+	raw = strings.TrimSpace(raw)
+	switch {
+	case raw == "":
+		return "", "", 0, false
+	case strings.HasPrefix(raw, ChainUpstreamNodePrefix):
+		name := strings.TrimSpace(strings.TrimPrefix(raw, ChainUpstreamNodePrefix))
+		return "node", name, 0, name != ""
+	case strings.HasPrefix(raw, ChainUpstreamGroupPrefix):
+		parsed, err := strconv.ParseInt(strings.TrimPrefix(raw, ChainUpstreamGroupPrefix), 10, 64)
+		if err != nil || parsed <= 0 {
+			return "", "", 0, false
+		}
+		return "group", "", parsed, true
+	default:
+		return "", "", 0, false
+	}
 }
 
 type NodeFilter struct {

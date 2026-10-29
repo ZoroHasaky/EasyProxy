@@ -126,7 +126,8 @@ func (s *Store) migrate() error {
 			tolerance INTEGER NOT NULL DEFAULT 50,
 			icon TEXT NOT NULL DEFAULT '',
 			position INTEGER NOT NULL DEFAULT 0,
-			enabled INTEGER NOT NULL DEFAULT 1
+			enabled INTEGER NOT NULL DEFAULT 1,
+			chain_upstream TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS recognition_rules (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,6 +220,9 @@ func (s *Store) migrate() error {
 		return fmt.Errorf("migrate: %w", err)
 	}
 	if err := s.ensureColumn("proxy_port_rules", "target", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+	if err := s.ensureColumn("proxy_groups", "chain_upstream", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
 	if err := s.migrateOutboundRulesBuiltinTargets(); err != nil {

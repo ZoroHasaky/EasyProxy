@@ -331,6 +331,8 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 	if err != nil {
 		return nil, err
 	}
+	// 链式组会为每个落地节点生成带 dialer-proxy 的克隆条目；不链式的节点保持原样。
+	chainPlan := BuildChainPlan(deduped, groups)
 
 	var sb strings.Builder
 	sb.WriteString("# 由 EasyProxy 自动生成，手动修改会被覆盖\n\n")
@@ -427,6 +429,7 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 	sb.WriteString("\n")
 
 	nodeNames := make([]string, 0, len(deduped))
+	generatedGroupCount := 0
 	if len(deduped) > 0 {
 		sb.WriteString("proxies:\n")
 		for _, n := range deduped {
@@ -438,12 +441,21 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 			sb.WriteString(marshalItem(rc))
 			nodeNames = append(nodeNames, n.Name)
 		}
+		for _, clone := range chainPlan.Clones {
+			sb.WriteString(marshalItem(clone))
+		}
 		sb.WriteString("\n")
 
+		// 链式配置当前无法成立的组不会写入配置，因此也不能出现在 PROXY 成员里，
+		// 否则 mihomo 会因引用不存在的策略组而拒绝加载整份配置。
+		skippedGroups := make(map[int64]bool, len(chainPlan.Unavailable))
+		for id := range chainPlan.Unavailable {
+			skippedGroups[id] = true
+		}
 		sb.WriteString("proxy-groups:\n")
 		proxyMembers := []string{GroupAUTO}
 		for _, g := range groups {
-			if g.Enabled {
+			if g.Enabled && !skippedGroups[g.ID] {
 				proxyMembers = append(proxyMembers, g.Name)
 			}
 		}
@@ -455,16 +467,22 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 			"name": GroupAUTO, "type": "url-test", "url": DefaultTestURL,
 			"interval": 300, "tolerance": 50, "proxies": nodeNames, "icon": "⚡", "lazy": true,
 		}))
+		writtenGroups := 0
 		for _, g := range groups {
-			if !g.Enabled {
+			if !g.Enabled || skippedGroups[g.ID] {
 				continue
 			}
-			members := groupMembers(g, deduped)
+			members := chainPlan.MembersByGroup[g.ID]
+			if members == nil {
+				members = groupMembers(g, deduped)
+			}
 			if len(members) == 0 {
 				members = []string{"DIRECT"}
 			}
 			sb.WriteString(marshalItem(buildGroupMap(g, members)))
+			writtenGroups++
 		}
+		generatedGroupCount = writtenGroups + 2
 		sb.WriteString("\n")
 	}
 
@@ -645,7 +663,7 @@ func generateConfig(st *store.Store, settings configSettings) (*GenResult, error
 	return &GenResult{
 		YAML:       sb.String(),
 		NodeCount:  len(deduped),
-		GroupCount: len(groups) + 2,
+		GroupCount: generatedGroupCount,
 		RuleCount:  ruleCount,
 	}, nil
 }
@@ -770,10 +788,14 @@ func newRuleTargetResolver(nodes []model.Node, groups []model.Group) *ruleTarget
 		r.nodesByID[n.ID] = n.Name
 		r.nodeNames[n.Name] = true
 	}
+	chainPlan := BuildChainPlan(nodes, groups)
 	for _, g := range groups {
 		r.groupsByID[g.ID] = g
 		r.groupsByName[g.Name] = g
-		r.availableByID[g.ID] = g.Enabled && len(groupMembers(g, nodes)) > 0
+		// 链式配置无法成立的组不会写入配置，解析时必须回退到 PROXY，
+		// 否则规则会指向一个不存在的策略组。
+		_, chainBroken := chainPlan.Unavailable[g.ID]
+		r.availableByID[g.ID] = g.Enabled && !chainBroken && len(groupMembers(g, nodes)) > 0
 	}
 	return r
 }

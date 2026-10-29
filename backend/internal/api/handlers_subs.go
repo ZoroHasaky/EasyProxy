@@ -181,6 +181,7 @@ func (s *Server) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "节点不存在")
 		return
 	}
+	originalName := node.Name
 	var req struct {
 		Name      *string         `json:"name"`
 		Region    *string         `json:"region"`
@@ -260,6 +261,13 @@ func (s *Server) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 	if err := s.st.UpdateNode(node); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	// 链式前置按节点名引用，改名后必须同步改写，否则链路会静默失效。
+	if node.Name != originalName {
+		if err := s.st.RenameChainUpstreamNode(originalName, node.Name); err != nil {
+			writeErr(w, http.StatusInternalServerError, "更新链式代理引用失败: "+err.Error())
+			return
+		}
 	}
 	s.writeAutoApplyResult(w, map[string]any{"node": node}, "nodes", []string{"节点池"})
 }
